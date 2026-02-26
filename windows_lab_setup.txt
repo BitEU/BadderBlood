@@ -5,6 +5,7 @@
 5. Download https://github.com/davidprowe/BadBlood and extract BadBlood to C:\BadBlood
 6. Run Get-ChildItem -Path C:\BadBlood -Recurse | Unblock-File
 7. Run powershell.exe -ExecutionPolicy Bypass -File C:\BadBlood\Invoke-BadBlood.ps1
+8. Run powershell.exe -ExecutionPolicy Bypass -File C:\BadBlood\Invoke-BadBloodGPO.ps1
 8. Once BadBlood is complete, run BadBloodAnswerKey.ps1 to generate the answer key files for what is grossly misconfigured.
 
 
@@ -18,3 +19,9 @@ If you're using QEMU:
 6. Once the machine restarts, you can now use this cmd:
 ```.\qemu-system-x86_64.exe -m 16G -smp 8,sockets=1,cores=8,threads=1 -cpu Haswell-v4,vendor=GenuineIntel,+hypervisor,+kvm_pv_unhalt -machine q35 -accel whpx -drive file="C:\Users\wcdaht-srs\Downloads\ws2022.qcow2",format=qcow2,if=virtio -vga std -net nic,model=e1000 -net user,hostfwd=tcp::3390-:3389```
 7. Now you can rdp into it via localhost:3390
+
+If you want to nuke AD:
+1. Run ```Uninstall-ADDSDomainController -LastDomainControllerInDomain -RemoveApplicationPartitions -IgnoreLastDnsServerForZone -LocalAdministratorPassword $LocalAdminPass -Force```
+2. ```Restart-Computer -Force```
+3. ```Install-ADDSForest -DomainName "sirshanova.com" -Force```
+3. Start from Step 7
