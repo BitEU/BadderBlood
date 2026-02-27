@@ -1,2 +1,3 @@
 /rust/target
 /rust/cargo.lock
+/.claude

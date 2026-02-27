@@ -9,11 +9,14 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame, Terminal,
 };
 use std::{
+    fs,
     io::{self, stdout},
+    path::PathBuf,
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -55,19 +58,12 @@ fn random_char(rng: &mut impl Rng) -> char {
 
 #[derive(Clone)]
 struct Drop {
-    /// Column on screen
     col: u16,
-    /// Current head row (can be negative = not visible yet)
     head: i32,
-    /// Characters in the trail (index 0 = head)
     trail: Vec<char>,
-    /// Maximum trail length
     max_len: usize,
-    /// How many ticks between each downward step
     speed: u8,
-    /// Internal tick counter
     tick: u8,
-    /// Whether characters randomly mutate
     glitch: bool,
 }
 
@@ -75,7 +71,7 @@ impl Drop {
     fn new(col: u16, rows: u16, rng: &mut impl Rng) -> Self {
         let max_len = rng.gen_range(8..=rows as usize);
         let speed = rng.gen_range(1..=4);
-        let head = -(rng.gen_range(0..rows as i32 + 10)); // stagger start
+        let head = -(rng.gen_range(0..rows as i32 + 10));
         Self {
             col,
             head,
@@ -102,16 +98,13 @@ impl Drop {
         }
         self.tick = 0;
 
-        // Advance head
         self.head += 1;
 
-        // Push a new random character at the front of the trail
         self.trail.insert(0, random_char(rng));
         if self.trail.len() > self.max_len {
             self.trail.pop();
         }
 
-        // Randomly mutate middle characters for that digital "glitch" feel
         if self.glitch && self.trail.len() > 2 {
             let idx = rng.gen_range(1..self.trail.len());
             if rng.gen_bool(0.3) {
@@ -119,12 +112,171 @@ impl Drop {
             }
         }
 
-        // If the entire trail has scrolled off the bottom, recycle
         let tail_row = self.head - self.trail.len() as i32;
         if tail_row > rows as i32 {
             self.reset(rows, rng);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Payload menu – discovers .ps1 scripts from payload/ next to the exe
+// ---------------------------------------------------------------------------
+
+struct PayloadEntry {
+    name: String,
+    path: PathBuf,
+}
+
+struct PayloadCategory {
+    name: String,
+    entries: Vec<PayloadEntry>,
+    expanded: bool,
+}
+
+#[derive(Clone)]
+enum MenuIndex {
+    Category(usize),
+    Entry(usize, usize),
+}
+
+struct Menu {
+    categories: Vec<PayloadCategory>,
+    cursor: MenuIndex,
+    scroll_offset: usize,
+}
+
+impl Menu {
+    fn load() -> Self {
+        let payload_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("payload")))
+            .unwrap_or_else(|| PathBuf::from("payload"));
+
+        let mut categories = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(&payload_dir) {
+            let mut dirs: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            dirs.sort();
+
+            for dir in dirs {
+                let dir_name = dir
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+
+                let mut ps1_entries = Vec::new();
+                if let Ok(files) = fs::read_dir(&dir) {
+                    let mut file_paths: Vec<PathBuf> = files
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.path())
+                        .filter(|p| {
+                            p.is_file()
+                                && p.extension()
+                                    .map(|ext| ext.eq_ignore_ascii_case("ps1"))
+                                    .unwrap_or(false)
+                        })
+                        .collect();
+                    file_paths.sort();
+
+                    for fp in file_paths {
+                        let name = fp
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        ps1_entries.push(PayloadEntry {
+                            name,
+                            path: fp,
+                        });
+                    }
+                }
+
+                categories.push(PayloadCategory {
+                    name: dir_name,
+                    entries: ps1_entries,
+                    expanded: true,
+                });
+            }
+        }
+
+        Menu {
+            categories,
+            cursor: MenuIndex::Category(0),
+            scroll_offset: 0,
+        }
+    }
+
+    /// Build a flat list of visible items: (is_category, cat_idx, entry_idx)
+    fn visible_items(&self) -> Vec<(bool, usize, usize)> {
+        let mut items = Vec::new();
+        for (ci, cat) in self.categories.iter().enumerate() {
+            items.push((true, ci, 0));
+            if cat.expanded {
+                for ei in 0..cat.entries.len() {
+                    items.push((false, ci, ei));
+                }
+            }
+        }
+        items
+    }
+
+    fn cursor_flat_index(&self) -> usize {
+        let items = self.visible_items();
+        for (i, &(is_cat, ci, ei)) in items.iter().enumerate() {
+            match &self.cursor {
+                MenuIndex::Category(c) if is_cat && *c == ci => return i,
+                MenuIndex::Entry(c, e) if !is_cat && *c == ci && *e == ei => return i,
+                _ => {}
+            }
+        }
+        0
+    }
+
+    fn move_up(&mut self) {
+        let items = self.visible_items();
+        if items.is_empty() {
+            return;
+        }
+        let idx = self.cursor_flat_index();
+        if idx > 0 {
+            let (is_cat, ci, ei) = items[idx - 1];
+            self.cursor = if is_cat {
+                MenuIndex::Category(ci)
+            } else {
+                MenuIndex::Entry(ci, ei)
+            };
+        }
+    }
+
+    fn move_down(&mut self) {
+        let items = self.visible_items();
+        if items.is_empty() {
+            return;
+        }
+        let idx = self.cursor_flat_index();
+        if idx + 1 < items.len() {
+            let (is_cat, ci, ei) = items[idx + 1];
+            self.cursor = if is_cat {
+                MenuIndex::Category(ci)
+            } else {
+                MenuIndex::Entry(ci, ei)
+            };
+        }
+    }
+
+}
+
+fn launch_ps1(path: &PathBuf) {
+    let _ = Command::new("powershell.exe")
+        .args(["-ExecutionPolicy", "Bypass", "-File"])
+        .arg(path)
+        .spawn();
 }
 
 // ---------------------------------------------------------------------------
@@ -134,12 +286,14 @@ impl Drop {
 struct App {
     drops: Vec<Drop>,
     frame_count: u64,
+    menu_open: bool,
+    menu: Menu,
+    launch_message: Option<(String, Instant)>,
 }
 
 impl App {
     fn new(cols: u16, rows: u16) -> Self {
         let mut rng = rand::thread_rng();
-        // One stream per column, plus some extra overlapping ones for density
         let base = cols as usize;
         let extra = (cols as usize) / 3;
         let mut drops = Vec::with_capacity(base + extra);
@@ -153,6 +307,9 @@ impl App {
         Self {
             drops,
             frame_count: 0,
+            menu_open: false,
+            menu: Menu::load(),
+            launch_message: None,
         }
     }
 
@@ -181,7 +338,6 @@ fn render(frame: &mut Frame, app: &App) {
         rows as usize
     ];
 
-    // Pulsing brightness accent based on frame count
     let pulse = ((app.frame_count as f64 * 0.05).sin() * 30.0) as u8;
 
     for drop in &app.drops {
@@ -197,7 +353,6 @@ fn render(frame: &mut Frame, app: &App) {
             }
 
             let style = if i == 0 {
-                // ── HEAD: brilliant white / bright green flash ──
                 Style::default()
                     .fg(Color::Rgb(
                         200u8.saturating_add(pulse / 2),
@@ -206,15 +361,13 @@ fn render(frame: &mut Frame, app: &App) {
                     ))
                     .add_modifier(Modifier::BOLD)
             } else if i <= 2 {
-                // ── NEAR-HEAD: vivid green ──
                 Style::default().fg(Color::Rgb(
                     30,
                     220u8.saturating_sub(i as u8 * 20),
                     30,
                 ))
             } else {
-                // ── BODY → TAIL: fade from green to dark green ──
-                let frac = i as f64 / drop.max_len as f64; // 0.0 → 1.0
+                let frac = i as f64 / drop.max_len as f64;
                 let g = (180.0 * (1.0 - frac * 0.85)) as u8;
                 let r_c = (15.0 * (1.0 - frac)) as u8;
                 Style::default().fg(Color::Rgb(r_c, g, r_c))
@@ -224,7 +377,6 @@ fn render(frame: &mut Frame, app: &App) {
         }
     }
 
-    // Flatten the 2D grid into Lines of Spans (one Line per row).
     let lines: Vec<Line> = grid
         .into_iter()
         .map(|row| {
@@ -239,8 +391,15 @@ fn render(frame: &mut Frame, app: &App) {
     let paragraph = Paragraph::new(lines).block(Block::default().borders(Borders::NONE));
     frame.render_widget(paragraph, area);
 
-    // Overlay a small status bar in the bottom-right corner
-    let status = format!(" MATRIX // frame {} // q to quit ", app.frame_count);
+    // Status bar
+    let status = if app.menu_open {
+        format!(" BADDERBLOOD // frame {} ", app.frame_count)
+    } else {
+        format!(
+            " BADDERBLOOD // frame {} // Tab for menu // q to quit ",
+            app.frame_count
+        )
+    };
     let sw = status.len() as u16;
     if cols > sw + 2 && rows > 1 {
         let status_area = Rect::new(cols - sw - 1, rows - 1, sw, 1);
@@ -252,6 +411,143 @@ fn render(frame: &mut Frame, app: &App) {
         )));
         frame.render_widget(status_widget, status_area);
     }
+
+    // Transient launch message
+    if let Some((ref msg, when)) = app.launch_message {
+        if when.elapsed() < Duration::from_secs(3) {
+            let mw = msg.len() as u16 + 2;
+            if cols > mw + 2 && rows > 2 {
+                let msg_area = Rect::new(cols - mw - 1, rows - 2, mw, 1);
+                let msg_widget = Paragraph::new(Line::from(Span::styled(
+                    format!(" {} ", msg),
+                    Style::default()
+                        .fg(Color::Rgb(0, 200, 0))
+                        .bg(Color::Black)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                frame.render_widget(msg_widget, msg_area);
+            }
+        }
+    }
+
+    // Menu overlay
+    if app.menu_open {
+        render_menu(frame, &app.menu, area);
+    }
+}
+
+fn render_menu(frame: &mut Frame, menu: &Menu, area: Rect) {
+    let menu_width = 64u16.min(area.width.saturating_sub(4));
+    let menu_height = 24u16.min(area.height.saturating_sub(4));
+    let x = (area.width.saturating_sub(menu_width)) / 2;
+    let y = (area.height.saturating_sub(menu_height)) / 2;
+    let menu_area = Rect::new(x, y, menu_width, menu_height);
+
+    // Clear the area behind the menu
+    frame.render_widget(Clear, menu_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Rgb(0, 180, 0)))
+        .title(" BadderBlood // Payload Launcher ")
+        .title_style(
+            Style::default()
+                .fg(Color::Rgb(200, 255, 200))
+                .add_modifier(Modifier::BOLD),
+        );
+
+    let inner = block.inner(menu_area);
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Instructions
+    lines.push(Line::from(Span::styled(
+        " [\u{2191}\u{2193}] Navigate  [Enter] Select  [\u{2190}\u{2192}] Collapse/Expand  [Esc] Close",
+        Style::default().fg(Color::Rgb(0, 100, 0)),
+    )));
+    lines.push(Line::from(""));
+
+    if menu.categories.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " No payloads found in payload/ directory",
+            Style::default().fg(Color::Rgb(180, 0, 0)),
+        )));
+    } else {
+        for (ci, cat) in menu.categories.iter().enumerate() {
+            let is_cat_selected = matches!(&menu.cursor, MenuIndex::Category(c) if *c == ci);
+            let prefix = if cat.expanded { "\u{25BC} " } else { "\u{25B6} " };
+            let cat_style = if is_cat_selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Rgb(0, 180, 0))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(Color::Rgb(0, 220, 0))
+                    .add_modifier(Modifier::BOLD)
+            };
+            lines.push(Line::from(Span::styled(
+                format!(" {}{}", prefix, cat.name),
+                cat_style,
+            )));
+
+            if cat.expanded {
+                for (ei, entry) in cat.entries.iter().enumerate() {
+                    let is_entry_selected =
+                        matches!(&menu.cursor, MenuIndex::Entry(c, e) if *c == ci && *e == ei);
+                    let entry_style = if is_entry_selected {
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Rgb(0, 140, 0))
+                    } else {
+                        Style::default().fg(Color::Rgb(0, 160, 0))
+                    };
+                    lines.push(Line::from(Span::styled(
+                        format!("     {} ", entry.name),
+                        entry_style,
+                    )));
+                }
+            }
+        }
+    }
+
+    // Scroll if content exceeds visible area
+    let visible_height = inner.height as usize;
+    if lines.len() > visible_height {
+        let cursor_line = {
+            let mut line = 2; // skip instruction + blank
+            for (ci, cat) in menu.categories.iter().enumerate() {
+                match &menu.cursor {
+                    MenuIndex::Category(c) if *c == ci => break,
+                    MenuIndex::Entry(c, e) if *c == ci => {
+                        line += 1 + *e;
+                        break;
+                    }
+                    _ => {}
+                }
+                line += 1; // category header
+                if cat.expanded {
+                    line += cat.entries.len();
+                }
+            }
+            line
+        };
+        // Keep cursor in view with 2 lines of padding
+        let scroll = menu.scroll_offset;
+        let scroll = if cursor_line < scroll + 2 {
+            cursor_line.saturating_sub(2)
+        } else if cursor_line >= scroll + visible_height - 2 {
+            cursor_line.saturating_sub(visible_height - 3)
+        } else {
+            scroll
+        };
+        let end = (scroll + visible_height).min(lines.len());
+        lines = lines[scroll..end].to_vec();
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(paragraph, menu_area);
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +555,6 @@ fn render(frame: &mut Frame, app: &App) {
 // ---------------------------------------------------------------------------
 
 fn main() -> io::Result<()> {
-    // Terminal setup
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen)?;
@@ -278,16 +573,71 @@ fn main() -> io::Result<()> {
 
         // Handle input (non-blocking)
         if event::poll(Duration::from_millis(0))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => break,
-                        _ => {}
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    if app.menu_open {
+                        match key.code {
+                            KeyCode::Esc => app.menu_open = false,
+                            KeyCode::Up => app.menu.move_up(),
+                            KeyCode::Down => app.menu.move_down(),
+                            KeyCode::Left => {
+                                match &app.menu.cursor {
+                                    MenuIndex::Entry(ci, _) => {
+                                        let ci = *ci;
+                                        app.menu.categories[ci].expanded = false;
+                                        app.menu.cursor = MenuIndex::Category(ci);
+                                    }
+                                    MenuIndex::Category(ci) => {
+                                        app.menu.categories[*ci].expanded = false;
+                                    }
+                                }
+                            }
+                            KeyCode::Right => {
+                                if let MenuIndex::Category(ci) = &app.menu.cursor {
+                                    app.menu.categories[*ci].expanded = true;
+                                }
+                            }
+                            KeyCode::Enter => match &app.menu.cursor {
+                                MenuIndex::Category(ci) => {
+                                    let ci = *ci;
+                                    app.menu.categories[ci].expanded =
+                                        !app.menu.categories[ci].expanded;
+                                }
+                                MenuIndex::Entry(ci, ei) => {
+                                    let path = app.menu.categories[*ci].entries[*ei]
+                                        .path
+                                        .clone();
+                                    let display = app.menu.categories[*ci].entries[*ei]
+                                        .name
+                                        .clone();
+                                    launch_ps1(&path);
+                                    app.launch_message = Some((
+                                        format!("Launched: {}", display),
+                                        Instant::now(),
+                                    ));
+                                    app.menu_open = false;
+                                }
+                            },
+                            _ => {}
+                        }
+                    } else {
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => break,
+                            KeyCode::Tab | KeyCode::Enter => app.menu_open = true,
+                            _ => {}
+                        }
                     }
                 }
-            }
-            if let Event::Resize(w, h) = event::read().unwrap_or(Event::FocusLost) {
-                app = App::new(w, h);
+                Event::Resize(w, h) => {
+                    let menu = std::mem::replace(&mut app.menu, Menu::load());
+                    let msg = app.launch_message.take();
+                    let was_open = app.menu_open;
+                    app = App::new(w, h);
+                    app.menu = menu;
+                    app.launch_message = msg;
+                    app.menu_open = was_open;
+                }
+                _ => {}
             }
         }
 
@@ -295,7 +645,6 @@ fn main() -> io::Result<()> {
 
         terminal.draw(|f| render(f, &app))?;
 
-        // Sleep to hit target FPS
         let elapsed = start.elapsed();
         if elapsed < frame_dur {
             std::thread::sleep(frame_dur - elapsed);
