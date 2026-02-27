@@ -1,6 +1,5 @@
 #![cfg(windows)]
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::{
     fs,
     io::{self, Write},
@@ -11,9 +10,11 @@ use std::{
 use windows_sys::Win32::{
     Foundation::HANDLE,
     System::Console::{
-        GetConsoleScreenBufferInfo, SetConsoleActiveScreenBuffer, SetConsoleCursorInfo,
+        GetConsoleMode, GetConsoleScreenBufferInfo, GetNumberOfConsoleInputEvents, GetStdHandle,
+        ReadConsoleInputW, SetConsoleActiveScreenBuffer, SetConsoleCursorInfo, SetConsoleMode,
         WriteConsoleOutputW, CHAR_INFO, CONSOLE_CURSOR_INFO, CONSOLE_SCREEN_BUFFER_INFO, COORD,
-        SMALL_RECT,
+        ENABLE_EXTENDED_FLAGS, ENABLE_WINDOW_INPUT, INPUT_RECORD, KEY_EVENT, SMALL_RECT,
+        STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, WINDOW_BUFFER_SIZE_EVENT,
     },
 };
 
@@ -31,6 +32,21 @@ extern "system" {
     ) -> HANDLE;
 }
 
+#[link(name = "winmm")]
+extern "system" {
+    fn timeBeginPeriod(uPeriod: u32) -> u32;
+    fn timeEndPeriod(uPeriod: u32) -> u32;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: safely transmute u16 -> CHAR_INFO_0 (union type)
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn char_union(ch: u16) -> windows_sys::Win32::System::Console::CHAR_INFO_0 {
+    unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(ch) }
+}
+
 // ---------------------------------------------------------------------------
 // Fast xoshiro256++ PRNG – vastly faster than rand::thread_rng()
 // ---------------------------------------------------------------------------
@@ -41,7 +57,6 @@ struct Rng {
 
 impl Rng {
     fn new() -> Self {
-        // Seed from time + address entropy
         let t = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -52,7 +67,6 @@ impl Rng {
             t.wrapping_mul(0x94D049BB133111EB) ^ 0x853C49E6748FEA9B,
             t.rotate_left(17) ^ 0x2545F4914F6CDD1D,
         ];
-        // A few warm-up rounds
         for _ in 0..8 {
             let t = s[1] << 17;
             s[2] ^= s[0];
@@ -80,7 +94,6 @@ impl Rng {
         result
     }
 
-    /// Uniform u32 in [0, n) using fast reject-free Lemire reduction.
     #[inline(always)]
     fn gen_u32(&mut self, n: u32) -> u32 {
         let r = self.next_u64() as u32;
@@ -139,21 +152,17 @@ fn random_char_u16(rng: &mut Rng) -> u16 {
 }
 
 // ---------------------------------------------------------------------------
-// Win32 console colour attributes – pre-computed palette
-//
-// conhost uses 4-bit color attributes (16 fg + 16 bg).
-// We map our green trail to intensity levels using:
-//   FOREGROUND_GREEN (0x02) and FOREGROUND_INTENSITY (0x08).
+// Win32 console colour attributes
 // ---------------------------------------------------------------------------
 
 const ATTR_BLACK: u16 = 0x0000;
-const ATTR_HEAD: u16 = 0x0F; // Bright white (all fg bits)
-const ATTR_NEAR1: u16 = 0x0A; // Bright green (GREEN | INTENSITY)
-const ATTR_NEAR2: u16 = 0x0A; // Bright green
-const ATTR_TRAIL_BRIGHT: u16 = 0x0A; // Bright green
-const ATTR_TRAIL_DIM: u16 = 0x02; // Dark green
-const ATTR_STATUS: u16 = 0x02; // Dark green
-const ATTR_MSG: u16 = 0x0A; // Bright green
+const ATTR_HEAD: u16 = 0x0F;
+const ATTR_NEAR1: u16 = 0x0A;
+const ATTR_NEAR2: u16 = 0x0A;
+const ATTR_TRAIL_BRIGHT: u16 = 0x0A;
+const ATTR_TRAIL_DIM: u16 = 0x02;
+const ATTR_STATUS: u16 = 0x02;
+const ATTR_MSG: u16 = 0x0A;
 
 const TRAIL_PALETTE_SIZE: usize = 16;
 
@@ -165,7 +174,6 @@ struct AttrPalette {
 
 fn build_attr_palette() -> AttrPalette {
     let mut trail = [0u16; TRAIL_PALETTE_SIZE];
-    // First 60% of trail = bright green, rest = dark green
     let bright_end = TRAIL_PALETTE_SIZE * 6 / 10;
     for i in 0..TRAIL_PALETTE_SIZE {
         trail[i] = if i < bright_end {
@@ -190,7 +198,6 @@ const MAX_TRAIL: usize = 128;
 struct Drop {
     col: u16,
     head: i32,
-    /// Ring buffer of trail characters as UTF-16 code units.
     chars: [u16; MAX_TRAIL],
     len: u16,
     write_pos: u16,
@@ -234,7 +241,6 @@ impl Drop {
             return;
         }
         self.tick = 0;
-
         self.head += 1;
 
         let ml = self.max_len;
@@ -244,12 +250,10 @@ impl Drop {
             self.len += 1;
         }
 
-        if self.glitch && self.len > 2 {
-            if rng.gen_bool(3, 10) {
-                let idx = rng.gen_u32(self.len as u32 - 1) + 1;
-                let ring_idx = (self.write_pos + ml - 1 - idx as u16) % ml;
-                self.chars[ring_idx as usize] = random_char_u16(rng);
-            }
+        if self.glitch && self.len > 2 && rng.gen_bool(3, 10) {
+            let idx = rng.gen_u32(self.len as u32 - 1) + 1;
+            let ring_idx = (self.write_pos + ml - 1 - idx as u16) % ml;
+            self.chars[ring_idx as usize] = random_char_u16(rng);
         }
 
         let tail_row = self.head - self.len as i32;
@@ -266,7 +270,7 @@ impl Drop {
 }
 
 // ---------------------------------------------------------------------------
-// Payload menu (kept simple – only shown on overlay, not perf-critical)
+// Payload menu
 // ---------------------------------------------------------------------------
 
 struct PayloadEntry {
@@ -424,7 +428,7 @@ fn launch_ps1(path: &PathBuf) {
 }
 
 // ---------------------------------------------------------------------------
-// Win32 console buffer helpers
+// Win32 console helpers
 // ---------------------------------------------------------------------------
 
 fn get_console_size(handle: HANDLE) -> (u16, u16) {
@@ -435,6 +439,93 @@ fn get_console_size(handle: HANDLE) -> (u16, u16) {
         let h = (info.srWindow.Bottom - info.srWindow.Top + 1) as u16;
         (w, h)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Win32 keyboard input – replaces crossterm entirely
+// ---------------------------------------------------------------------------
+
+/// Virtual key codes we care about
+const VK_RETURN: u16 = 0x0D;
+const VK_ESCAPE: u16 = 0x1B;
+const VK_TAB: u16 = 0x09;
+const VK_LEFT: u16 = 0x25;
+const VK_UP: u16 = 0x26;
+const VK_RIGHT: u16 = 0x27;
+const VK_DOWN: u16 = 0x28;
+
+enum InputAction {
+    None,
+    Quit,
+    Tab,
+    Enter,
+    Escape,
+    Up,
+    Down,
+    Left,
+    Right,
+    Resize(u16, u16),
+}
+
+/// Non-blocking: drain all pending console input events and return the
+/// most recent meaningful action.
+fn poll_input(stdin_handle: HANDLE, screen_handle: HANDLE) -> InputAction {
+    let mut action = InputAction::None;
+
+    loop {
+        let mut count: u32 = 0;
+        unsafe {
+            GetNumberOfConsoleInputEvents(stdin_handle, &mut count);
+        }
+        if count == 0 {
+            break;
+        }
+
+        let mut record: INPUT_RECORD = unsafe { std::mem::zeroed() };
+        let mut read: u32 = 0;
+        unsafe {
+            ReadConsoleInputW(stdin_handle, &mut record, 1, &mut read);
+        }
+        if read == 0 {
+            break;
+        }
+
+        match record.EventType as u32 {
+            KEY_EVENT => {
+                let key = unsafe { record.Event.KeyEvent };
+                // Only process key-down events
+                if key.bKeyDown == 0 {
+                    continue;
+                }
+                let vk = key.wVirtualKeyCode;
+                let ch = unsafe { key.uChar.UnicodeChar };
+
+                match vk {
+                    VK_ESCAPE => action = InputAction::Escape,
+                    VK_RETURN => action = InputAction::Enter,
+                    VK_TAB => action = InputAction::Tab,
+                    VK_UP => action = InputAction::Up,
+                    VK_DOWN => action = InputAction::Down,
+                    VK_LEFT => action = InputAction::Left,
+                    VK_RIGHT => action = InputAction::Right,
+                    _ => {
+                        // Check for 'q' / 'Q' character
+                        if ch == b'q' as u16 || ch == b'Q' as u16 {
+                            action = InputAction::Quit;
+                        }
+                    }
+                }
+            }
+            WINDOW_BUFFER_SIZE_EVENT => {
+                // Terminal was resized – get the new window size
+                let (w, h) = get_console_size(screen_handle);
+                action = InputAction::Resize(w, h);
+            }
+            _ => {}
+        }
+    }
+
+    action
 }
 
 // ---------------------------------------------------------------------------
@@ -490,8 +581,7 @@ impl App {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering – writes directly into a CHAR_INFO buffer, then blits with
-// a single WriteConsoleOutputW call (one syscall for the entire screen).
+// Rendering
 // ---------------------------------------------------------------------------
 
 fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
@@ -499,19 +589,16 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
     let rows = app.rows as usize;
     let total = cols * rows;
 
-    // Clear buffer to black spaces
     let blank = CHAR_INFO {
-        Char: unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(b' ' as u16) },
+        Char: char_union(b' ' as u16),
         Attributes: ATTR_BLACK,
     };
-    // Use a fast fill – the compiler will vectorize this
     for cell in buf[..total].iter_mut() {
         *cell = blank;
     }
 
     let palette = &app.palette;
 
-    // Paint drops
     for drop in &app.drops {
         let c = drop.col as usize;
         if c >= cols || drop.len == 0 {
@@ -547,7 +634,7 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
             };
 
             let cell = &mut buf[r * cols + c];
-            cell.Char = unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(ch) };
+            cell.Char = char_union(ch);
             cell.Attributes = attr;
         }
     }
@@ -567,7 +654,7 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
         let sy = rows - 1;
         for (i, &b) in status.as_bytes().iter().enumerate() {
             let cell = &mut buf[sy * cols + sx + i];
-            cell.Char = unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(b as u16) };
+            cell.Char = char_union(b as u16);
             cell.Attributes = ATTR_STATUS;
         }
     }
@@ -582,7 +669,7 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
                 let my = rows - 2;
                 for (i, &b) in display.as_bytes().iter().enumerate() {
                     let cell = &mut buf[my * cols + mx + i];
-                    cell.Char = unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(b as u16) };
+                    cell.Char = char_union(b as u16);
                     cell.Attributes = ATTR_MSG;
                 }
             }
@@ -601,31 +688,30 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
     let mx = (cols.saturating_sub(menu_width)) / 2;
     let my = (rows.saturating_sub(menu_height)) / 2;
 
-    let border_attr: u16 = 0x0A; // bright green
+    let border_attr: u16 = 0x0A;
     let title_attr: u16 = 0x0A;
-    let instr_attr: u16 = 0x02; // dark green
+    let instr_attr: u16 = 0x02;
     let cat_attr: u16 = 0x0A;
-    let cat_sel_attr: u16 = 0x20; // green bg, black fg
+    let cat_sel_attr: u16 = 0x20;
     let entry_attr: u16 = 0x02;
     let entry_sel_attr: u16 = 0x20;
     let bg_attr: u16 = 0x00;
 
-    // Clear menu area background
+    // Clear menu area
     for r in my..my + menu_height {
         for c in mx..mx + menu_width {
             if r < rows && c < cols {
                 let cell = &mut buf[r * cols + c];
-                cell.Char = unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(b' ' as u16) };
+                cell.Char = char_union(b' ' as u16);
                 cell.Attributes = bg_attr;
             }
         }
     }
 
-    // Draw border
     let draw_char = |buf: &mut [CHAR_INFO], r: usize, c: usize, ch: u16, attr: u16| {
         if r < rows && c < cols {
             let cell = &mut buf[r * cols + c];
-            cell.Char = unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(ch) };
+            cell.Char = char_union(ch);
             cell.Attributes = attr;
         }
     };
@@ -635,12 +721,10 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
         draw_char(buf, my, c, b'-' as u16, border_attr);
         draw_char(buf, my + menu_height - 1, c, b'-' as u16, border_attr);
     }
-    // Left/right borders
     for r in my..my + menu_height {
         draw_char(buf, r, mx, b'|' as u16, border_attr);
         draw_char(buf, r, mx + menu_width - 1, b'|' as u16, border_attr);
     }
-    // Corners
     draw_char(buf, my, mx, b'+' as u16, border_attr);
     draw_char(buf, my, mx + menu_width - 1, b'+' as u16, border_attr);
     draw_char(buf, my + menu_height - 1, mx, b'+' as u16, border_attr);
@@ -655,13 +739,11 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
         }
     }
 
-    // Inner area
     let inner_x = mx + 1;
     let inner_y = my + 1;
     let inner_w = menu_width - 2;
     let inner_h = menu_height - 2;
 
-    // Build text lines
     let mut lines: Vec<(String, u16)> = Vec::new();
 
     let instructions = " [Up/Dn] Navigate  [Enter] Select  [L/R] Collapse/Expand  [Esc] Close";
@@ -687,7 +769,6 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
         }
     }
 
-    // Scroll
     let visible_height = inner_h;
     let mut scroll = menu.scroll_offset;
     if lines.len() > visible_height {
@@ -718,7 +799,6 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
         scroll = 0;
     }
 
-    // Render lines into buffer
     for (li, (text, attr)) in lines.iter().enumerate().skip(scroll).take(visible_height) {
         let row = inner_y + (li - scroll);
         if row >= rows {
@@ -741,10 +821,12 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
 // ---------------------------------------------------------------------------
 
 struct FpsTracker {
-    frame_count: u64,
-    last_log_time: Instant,
-    last_frame_time: Instant,
-    current_fps: f64,
+    /// Frames rendered in the current 10-second window.
+    window_frames: u64,
+    /// Total frames rendered since program start.
+    total_frames: u64,
+    /// Start of the current 10-second measurement window.
+    window_start: Instant,
     fps_file_path: PathBuf,
 }
 
@@ -756,42 +838,35 @@ impl FpsTracker {
             .unwrap_or_else(|| PathBuf::from("fps.txt"));
 
         Self {
-            frame_count: 0,
-            last_log_time: Instant::now(),
-            last_frame_time: Instant::now(),
-            current_fps: 0.0,
+            window_frames: 0,
+            total_frames: 0,
+            window_start: Instant::now(),
             fps_file_path,
         }
     }
 
     fn tick(&mut self) {
-        self.frame_count += 1;
-        let now = Instant::now();
-        let dt = now.duration_since(self.last_frame_time).as_secs_f64();
-        if dt > 0.0 {
-            // Exponential moving average for smooth FPS reading
-            let instant_fps = 1.0 / dt;
-            self.current_fps = self.current_fps * 0.9 + instant_fps * 0.1;
-        }
-        self.last_frame_time = now;
+        self.window_frames += 1;
+        self.total_frames += 1;
 
-        // Log to file every 10 seconds
-        if now.duration_since(self.last_log_time) >= Duration::from_secs(10) {
-            self.log_fps();
-            self.last_log_time = now;
+        let elapsed = self.window_start.elapsed();
+        if elapsed >= Duration::from_secs(10) {
+            let fps = self.window_frames as f64 / elapsed.as_secs_f64();
+            self.log_fps(fps);
+            self.window_frames = 0;
+            self.window_start = Instant::now();
         }
     }
 
-    fn log_fps(&self) {
+    fn log_fps(&self, fps: f64) {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
         let line = format!(
-            "timestamp={} fps={:.1} frames={}\n",
-            timestamp, self.current_fps, self.frame_count
+            "timestamp={} fps={:.1} total_frames={}\n",
+            timestamp, fps, self.total_frames
         );
-        // Append to file
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -803,18 +878,30 @@ impl FpsTracker {
 }
 
 // ---------------------------------------------------------------------------
-// Main loop – uses Win32 double-buffered console screen buffer
+// Main loop
 // ---------------------------------------------------------------------------
 
 fn main() -> io::Result<()> {
-    // Enable crossterm raw mode for keyboard input
-    crossterm::terminal::enable_raw_mode()?;
+    // Set 1ms timer resolution so sleep() is accurate (default is ~15ms!)
+    unsafe { timeBeginPeriod(1) };
+
+    // Get stdin handle for reading input
+    let stdin_handle: HANDLE = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+
+    // Save original console mode and set our mode
+    let mut original_mode: u32 = 0;
+    unsafe {
+        GetConsoleMode(stdin_handle, &mut original_mode);
+        // ENABLE_EXTENDED_FLAGS clears ENABLE_QUICK_EDIT_MODE (which steals mouse clicks)
+        // ENABLE_WINDOW_INPUT lets us receive resize events
+        SetConsoleMode(stdin_handle, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT);
+    }
 
     // Create a new console screen buffer for double-buffering
     let screen_buf: HANDLE = unsafe {
         CreateConsoleScreenBuffer(
             GENERIC_READ | GENERIC_WRITE,
-            0, // no sharing
+            0,
             std::ptr::null(),
             CONSOLE_TEXTMODE_BUFFER,
             std::ptr::null(),
@@ -822,7 +909,7 @@ fn main() -> io::Result<()> {
     };
 
     if screen_buf == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
-        crossterm::terminal::disable_raw_mode()?;
+        unsafe { SetConsoleMode(stdin_handle, original_mode) };
         return Err(io::Error::last_os_error());
     }
 
@@ -835,7 +922,7 @@ fn main() -> io::Result<()> {
     unsafe {
         let cursor_info = CONSOLE_CURSOR_INFO {
             dwSize: 1,
-            bVisible: 0, // FALSE
+            bVisible: 0,
         };
         SetConsoleCursorInfo(screen_buf, &cursor_info);
     }
@@ -846,7 +933,7 @@ fn main() -> io::Result<()> {
     let total_cells = cols as usize * rows as usize;
     let mut char_buf: Vec<CHAR_INFO> = vec![
         CHAR_INFO {
-            Char: unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(b' ' as u16) },
+            Char: char_union(b' ' as u16),
             Attributes: 0,
         };
         total_cells
@@ -857,99 +944,84 @@ fn main() -> io::Result<()> {
     let target_fps: u64 = 30;
     let frame_dur = Duration::from_micros(1_000_000 / target_fps);
 
-    // Track resize
-    let mut last_cols = cols;
-    let mut last_rows = rows;
-
     loop {
         let start = Instant::now();
 
-        // Handle input (non-blocking)
-        if event::poll(Duration::from_millis(0))? {
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if app.menu_open {
-                        match key.code {
-                            KeyCode::Esc => app.menu_open = false,
-                            KeyCode::Up => app.menu.move_up(),
-                            KeyCode::Down => app.menu.move_down(),
-                            KeyCode::Left => {
-                                match &app.menu.cursor {
-                                    MenuIndex::Entry(ci, _) => {
-                                        let ci = *ci;
-                                        app.menu.categories[ci].expanded = false;
-                                        app.menu.cursor = MenuIndex::Category(ci);
-                                    }
-                                    MenuIndex::Category(ci) => {
-                                        app.menu.categories[*ci].expanded = false;
-                                    }
-                                }
-                            }
-                            KeyCode::Right => {
-                                if let MenuIndex::Category(ci) = &app.menu.cursor {
-                                    app.menu.categories[*ci].expanded = true;
-                                }
-                            }
-                            KeyCode::Enter => match &app.menu.cursor {
-                                MenuIndex::Category(ci) => {
-                                    let ci = *ci;
-                                    app.menu.categories[ci].expanded =
-                                        !app.menu.categories[ci].expanded;
-                                }
-                                MenuIndex::Entry(ci, ei) => {
-                                    let path =
-                                        app.menu.categories[*ci].entries[*ei].path.clone();
-                                    let display =
-                                        app.menu.categories[*ci].entries[*ei].name.clone();
-                                    launch_ps1(&path);
-                                    app.launch_message = Some((
-                                        format!("Launched: {}", display),
-                                        Instant::now(),
-                                    ));
-                                    app.menu_open = false;
-                                }
-                            },
-                            _ => {}
-                        }
-                    } else {
-                        match key.code {
-                            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => break,
-                            KeyCode::Tab | KeyCode::Enter => app.menu_open = true,
-                            _ => {}
-                        }
-                    }
+        // Handle input via Win32 API (non-blocking)
+        match poll_input(stdin_handle, screen_buf) {
+            InputAction::Quit => {
+                if !app.menu_open {
+                    break;
                 }
-                Event::Resize(_, _) => {
-                    // Check actual console size
-                    let (w, h) = get_console_size(screen_buf);
-                    if w != last_cols || h != last_rows {
-                        last_cols = w;
-                        last_rows = h;
-                        let menu = std::mem::replace(&mut app.menu, Menu::load());
-                        let msg = app.launch_message.take();
-                        let was_open = app.menu_open;
-                        app = App::new(w, h);
-                        app.menu = menu;
-                        app.launch_message = msg;
-                        app.menu_open = was_open;
-
-                        let new_total = w as usize * h as usize;
-                        char_buf.resize(
-                            new_total,
-                            CHAR_INFO {
-                                Char: unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(b' ' as u16) },
-                                Attributes: 0,
-                            },
-                        );
-                    }
-                }
-                _ => {}
             }
+            InputAction::Escape => {
+                if app.menu_open {
+                    app.menu_open = false;
+                } else {
+                    break;
+                }
+            }
+            InputAction::Tab | InputAction::Enter if !app.menu_open => {
+                app.menu_open = true;
+            }
+            InputAction::Enter if app.menu_open => {
+                match &app.menu.cursor {
+                    MenuIndex::Category(ci) => {
+                        let ci = *ci;
+                        app.menu.categories[ci].expanded = !app.menu.categories[ci].expanded;
+                    }
+                    MenuIndex::Entry(ci, ei) => {
+                        let path = app.menu.categories[*ci].entries[*ei].path.clone();
+                        let display = app.menu.categories[*ci].entries[*ei].name.clone();
+                        launch_ps1(&path);
+                        app.launch_message =
+                            Some((format!("Launched: {}", display), Instant::now()));
+                        app.menu_open = false;
+                    }
+                }
+            }
+            InputAction::Up if app.menu_open => app.menu.move_up(),
+            InputAction::Down if app.menu_open => app.menu.move_down(),
+            InputAction::Left if app.menu_open => {
+                match &app.menu.cursor {
+                    MenuIndex::Entry(ci, _) => {
+                        let ci = *ci;
+                        app.menu.categories[ci].expanded = false;
+                        app.menu.cursor = MenuIndex::Category(ci);
+                    }
+                    MenuIndex::Category(ci) => {
+                        app.menu.categories[*ci].expanded = false;
+                    }
+                }
+            }
+            InputAction::Right if app.menu_open => {
+                if let MenuIndex::Category(ci) = &app.menu.cursor {
+                    app.menu.categories[*ci].expanded = true;
+                }
+            }
+            InputAction::Resize(w, h) => {
+                let menu = std::mem::replace(&mut app.menu, Menu::load());
+                let msg = app.launch_message.take();
+                let was_open = app.menu_open;
+                app = App::new(w, h);
+                app.menu = menu;
+                app.launch_message = msg;
+                app.menu_open = was_open;
+
+                let new_total = w as usize * h as usize;
+                char_buf.resize(
+                    new_total,
+                    CHAR_INFO {
+                        Char: char_union(b' ' as u16),
+                        Attributes: 0,
+                    },
+                );
+            }
+            _ => {}
         }
 
         app.update();
 
-        // Render into our CHAR_INFO buffer
         render_to_buffer(&mut char_buf, &app);
 
         // Blit entire screen in one syscall
@@ -983,19 +1055,15 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // Cleanup – restore original screen buffer
-    // The original stdout handle is the default active buffer;
-    // closing our custom buffer restores it.
+    // Cleanup
     unsafe {
-        // Restore original console
         use windows_sys::Win32::Foundation::CloseHandle;
-        let stdout_handle = windows_sys::Win32::System::Console::GetStdHandle(
-            windows_sys::Win32::System::Console::STD_OUTPUT_HANDLE,
-        );
+        let stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
         SetConsoleActiveScreenBuffer(stdout_handle);
         CloseHandle(screen_buf);
+        SetConsoleMode(stdin_handle, original_mode);
+        timeEndPeriod(1);
     }
-    crossterm::terminal::disable_raw_mode()?;
 
     Ok(())
 }
