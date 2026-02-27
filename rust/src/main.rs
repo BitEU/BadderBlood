@@ -105,36 +105,14 @@ impl Rng {
 }
 
 // ---------------------------------------------------------------------------
-// Character sets as pre-encoded UTF-16 values
+// Character set – ASCII chars that evoke the Matrix aesthetic
 // ---------------------------------------------------------------------------
 
-const KATAKANA_U16: &[u16] = &[
-    0xFF66, 0xFF67, 0xFF68, 0xFF69, 0xFF6A, 0xFF6B, 0xFF6C, 0xFF6D, 0xFF6E, 0xFF6F,
-    0xFF70, 0xFF71, 0xFF72, 0xFF73, 0xFF74, 0xFF75, 0xFF76, 0xFF77, 0xFF78, 0xFF79,
-    0xFF7A, 0xFF7B, 0xFF7C, 0xFF7D, 0xFF7E, 0xFF7F, 0xFF80, 0xFF81, 0xFF82, 0xFF83,
-    0xFF84, 0xFF85, 0xFF86, 0xFF87, 0xFF88, 0xFF89, 0xFF8A, 0xFF8B, 0xFF8C, 0xFF8D,
-    0xFF8E, 0xFF8F, 0xFF90, 0xFF91, 0xFF92, 0xFF93, 0xFF94, 0xFF95, 0xFF96, 0xFF97,
-    0xFF98, 0xFF99, 0xFF9A, 0xFF9B, 0xFF9C, 0xFF9D,
-];
-
-const SYMBOLS_U16: &[u16] = &[
-    b'0' as u16, b'1' as u16, b'2' as u16, b'3' as u16, b'4' as u16,
-    b'5' as u16, b'6' as u16, b'7' as u16, b'8' as u16, b'9' as u16,
-    b'A' as u16, b'B' as u16, b'C' as u16, b'D' as u16, b'E' as u16,
-    b'F' as u16, b'G' as u16, b'H' as u16, b'Z' as u16, b'X' as u16,
-    b'+' as u16, b'-' as u16, b'*' as u16, b'=' as u16, b'<' as u16,
-    b'>' as u16, b':' as u16, b';' as u16, b'|' as u16, b'~' as u16,
-    b'!' as u16, b'@' as u16, b'#' as u16, b'$' as u16, b'%' as u16,
-    b'^' as u16, b'&' as u16,
-];
+const MATRIX_CHARS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-*=<>:;|~!@#$%^&(){}[]/?\\";
 
 #[inline(always)]
 fn random_char_u16(rng: &mut Rng) -> u16 {
-    if rng.gen_bool(3, 5) {
-        KATAKANA_U16[rng.gen_u32(KATAKANA_U16.len() as u32) as usize]
-    } else {
-        SYMBOLS_U16[rng.gen_u32(SYMBOLS_U16.len() as u32) as usize]
-    }
+    MATRIX_CHARS[rng.gen_u32(MATRIX_CHARS.len() as u32) as usize] as u16
 }
 
 // ---------------------------------------------------------------------------
@@ -175,8 +153,7 @@ fn build_attr_palette() -> AttrPalette {
     }
 }
 
-/// Map a Win32 4-bit console attribute to an ANSI SGR sequence.
-/// We only use a few distinct values so this is a simple match.
+/// Map a Win32 4-bit console attribute to an ANSI SGR byte sequence.
 fn attr_to_sgr(attr: u16) -> &'static [u8] {
     match attr {
         0x0F => b"\x1b[97m",         // bright white foreground
@@ -853,24 +830,21 @@ fn render_menu_to_buffer(buf: &mut [Cell], menu: &Menu, cols: usize, rows: usize
 // VT-based diff renderer: only emit escape sequences for changed cells
 // ---------------------------------------------------------------------------
 
-/// UTF-8 scratch buffer for building VT output.
-/// Pre-allocated to avoid per-frame allocation.
+/// VT output buffer. Uses WriteFile for maximum throughput.
+/// All characters are ASCII so no multi-byte encoding needed.
 struct VtRenderer {
     out: Vec<u8>,
-    /// Small buffer for encoding a single UTF-16 code unit to UTF-8
-    utf8_buf: [u8; 4],
 }
 
 impl VtRenderer {
     fn new(capacity: usize) -> Self {
         Self {
             out: Vec::with_capacity(capacity),
-            utf8_buf: [0u8; 4],
         }
     }
 
     /// Compare `cur` against `prev`, emit VT sequences for differences,
-    /// then copy cur -> prev. Writes the output to `handle` via WriteFile.
+    /// then copy cur -> prev. Writes output via WriteFile.
     fn render_diff(
         &mut self,
         cur: &[Cell],
@@ -882,7 +856,7 @@ impl VtRenderer {
         self.out.clear();
 
         let total = cols * rows;
-        let mut last_attr: u16 = 0xFFFF; // sentinel: no SGR set yet
+        let mut last_attr: u16 = 0xFFFF;
         let mut cursor_row: usize = usize::MAX;
         let mut cursor_col: usize = usize::MAX;
 
@@ -897,34 +871,22 @@ impl VtRenderer {
             let r = idx / cols;
             let col = idx % cols;
 
-            // Emit cursor-move if not already at the right position
             if r != cursor_row || col != cursor_col {
-                // VT uses 1-based coordinates
                 write_cursor_pos(&mut self.out, r + 1, col + 1);
             }
 
-            // Emit SGR if attribute changed
             if c.attr != last_attr {
                 self.out.extend_from_slice(attr_to_sgr(c.attr));
                 last_attr = c.attr;
             }
 
-            // Emit the character as UTF-8
-            let ch = c.ch;
-            if ch < 0x80 {
-                self.out.push(ch as u8);
-            } else {
-                let c = char::from_u32(ch as u32).unwrap_or(' ');
-                let s = c.encode_utf8(&mut self.utf8_buf);
-                self.out.extend_from_slice(s.as_bytes());
-            }
+            self.out.push(c.ch as u8);
 
             cursor_row = r;
-            cursor_col = col + 1; // cursor advances by 1 after writing a char
+            cursor_col = col + 1;
         }
 
         if !self.out.is_empty() {
-            // Reset attributes at end
             self.out.extend_from_slice(b"\x1b[0m");
 
             let mut written: u32 = 0;
@@ -949,7 +911,6 @@ impl VtRenderer {
         rows: usize,
         handle: HANDLE,
     ) {
-        // Invalidate prev so every cell is "changed"
         let sentinel = Cell { ch: 0xFFFF, attr: 0xFFFF };
         for p in prev.iter_mut() {
             *p = sentinel;
@@ -958,8 +919,6 @@ impl VtRenderer {
     }
 }
 
-/// Write a VT cursor-position sequence into the buffer.
-/// Format: \x1b[{row};{col}H  (1-based)
 #[inline]
 fn write_cursor_pos(buf: &mut Vec<u8>, row: usize, col: usize) {
     buf.extend_from_slice(b"\x1b[");
@@ -969,7 +928,6 @@ fn write_cursor_pos(buf: &mut Vec<u8>, row: usize, col: usize) {
     buf.push(b'H');
 }
 
-/// Fast integer-to-ASCII for small numbers (avoids format!()).
 #[inline]
 fn write_usize(buf: &mut Vec<u8>, n: usize) {
     if n < 10 {
@@ -982,7 +940,6 @@ fn write_usize(buf: &mut Vec<u8>, n: usize) {
         buf.push(b'0' + ((n / 10) % 10) as u8);
         buf.push(b'0' + (n % 10) as u8);
     } else {
-        // Fallback for very large terminals
         let s = n.to_string();
         buf.extend_from_slice(s.as_bytes());
     }
@@ -1073,18 +1030,12 @@ fn main() -> io::Result<()> {
         SetConsoleMode(stdin_handle, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT);
     }
 
-    // Hide cursor and clear screen using VT sequences
+    // Hide cursor and clear screen
     {
         let init = b"\x1b[?25l\x1b[2J\x1b[H";
         let mut written: u32 = 0;
         unsafe {
-            WriteFile(
-                stdout_handle,
-                init.as_ptr(),
-                init.len() as u32,
-                &mut written,
-                std::ptr::null_mut(),
-            );
+            WriteFile(stdout_handle, init.as_ptr(), init.len() as u32, &mut written, std::ptr::null_mut());
         }
     }
 
@@ -1167,16 +1118,12 @@ fn main() -> io::Result<()> {
                 prev_buf.resize(new_total, Cell { ch: 0xFFFF, attr: 0xFFFF });
 
                 // Clear screen on resize
-                let clear = b"\x1b[2J\x1b[H";
-                let mut written: u32 = 0;
-                unsafe {
-                    WriteFile(
-                        stdout_handle,
-                        clear.as_ptr(),
-                        clear.len() as u32,
-                        &mut written,
-                        std::ptr::null_mut(),
-                    );
+                {
+                    let clear = b"\x1b[2J\x1b[H";
+                    let mut written: u32 = 0;
+                    unsafe {
+                        WriteFile(stdout_handle, clear.as_ptr(), clear.len() as u32, &mut written, std::ptr::null_mut());
+                    }
                 }
                 force_full_repaint = true;
             }
@@ -1214,18 +1161,12 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // Cleanup: show cursor, reset colors, restore console modes
+    // Cleanup: show cursor, reset colors, restore console modes and codepage
     {
         let cleanup = b"\x1b[0m\x1b[?25h\x1b[2J\x1b[H";
         let mut written: u32 = 0;
         unsafe {
-            WriteFile(
-                stdout_handle,
-                cleanup.as_ptr(),
-                cleanup.len() as u32,
-                &mut written,
-                std::ptr::null_mut(),
-            );
+            WriteFile(stdout_handle, cleanup.as_ptr(), cleanup.len() as u32, &mut written, std::ptr::null_mut());
             SetConsoleMode(stdin_handle, original_stdin_mode);
             SetConsoleMode(stdout_handle, original_stdout_mode);
             timeEndPeriod(1);
