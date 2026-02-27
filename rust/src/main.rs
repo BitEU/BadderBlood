@@ -156,11 +156,11 @@ fn build_attr_palette() -> AttrPalette {
 /// Map a Win32 4-bit console attribute to an ANSI SGR byte sequence.
 fn attr_to_sgr(attr: u16) -> &'static [u8] {
     match attr {
-        0x0F => b"\x1b[97m",         // bright white foreground
-        0x0A => b"\x1b[92m",         // bright green foreground
-        0x02 => b"\x1b[32m",         // dark green foreground
+        0x0F => b"\x1b[97;40m",      // bright white on black
+        0x0A => b"\x1b[92;40m",      // bright green on black
+        0x02 => b"\x1b[32;40m",      // dark green on black
         0x20 => b"\x1b[30;42m",      // black on green (menu selection)
-        0x04 => b"\x1b[31m",         // red (error text)
+        0x04 => b"\x1b[31;40m",      // red on black (error text)
         _ => b"\x1b[0m",             // reset (black/default)
     }
 }
@@ -693,8 +693,8 @@ fn render_to_buffer(buf: &mut [Cell], app: &App) {
 }
 
 fn render_menu_to_buffer(buf: &mut [Cell], menu: &Menu, cols: usize, rows: usize) {
-    let menu_width = 64usize.min(cols.saturating_sub(4));
-    let menu_height = 24usize.min(rows.saturating_sub(4));
+    let menu_width = 80usize.min(cols.saturating_sub(4));
+    let menu_height = (rows * 2 / 3).max(16).min(rows.saturating_sub(4));
     let mx = (cols.saturating_sub(menu_width)) / 2;
     let my = (rows.saturating_sub(menu_height)) / 2;
 
