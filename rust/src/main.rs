@@ -11,26 +11,11 @@ use windows_sys::Win32::{
     Foundation::HANDLE,
     System::Console::{
         GetConsoleMode, GetConsoleScreenBufferInfo, GetNumberOfConsoleInputEvents, GetStdHandle,
-        ReadConsoleInputW, SetConsoleActiveScreenBuffer, SetConsoleCursorInfo, SetConsoleMode,
-        WriteConsoleOutputW, CHAR_INFO, CONSOLE_CURSOR_INFO, CONSOLE_SCREEN_BUFFER_INFO, COORD,
-        ENABLE_EXTENDED_FLAGS, ENABLE_WINDOW_INPUT, INPUT_RECORD, KEY_EVENT, SMALL_RECT,
-        STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, WINDOW_BUFFER_SIZE_EVENT,
+        ReadConsoleInputW, SetConsoleMode, CONSOLE_SCREEN_BUFFER_INFO,
+        ENABLE_EXTENDED_FLAGS, ENABLE_VIRTUAL_TERMINAL_PROCESSING, ENABLE_WINDOW_INPUT,
+        INPUT_RECORD, KEY_EVENT, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, WINDOW_BUFFER_SIZE_EVENT,
     },
 };
-
-const GENERIC_READ: u32 = 0x80000000;
-const GENERIC_WRITE: u32 = 0x40000000;
-const CONSOLE_TEXTMODE_BUFFER: u32 = 1;
-
-extern "system" {
-    fn CreateConsoleScreenBuffer(
-        dwDesiredAccess: u32,
-        dwShareMode: u32,
-        lpSecurityAttributes: *const std::ffi::c_void,
-        dwFlags: u32,
-        lpScreenBufferData: *const std::ffi::c_void,
-    ) -> HANDLE;
-}
 
 #[link(name = "winmm")]
 extern "system" {
@@ -38,13 +23,14 @@ extern "system" {
     fn timeEndPeriod(uPeriod: u32) -> u32;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: safely transmute u16 -> CHAR_INFO_0 (union type)
-// ---------------------------------------------------------------------------
-
-#[inline(always)]
-fn char_union(ch: u16) -> windows_sys::Win32::System::Console::CHAR_INFO_0 {
-    unsafe { std::mem::transmute::<u16, windows_sys::Win32::System::Console::CHAR_INFO_0>(ch) }
+extern "system" {
+    fn WriteFile(
+        hFile: HANDLE,
+        lpBuffer: *const u8,
+        nNumberOfBytesToWrite: u32,
+        lpNumberOfBytesWritten: *mut u32,
+        lpOverlapped: *mut std::ffi::c_void,
+    ) -> i32;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,15 +138,15 @@ fn random_char_u16(rng: &mut Rng) -> u16 {
 }
 
 // ---------------------------------------------------------------------------
-// Win32 console colour attributes
+// Console colour attributes (Win32 4-bit) -> ANSI SGR mapping
 // ---------------------------------------------------------------------------
 
 const ATTR_BLACK: u16 = 0x0000;
-const ATTR_HEAD: u16 = 0x0F;
-const ATTR_NEAR1: u16 = 0x0A;
+const ATTR_HEAD: u16 = 0x0F;    // bright white
+const ATTR_NEAR1: u16 = 0x0A;   // bright green
 const ATTR_NEAR2: u16 = 0x0A;
 const ATTR_TRAIL_BRIGHT: u16 = 0x0A;
-const ATTR_TRAIL_DIM: u16 = 0x02;
+const ATTR_TRAIL_DIM: u16 = 0x02;  // dark green
 const ATTR_STATUS: u16 = 0x02;
 const ATTR_MSG: u16 = 0x0A;
 
@@ -187,6 +173,33 @@ fn build_attr_palette() -> AttrPalette {
         near_head: [ATTR_NEAR1, ATTR_NEAR2],
         trail,
     }
+}
+
+/// Map a Win32 4-bit console attribute to an ANSI SGR sequence.
+/// We only use a few distinct values so this is a simple match.
+fn attr_to_sgr(attr: u16) -> &'static [u8] {
+    match attr {
+        0x0F => b"\x1b[97m",         // bright white foreground
+        0x0A => b"\x1b[92m",         // bright green foreground
+        0x02 => b"\x1b[32m",         // dark green foreground
+        0x20 => b"\x1b[30;42m",      // black on green (menu selection)
+        0x04 => b"\x1b[31m",         // red (error text)
+        _ => b"\x1b[0m",             // reset (black/default)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cell type for our logical framebuffer
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Cell {
+    ch: u16,    // UTF-16 code unit
+    attr: u16,  // Win32 attribute value
+}
+
+impl Cell {
+    const BLANK: Cell = Cell { ch: b' ' as u16, attr: ATTR_BLACK };
 }
 
 // ---------------------------------------------------------------------------
@@ -442,10 +455,9 @@ fn get_console_size(handle: HANDLE) -> (u16, u16) {
 }
 
 // ---------------------------------------------------------------------------
-// Win32 keyboard input – replaces crossterm entirely
+// Win32 keyboard input
 // ---------------------------------------------------------------------------
 
-/// Virtual key codes we care about
 const VK_RETURN: u16 = 0x0D;
 const VK_ESCAPE: u16 = 0x1B;
 const VK_TAB: u16 = 0x09;
@@ -467,9 +479,7 @@ enum InputAction {
     Resize(u16, u16),
 }
 
-/// Non-blocking: drain all pending console input events and return the
-/// most recent meaningful action.
-fn poll_input(stdin_handle: HANDLE, screen_handle: HANDLE) -> InputAction {
+fn poll_input(stdin_handle: HANDLE, stdout_handle: HANDLE) -> InputAction {
     let mut action = InputAction::None;
 
     loop {
@@ -493,7 +503,6 @@ fn poll_input(stdin_handle: HANDLE, screen_handle: HANDLE) -> InputAction {
         match record.EventType as u32 {
             KEY_EVENT => {
                 let key = unsafe { record.Event.KeyEvent };
-                // Only process key-down events
                 if key.bKeyDown == 0 {
                     continue;
                 }
@@ -509,7 +518,6 @@ fn poll_input(stdin_handle: HANDLE, screen_handle: HANDLE) -> InputAction {
                     VK_LEFT => action = InputAction::Left,
                     VK_RIGHT => action = InputAction::Right,
                     _ => {
-                        // Check for 'q' / 'Q' character
                         if ch == b'q' as u16 || ch == b'Q' as u16 {
                             action = InputAction::Quit;
                         }
@@ -517,8 +525,7 @@ fn poll_input(stdin_handle: HANDLE, screen_handle: HANDLE) -> InputAction {
                 }
             }
             WINDOW_BUFFER_SIZE_EVENT => {
-                // Terminal was resized – get the new window size
-                let (w, h) = get_console_size(screen_handle);
+                let (w, h) = get_console_size(stdout_handle);
                 action = InputAction::Resize(w, h);
             }
             _ => {}
@@ -570,6 +577,36 @@ impl App {
         }
     }
 
+    fn resize(&mut self, new_cols: u16, new_rows: u16) {
+        let old_cols = self.cols;
+        self.cols = new_cols;
+        self.rows = new_rows;
+
+        for drop in &mut self.drops {
+            if drop.col >= new_cols {
+                drop.col = self.rng.gen_u32(new_cols as u32) as u16;
+                drop.reset(new_rows, &mut self.rng);
+            }
+        }
+
+        if new_cols > old_cols {
+            let base = new_cols as usize;
+            let extra = base / 3;
+            let target = base + extra;
+            while self.drops.len() < target {
+                let c = self.rng.gen_u32(new_cols as u32) as u16;
+                self.drops.push(Drop::new(c, new_rows, &mut self.rng));
+            }
+        }
+
+        let base = new_cols as usize;
+        let extra = base / 3;
+        let target = base + extra;
+        if self.drops.len() > target {
+            self.drops.truncate(target);
+        }
+    }
+
     fn update(&mut self) {
         let rows = self.rows;
         let rng = &mut self.rng;
@@ -581,20 +618,16 @@ impl App {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Rendering into Cell buffer
 // ---------------------------------------------------------------------------
 
-fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
+fn render_to_buffer(buf: &mut [Cell], app: &App) {
     let cols = app.cols as usize;
     let rows = app.rows as usize;
     let total = cols * rows;
 
-    let blank = CHAR_INFO {
-        Char: char_union(b' ' as u16),
-        Attributes: ATTR_BLACK,
-    };
     for cell in buf[..total].iter_mut() {
-        *cell = blank;
+        *cell = Cell::BLANK;
     }
 
     let palette = &app.palette;
@@ -634,8 +667,8 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
             };
 
             let cell = &mut buf[r * cols + c];
-            cell.Char = char_union(ch);
-            cell.Attributes = attr;
+            cell.ch = ch;
+            cell.attr = attr;
         }
     }
 
@@ -654,8 +687,8 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
         let sy = rows - 1;
         for (i, &b) in status.as_bytes().iter().enumerate() {
             let cell = &mut buf[sy * cols + sx + i];
-            cell.Char = char_union(b as u16);
-            cell.Attributes = ATTR_STATUS;
+            cell.ch = b as u16;
+            cell.attr = ATTR_STATUS;
         }
     }
 
@@ -669,8 +702,8 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
                 let my = rows - 2;
                 for (i, &b) in display.as_bytes().iter().enumerate() {
                     let cell = &mut buf[my * cols + mx + i];
-                    cell.Char = char_union(b as u16);
-                    cell.Attributes = ATTR_MSG;
+                    cell.ch = b as u16;
+                    cell.attr = ATTR_MSG;
                 }
             }
         }
@@ -682,7 +715,7 @@ fn render_to_buffer(buf: &mut [CHAR_INFO], app: &App) {
     }
 }
 
-fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: usize) {
+fn render_menu_to_buffer(buf: &mut [Cell], menu: &Menu, cols: usize, rows: usize) {
     let menu_width = 64usize.min(cols.saturating_sub(4));
     let menu_height = 24usize.min(rows.saturating_sub(4));
     let mx = (cols.saturating_sub(menu_width)) / 2;
@@ -702,17 +735,17 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
         for c in mx..mx + menu_width {
             if r < rows && c < cols {
                 let cell = &mut buf[r * cols + c];
-                cell.Char = char_union(b' ' as u16);
-                cell.Attributes = bg_attr;
+                cell.ch = b' ' as u16;
+                cell.attr = bg_attr;
             }
         }
     }
 
-    let draw_char = |buf: &mut [CHAR_INFO], r: usize, c: usize, ch: u16, attr: u16| {
+    let draw_char = |buf: &mut [Cell], r: usize, c: usize, ch: u16, attr: u16| {
         if r < rows && c < cols {
             let cell = &mut buf[r * cols + c];
-            cell.Char = char_union(ch);
-            cell.Attributes = attr;
+            cell.ch = ch;
+            cell.attr = attr;
         }
     };
 
@@ -817,15 +850,151 @@ fn render_menu_to_buffer(buf: &mut [CHAR_INFO], menu: &Menu, cols: usize, rows: 
 }
 
 // ---------------------------------------------------------------------------
+// VT-based diff renderer: only emit escape sequences for changed cells
+// ---------------------------------------------------------------------------
+
+/// UTF-8 scratch buffer for building VT output.
+/// Pre-allocated to avoid per-frame allocation.
+struct VtRenderer {
+    out: Vec<u8>,
+    /// Small buffer for encoding a single UTF-16 code unit to UTF-8
+    utf8_buf: [u8; 4],
+}
+
+impl VtRenderer {
+    fn new(capacity: usize) -> Self {
+        Self {
+            out: Vec::with_capacity(capacity),
+            utf8_buf: [0u8; 4],
+        }
+    }
+
+    /// Compare `cur` against `prev`, emit VT sequences for differences,
+    /// then copy cur -> prev. Writes the output to `handle` via WriteFile.
+    fn render_diff(
+        &mut self,
+        cur: &[Cell],
+        prev: &mut [Cell],
+        cols: usize,
+        rows: usize,
+        handle: HANDLE,
+    ) {
+        self.out.clear();
+
+        let total = cols * rows;
+        let mut last_attr: u16 = 0xFFFF; // sentinel: no SGR set yet
+        let mut cursor_row: usize = usize::MAX;
+        let mut cursor_col: usize = usize::MAX;
+
+        for idx in 0..total {
+            let c = cur[idx];
+            let p = prev[idx];
+            if c == p {
+                continue;
+            }
+            prev[idx] = c;
+
+            let r = idx / cols;
+            let col = idx % cols;
+
+            // Emit cursor-move if not already at the right position
+            if r != cursor_row || col != cursor_col {
+                // VT uses 1-based coordinates
+                write_cursor_pos(&mut self.out, r + 1, col + 1);
+            }
+
+            // Emit SGR if attribute changed
+            if c.attr != last_attr {
+                self.out.extend_from_slice(attr_to_sgr(c.attr));
+                last_attr = c.attr;
+            }
+
+            // Emit the character as UTF-8
+            let ch = c.ch;
+            if ch < 0x80 {
+                self.out.push(ch as u8);
+            } else {
+                let c = char::from_u32(ch as u32).unwrap_or(' ');
+                let s = c.encode_utf8(&mut self.utf8_buf);
+                self.out.extend_from_slice(s.as_bytes());
+            }
+
+            cursor_row = r;
+            cursor_col = col + 1; // cursor advances by 1 after writing a char
+        }
+
+        if !self.out.is_empty() {
+            // Reset attributes at end
+            self.out.extend_from_slice(b"\x1b[0m");
+
+            let mut written: u32 = 0;
+            unsafe {
+                WriteFile(
+                    handle,
+                    self.out.as_ptr(),
+                    self.out.len() as u32,
+                    &mut written,
+                    std::ptr::null_mut(),
+                );
+            }
+        }
+    }
+
+    /// Full repaint: mark entire prev buffer as dirty then render_diff.
+    fn render_full(
+        &mut self,
+        cur: &[Cell],
+        prev: &mut [Cell],
+        cols: usize,
+        rows: usize,
+        handle: HANDLE,
+    ) {
+        // Invalidate prev so every cell is "changed"
+        let sentinel = Cell { ch: 0xFFFF, attr: 0xFFFF };
+        for p in prev.iter_mut() {
+            *p = sentinel;
+        }
+        self.render_diff(cur, prev, cols, rows, handle);
+    }
+}
+
+/// Write a VT cursor-position sequence into the buffer.
+/// Format: \x1b[{row};{col}H  (1-based)
+#[inline]
+fn write_cursor_pos(buf: &mut Vec<u8>, row: usize, col: usize) {
+    buf.extend_from_slice(b"\x1b[");
+    write_usize(buf, row);
+    buf.push(b';');
+    write_usize(buf, col);
+    buf.push(b'H');
+}
+
+/// Fast integer-to-ASCII for small numbers (avoids format!()).
+#[inline]
+fn write_usize(buf: &mut Vec<u8>, n: usize) {
+    if n < 10 {
+        buf.push(b'0' + n as u8);
+    } else if n < 100 {
+        buf.push(b'0' + (n / 10) as u8);
+        buf.push(b'0' + (n % 10) as u8);
+    } else if n < 1000 {
+        buf.push(b'0' + (n / 100) as u8);
+        buf.push(b'0' + ((n / 10) % 10) as u8);
+        buf.push(b'0' + (n % 10) as u8);
+    } else {
+        // Fallback for very large terminals
+        let s = n.to_string();
+        buf.extend_from_slice(s.as_bytes());
+    }
+}
+
+// ---------------------------------------------------------------------------
 // FPS tracking
 // ---------------------------------------------------------------------------
 
 struct FpsTracker {
-    /// Frames rendered in the current 10-second window.
     window_frames: u64,
-    /// Total frames rendered since program start.
     total_frames: u64,
-    /// Start of the current 10-second measurement window.
     window_start: Instant,
     fps_file_path: PathBuf,
 }
@@ -882,73 +1051,64 @@ impl FpsTracker {
 // ---------------------------------------------------------------------------
 
 fn main() -> io::Result<()> {
-    // Set 1ms timer resolution so sleep() is accurate (default is ~15ms!)
     unsafe { timeBeginPeriod(1) };
 
-    // Get stdin handle for reading input
     let stdin_handle: HANDLE = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    let stdout_handle: HANDLE = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
 
-    // Save original console mode and set our mode
-    let mut original_mode: u32 = 0;
+    // Save original console modes
+    let mut original_stdin_mode: u32 = 0;
+    let mut original_stdout_mode: u32 = 0;
     unsafe {
-        GetConsoleMode(stdin_handle, &mut original_mode);
-        // ENABLE_EXTENDED_FLAGS clears ENABLE_QUICK_EDIT_MODE (which steals mouse clicks)
-        // ENABLE_WINDOW_INPUT lets us receive resize events
+        GetConsoleMode(stdin_handle, &mut original_stdin_mode);
+        GetConsoleMode(stdout_handle, &mut original_stdout_mode);
+
+        // Enable VT processing on stdout so we can use ANSI escape sequences
+        SetConsoleMode(
+            stdout_handle,
+            original_stdout_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+        );
+
+        // Enable window resize events on stdin
         SetConsoleMode(stdin_handle, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT);
     }
 
-    // Create a new console screen buffer for double-buffering
-    let screen_buf: HANDLE = unsafe {
-        CreateConsoleScreenBuffer(
-            GENERIC_READ | GENERIC_WRITE,
-            0,
-            std::ptr::null(),
-            CONSOLE_TEXTMODE_BUFFER,
-            std::ptr::null(),
-        )
-    };
-
-    if screen_buf == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
-        unsafe { SetConsoleMode(stdin_handle, original_mode) };
-        return Err(io::Error::last_os_error());
+    // Hide cursor and clear screen using VT sequences
+    {
+        let init = b"\x1b[?25l\x1b[2J\x1b[H";
+        let mut written: u32 = 0;
+        unsafe {
+            WriteFile(
+                stdout_handle,
+                init.as_ptr(),
+                init.len() as u32,
+                &mut written,
+                std::ptr::null_mut(),
+            );
+        }
     }
 
-    // Make our buffer the active one
-    unsafe {
-        SetConsoleActiveScreenBuffer(screen_buf);
-    }
-
-    // Hide cursor
-    unsafe {
-        let cursor_info = CONSOLE_CURSOR_INFO {
-            dwSize: 1,
-            bVisible: 0,
-        };
-        SetConsoleCursorInfo(screen_buf, &cursor_info);
-    }
-
-    let (cols, rows) = get_console_size(screen_buf);
+    let (cols, rows) = get_console_size(stdout_handle);
     let mut app = App::new(cols, rows);
 
     let total_cells = cols as usize * rows as usize;
-    let mut char_buf: Vec<CHAR_INFO> = vec![
-        CHAR_INFO {
-            Char: char_union(b' ' as u16),
-            Attributes: 0,
-        };
-        total_cells
-    ];
+    let mut cur_buf: Vec<Cell> = vec![Cell::BLANK; total_cells];
+    let mut prev_buf: Vec<Cell> = vec![Cell { ch: 0xFFFF, attr: 0xFFFF }; total_cells];
+
+    // Pre-allocate VT output buffer (generous: ~10 bytes per changed cell)
+    let mut vt = VtRenderer::new(total_cells * 10);
 
     let mut fps_tracker = FpsTracker::new();
 
     let target_fps: u64 = 30;
     let frame_dur = Duration::from_micros(1_000_000 / target_fps);
 
+    let mut force_full_repaint = true;
+
     loop {
         let start = Instant::now();
 
-        // Handle input via Win32 API (non-blocking)
-        match poll_input(stdin_handle, screen_buf) {
+        match poll_input(stdin_handle, stdout_handle) {
             InputAction::Quit => {
                 if !app.menu_open {
                     break;
@@ -1000,50 +1160,49 @@ fn main() -> io::Result<()> {
                 }
             }
             InputAction::Resize(w, h) => {
-                let menu = std::mem::replace(&mut app.menu, Menu::load());
-                let msg = app.launch_message.take();
-                let was_open = app.menu_open;
-                app = App::new(w, h);
-                app.menu = menu;
-                app.launch_message = msg;
-                app.menu_open = was_open;
+                app.resize(w, h);
 
                 let new_total = w as usize * h as usize;
-                char_buf.resize(
-                    new_total,
-                    CHAR_INFO {
-                        Char: char_union(b' ' as u16),
-                        Attributes: 0,
-                    },
-                );
+                cur_buf.resize(new_total, Cell::BLANK);
+                prev_buf.resize(new_total, Cell { ch: 0xFFFF, attr: 0xFFFF });
+
+                // Clear screen on resize
+                let clear = b"\x1b[2J\x1b[H";
+                let mut written: u32 = 0;
+                unsafe {
+                    WriteFile(
+                        stdout_handle,
+                        clear.as_ptr(),
+                        clear.len() as u32,
+                        &mut written,
+                        std::ptr::null_mut(),
+                    );
+                }
+                force_full_repaint = true;
             }
             _ => {}
         }
 
         app.update();
 
-        render_to_buffer(&mut char_buf, &app);
+        render_to_buffer(&mut cur_buf, &app);
 
-        // Blit entire screen in one syscall
-        let buf_size = COORD {
-            X: app.cols as i16,
-            Y: app.rows as i16,
-        };
-        let buf_coord = COORD { X: 0, Y: 0 };
-        let mut write_region = SMALL_RECT {
-            Left: 0,
-            Top: 0,
-            Right: app.cols as i16 - 1,
-            Bottom: app.rows as i16 - 1,
-        };
-
-        unsafe {
-            WriteConsoleOutputW(
-                screen_buf,
-                char_buf.as_ptr(),
-                buf_size,
-                buf_coord,
-                &mut write_region,
+        if force_full_repaint {
+            vt.render_full(
+                &cur_buf,
+                &mut prev_buf,
+                app.cols as usize,
+                app.rows as usize,
+                stdout_handle,
+            );
+            force_full_repaint = false;
+        } else {
+            vt.render_diff(
+                &cur_buf,
+                &mut prev_buf,
+                app.cols as usize,
+                app.rows as usize,
+                stdout_handle,
             );
         }
 
@@ -1055,14 +1214,22 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // Cleanup
-    unsafe {
-        use windows_sys::Win32::Foundation::CloseHandle;
-        let stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleActiveScreenBuffer(stdout_handle);
-        CloseHandle(screen_buf);
-        SetConsoleMode(stdin_handle, original_mode);
-        timeEndPeriod(1);
+    // Cleanup: show cursor, reset colors, restore console modes
+    {
+        let cleanup = b"\x1b[0m\x1b[?25h\x1b[2J\x1b[H";
+        let mut written: u32 = 0;
+        unsafe {
+            WriteFile(
+                stdout_handle,
+                cleanup.as_ptr(),
+                cleanup.len() as u32,
+                &mut written,
+                std::ptr::null_mut(),
+            );
+            SetConsoleMode(stdin_handle, original_stdin_mode);
+            SetConsoleMode(stdout_handle, original_stdout_mode);
+            timeEndPeriod(1);
+        }
     }
 
     Ok(())
