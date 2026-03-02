@@ -1,47 +1,27 @@
+################################
+# ASREP_NotReqPreAuth.ps1 - BadderBlood Realistic AS-REP Roasting
+# Only disables pre-auth on a small number of accounts
+# to simulate the "vendor said to disable it" scenario.
+################################
 function ADREP_NotReqPreAuth {
     <#
         .SYNOPSIS
-            Creates a Group in an active directory environment based on random data
-        
+            Disables Kerberos pre-authentication on a small set of accounts.
         .DESCRIPTION
-            Starting with the root container this tool randomly places users in the domain.
-        
-
-        .PARAMETER UserList
-            The stored value of get-aduser -filter {SOMETHING}.  This is used to remove pre-auth on those users.
-        
-        .EXAMPLE
-            
-     
-        
+            Simulates the real-world scenario where a vendor or legacy application
+            requires pre-auth to be disabled. Only affects a handful of accounts.
         .NOTES
-            
-            #==============================
-            # Set Does Not Require Pre-Auth for ASREP Source originally froun Sussurro
-            #==============================\
-            Unless required by applicable law or agreed to in writing, software
-            distributed under the License is distributed on an "AS IS" BASIS,
-            WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-            See the License for the specific language governing permissions and
-            limitations under the License.
-            
-            Author's blog: https://www.secframe.com
-    
-        
+            BadderBlood - Realistic AD Lab Generator
     #>
-
     [CmdletBinding()]
     param
     (
-    [Parameter(Mandatory = $false,
-            Position = 1,
-            HelpMessage = 'Supply a user list from get-aduser to remove pre authentication')]
-            [Object[]]$UserList
+        [Parameter(Mandatory = $false)]
+        [Object[]]$UserList
     )
-    
-    foreach($user in $UserList){
-        $User | Set-ADAccountControl -DoesNotRequirePreAuth:$true
+
+    foreach ($user in $UserList) {
+        $user | Set-ADAccountControl -DoesNotRequirePreAuth:$true
+        Write-Host "    [!] AS-REP Roastable: $($user.SamAccountName)" -ForegroundColor Yellow
     }
-	
-    
 }

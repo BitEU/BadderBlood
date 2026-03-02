@@ -1,0 +1,11 @@
+Office,StreetAddress,City,State,PostalCode,Country,AreaCode
+HQ-Floor1,100 Corporate Drive,Philadelphia,PA,19103,US,215
+HQ-Floor2,100 Corporate Drive,Philadelphia,PA,19103,US,215
+HQ-Floor3,100 Corporate Drive,Philadelphia,PA,19103,US,215
+DC-East,2500 Technology Park,Ashburn,VA,20147,US,703
+DC-West,500 Data Center Way,Hillsboro,OR,97124,US,503
+Branch-NYC,350 Fifth Avenue,New York,NY,10118,US,212
+Branch-CHI,233 S Wacker Drive,Chicago,IL,60606,US,312
+Branch-DAL,2711 N Haskell Ave,Dallas,TX,75204,US,214
+Remote-West,Remote,Remote,CA,90001,US,310
+Remote-East,Remote,Remote,VA,22101,US,571
