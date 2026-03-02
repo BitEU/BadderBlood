@@ -1,179 +1,85 @@
-﻿Function CreateUser{
-
+﻿################################
+# CreateUsers.ps1 - BadderBlood Realistic User Generator
+# Users are placed in correct department OUs with full AD attributes.
+# A small percentage are "drifted" to simulate real-world misplacement.
+################################
+Function CreateUser {
     <#
         .SYNOPSIS
-            Creates a user in an active directory environment based on random data
-        
+            Creates a realistic user in Active Directory with proper department placement and full attributes.
         .DESCRIPTION
-            Starting with the root container this tool randomly places users in the domain.
-        
-        .PARAMETER Domain
-            The stored value of get-addomain is used for this.  It is used to call the PDC and other items in the domain
-        
-        .PARAMETER OUList
-            The stored value of get-adorganizationalunit -filter *.  This is used to place users in random locations.
-        
-        .PARAMETER ScriptDir
-            The location of the script.  Pulling this into a parameter to attempt to speed up processing.
-        
-        .EXAMPLE
-            
-     
-        
+            Generates users with department, title, phone, office, manager, and places them in the
+            correct OU. A configurable percentage are intentionally drifted to wrong OUs to simulate
+            real-world AD misplacement.
         .NOTES
-            
-            
-            Unless required by applicable law or agreed to in writing, software
-            distributed under the License is distributed on an "AS IS" BASIS,
-            WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-            See the License for the specific language governing permissions and
-            limitations under the License.
-            
-            Author's blog: https://www.secframe.com
-    
-        
+            BadderBlood - Realistic AD Lab Generator
+            Original BadBlood by David Rowe (secframe.com)
+            Rewritten for realism by BadderBlood project
     #>
     [CmdletBinding()]
-    
     param
     (
-        [Parameter(Mandatory = $false,
-            Position = 1,
-            HelpMessage = 'Supply a result from get-addomain')]
-            [Object[]]$Domain,
-        [Parameter(Mandatory = $false,
-            Position = 2,
-            HelpMessage = 'Supply a result from get-adorganizationalunit -filter *')]
-            [Object[]]$OUList,
-        [Parameter(Mandatory = $false,
-            Position = 3,
-            HelpMessage = 'Supply the script directory for where this script is stored')]
-        [string]$ScriptDir
+        [Parameter(Mandatory = $false)]
+        [Object[]]$Domain,
+        [Parameter(Mandatory = $false)]
+        [Object[]]$OUList,
+        [Parameter(Mandatory = $false)]
+        [string]$ScriptDir,
+        [Parameter(Mandatory = $false)]
+        [Object[]]$DepartmentList,
+        [Parameter(Mandatory = $false)]
+        [Object[]]$JobTitleList,
+        [Parameter(Mandatory = $false)]
+        [Object[]]$OfficeList,
+        [Parameter(Mandatory = $false)]
+        [Object[]]$ExistingUsers,
+        [Parameter(Mandatory = $false)]
+        [ValidateRange(0,100)]
+        [int]$DriftPercent = 8
     )
-    
-        if(!$PSBoundParameters.ContainsKey('Domain')){
-            if($args[0]){
-                $setDC = $args[0].pdcemulator
-                $dnsroot = $args[0].dnsroot
-            }
-            else{
-                $setDC = (Get-ADDomain).pdcemulator
-                $dnsroot = (get-addomain).dnsroot
-            }
-        }
-            else {
-                $setDC = $Domain.pdcemulator
-                $dnsroot = $Domain.dnsroot
-            }
-        if (!$PSBoundParameters.ContainsKey('OUList')){
-            if($args[1]){
-                $OUsAll = $args[1]
-            }
-            else{
-                $OUsAll = get-adobject -Filter {objectclass -eq 'organizationalunit'} -ResultSetSize 300
-            }
-        }else {
-            $OUsAll = $OUList
-        }
-        if (!$PSBoundParameters.ContainsKey('ScriptDir')){
-            
-            if($args[2]){
 
-                # write-host "line 70"
-                $scriptPath = $args[2]}
-            else{
-                    # write-host "did i get here"
-                    $scriptPath = "$((Get-Location).path)\AD_Users_Create\"
-            }
-            
-        }else{
-            $scriptpath = $ScriptDir
-        }
-    
-    
-    
+    # ----- Resolve parameters -----
+    if (!$PSBoundParameters.ContainsKey('Domain')) {
+        if ($args[0]) { $setDC = $args[0].pdcemulator; $dnsroot = $args[0].dnsroot; $dn = $args[0].distinguishedname }
+        else { $d = Get-ADDomain; $setDC = $d.pdcemulator; $dnsroot = $d.dnsroot; $dn = $d.distinguishedname }
+    } else { $setDC = $Domain.pdcemulator; $dnsroot = $Domain.dnsroot; $dn = $Domain.distinguishedname }
+
+    if (!$PSBoundParameters.ContainsKey('OUList')) {
+        $OUsAll = Get-ADOrganizationalUnit -Filter * -Server $setDC
+    } else { $OUsAll = $OUList }
+
+    if (!$PSBoundParameters.ContainsKey('ScriptDir')) {
+        if ($args[2]) { $scriptPath = $args[2] }
+        else { $scriptPath = "$((Get-Location).path)\AD_Users_Create\" }
+    } else { $scriptpath = $ScriptDir }
+
+    $scriptparent = (Get-Item $scriptpath).parent.fullname
+
+    # ----- Load data files if not passed -----
+    if (!$PSBoundParameters.ContainsKey('DepartmentList')) {
+        $DepartmentList = Import-Csv ($scriptparent + "\AD_Data\AD_Departments.csv")
+    }
+    if (!$PSBoundParameters.ContainsKey('JobTitleList')) {
+        $JobTitleList = Import-Csv ($scriptparent + "\AD_Data\JobTitles.csv")
+    }
+    if (!$PSBoundParameters.ContainsKey('OfficeList')) {
+        $OfficeList = Import-Csv ($scriptparent + "\AD_Data\Offices.csv")
+    }
+
+    # ----- Password Generator -----
     function New-SWRandomPassword {
-        <#
-        .Synopsis
-           Generates one or more complex passwords designed to fulfill the requirements for Active Directory
-        .DESCRIPTION
-           Generates one or more complex passwords designed to fulfill the requirements for Active Directory
-        .EXAMPLE
-           New-SWRandomPassword
-           C&3SX6Kn
-    
-           Will generate one password with a length between 8  and 12 chars.
-        .EXAMPLE
-           New-SWRandomPassword -MinPasswordLength 8 -MaxPasswordLength 12 -Count 4
-           7d&5cnaB
-           !Bh776T"Fw
-           9"C"RxKcY
-           %mtM7#9LQ9h
-    
-           Will generate four passwords, each with a length of between 8 and 12 chars.
-        .EXAMPLE
-           New-SWRandomPassword -InputStrings abc, ABC, 123 -PasswordLength 4
-           3ABa
-    
-           Generates a password with a length of 4 containing atleast one char from each InputString
-        .EXAMPLE
-           New-SWRandomPassword -InputStrings abc, ABC, 123 -PasswordLength 4 -FirstChar abcdefghijkmnpqrstuvwxyzABCEFGHJKLMNPQRSTUVWXYZ
-           3ABa
-    
-           Generates a password with a length of 4 containing atleast one char from each InputString that will start with a letter from 
-           the string specified with the parameter FirstChar
-        .OUTPUTS
-           [String]
-        .NOTES
-           Written by Simon WÃ¥hlin, blog.simonw.se
-           I take no responsibility for any issues caused by this script.
-        .FUNCTIONALITY
-           Generates random passwords
-        .LINK
-           http://blog.simonw.se/powershell-generating-random-password-for-active-directory/
-       
-        #>
-        [CmdletBinding(DefaultParameterSetName='FixedLength',ConfirmImpact='None')]
+        [CmdletBinding(DefaultParameterSetName='FixedLength')]
         [OutputType([String])]
-        Param
-        (
-            # Specifies minimum password length
-            [Parameter(Mandatory=$false,
-                       ParameterSetName='RandomLength')]
-            [ValidateScript({$_ -gt 0})]
-            [Alias('Min')] 
-            [int]$MinPasswordLength = 12,
-            
-            # Specifies maximum password length
-            [Parameter(Mandatory=$false,
-                       ParameterSetName='RandomLength')]
-            [ValidateScript({
-                    if($_ -ge $MinPasswordLength){$true}
-                    else{Throw 'Max value cannot be lesser than min value.'}})]
-            [Alias('Max')]
-            [int]$MaxPasswordLength = 20,
-    
-            # Specifies a fixed password length
-            [Parameter(Mandatory=$false,
-                       ParameterSetName='FixedLength')]
-            [ValidateRange(1,2147483647)]
-            [int]$PasswordLength = 8,
-            
-            # Specifies an array of strings containing charactergroups from which the password will be generated.
-            # At least one char from each group (string) will be used.
-            [String[]]$InputStrings = @('abcdefghijkmnpqrstuvwxyz', 'ABCEFGHJKLMNPQRSTUVWXYZ', '23456789', '!#%&'),
-    
-            # Specifies a string containing a character group from which the first character in the password will be generated.
-            # Useful for systems which requires first char in password to be alphabetic.
-            [String] $FirstChar,
-            
-            # Specifies number of passwords to generate.
-            [ValidateRange(1,2147483647)]
+        Param(
+            [Parameter(ParameterSetName='RandomLength')][Alias('Min')][int]$MinPasswordLength = 12,
+            [Parameter(ParameterSetName='RandomLength')][Alias('Max')][int]$MaxPasswordLength = 20,
+            [Parameter(ParameterSetName='FixedLength')][int]$PasswordLength = 8,
+            [String[]]$InputStrings = @('abcdefghijkmnpqrstuvwxyz','ABCEFGHJKLMNPQRSTUVWXYZ','23456789','!#%&'),
+            [String]$FirstChar,
             [int]$Count = 1
         )
         Begin {
-            Function Get-Seed{
-                # Generate a seed for randomization
+            Function Get-Seed {
                 $RandomBytes = New-Object -TypeName 'System.Byte[]' 4
                 $Random = New-Object -TypeName 'System.Security.Cryptography.RNGCryptoServiceProvider'
                 $Random.GetBytes($RandomBytes)
@@ -181,145 +87,243 @@
             }
         }
         Process {
-            For($iteration = 1;$iteration -le $Count; $iteration++){
+            For ($iteration = 1; $iteration -le $Count; $iteration++) {
                 $Password = @{}
-                # Create char arrays containing groups of possible chars
                 [char[][]]$CharGroups = $InputStrings
-    
-                # Create char array containing all chars
-                $AllChars = $CharGroups | ForEach-Object {[Char[]]$_}
-    
-                # Set password length
-                if($PSCmdlet.ParameterSetName -eq 'RandomLength')
-                {
-                    if($MinPasswordLength -eq $MaxPasswordLength) {
-                        # If password length is set, use set length
-                        $PasswordLength = $MinPasswordLength
-                    }
-                    else {
-                        # Otherwise randomize password length
-                        $PasswordLength = ((Get-Seed) % ($MaxPasswordLength + 1 - $MinPasswordLength)) + $MinPasswordLength
-                    }
+                $AllChars = $CharGroups | ForEach-Object { [Char[]]$_ }
+                if ($PSCmdlet.ParameterSetName -eq 'RandomLength') {
+                    if ($MinPasswordLength -eq $MaxPasswordLength) { $PasswordLength = $MinPasswordLength }
+                    else { $PasswordLength = ((Get-Seed) % ($MaxPasswordLength + 1 - $MinPasswordLength)) + $MinPasswordLength }
                 }
-    
-                # If FirstChar is defined, randomize first char in password from that string.
-                if($PSBoundParameters.ContainsKey('FirstChar')){
-                    $Password.Add(0,$FirstChar[((Get-Seed) % $FirstChar.Length)])
+                if ($PSBoundParameters.ContainsKey('FirstChar')) {
+                    $Password.Add(0, $FirstChar[((Get-Seed) % $FirstChar.Length)])
                 }
-                # Randomize one char from each group
-                Foreach($Group in $CharGroups) {
-                    if($Password.Count -lt $PasswordLength) {
+                Foreach ($Group in $CharGroups) {
+                    if ($Password.Count -lt $PasswordLength) {
                         $Index = Get-Seed
-                        While ($Password.ContainsKey($Index)){
-                            $Index = Get-Seed                        
-                        }
-                        $Password.Add($Index,$Group[((Get-Seed) % $Group.Count)])
+                        While ($Password.ContainsKey($Index)) { $Index = Get-Seed }
+                        $Password.Add($Index, $Group[((Get-Seed) % $Group.Count)])
                     }
                 }
-    
-                # Fill out with chars from $AllChars
-                for($i=$Password.Count;$i -lt $PasswordLength;$i++) {
+                for ($i = $Password.Count; $i -lt $PasswordLength; $i++) {
                     $Index = Get-Seed
-                    While ($Password.ContainsKey($Index)){
-                        $Index = Get-Seed                        
-                    }
-                    $Password.Add($Index,$AllChars[((Get-Seed) % $AllChars.Count)])
+                    While ($Password.ContainsKey($Index)) { $Index = Get-Seed }
+                    $Password.Add($Index, $AllChars[((Get-Seed) % $AllChars.Count)])
                 }
                 Write-Output -InputObject $(-join ($Password.GetEnumerator() | Sort-Object -Property Name | Select-Object -ExpandProperty Value))
             }
         }
     }
-    
-        
-    #get owner all parameters and store as variable to call upon later
-           
-        
-    
-    #=======================================================================
-    
-    #will work on adding things to containers later $ousall += get-adobject -Filter {objectclass -eq 'container'} -ResultSetSize 300|where-object -Property objectclass -eq 'container'|where-object -Property distinguishedname -notlike "*}*"|where-object -Property distinguishedname -notlike  "*DomainUpdates*"
-    
-    $ouLocation = (Get-Random $OUsAll).distinguishedname
-    
-    
-    
-    $accountType = 1..100|get-random 
-    if($accountType -le 3){ # X percent chance of being a service account
-    #service
-    $nameSuffix = "SA"
-    $description = 'Created with secframe.com/badblood.'
-    #removing do while loop and making random number range longer, sorry if the account is there already
-    # this is so that I can attempt to import multithreading on user creation
-    
-        $name = ""+ (Get-Random -Minimum 100 -Maximum 9999999999) + "$nameSuffix"
-        
-        
-    }else{
-        $surname = get-content("$($scriptpath)\Names\familynames-usa-top1000.txt")|get-random
-        # Write-Host $surname
-    $genderpreference = 0,1|get-random
-    if ($genderpreference -eq 0){$givenname = get-content("$($scriptpath)\Names\femalenames-usa-top1000.txt")|get-random}else{$givenname = get-content($scriptpath + '\Names\malenames-usa-top1000.txt')|get-random}
-    $name = $givenname+"_"+$surname
+
+    # ----- Phone Number Generator -----
+    function New-PhoneNumber {
+        param([string]$AreaCode = '215')
+        $exchange = Get-Random -Minimum 200 -Maximum 999
+        $subscriber = Get-Random -Minimum 1000 -Maximum 9999
+        return "+1 ($AreaCode) $exchange-$subscriber"
     }
-    
-        $departmentnumber = [convert]::ToInt32('9999999') 
-        
-        
-    #Need to figure out how to do the L attribute
-    $description = 'Created with secframe.com/badblood.'
-    $pwd = New-SWRandomPassword -MinPasswordLength 22 -MaxPasswordLength 25
-    #======================================================================
-    # 
-    
-    $passwordinDesc = 1..1000|get-random
-        
+
+    # ----- Employee ID Generator -----
+    function New-EmployeeID {
+        return "EMP" + (Get-Random -Minimum 100000 -Maximum 999999).ToString()
+    }
+
+    # ===================================================================
+    # DECIDE: Regular user (97%) or Service account (3%)
+    # ===================================================================
+    $accountType = Get-Random -Minimum 1 -Maximum 101
+
+    if ($accountType -le 3) {
+        # ---- SERVICE ACCOUNT ----
+        $nameSuffix = "SA"
+        $name = "" + (Get-Random -Minimum 100 -Maximum 9999999999) + $nameSuffix
+        if ($name.Length -gt 20) { $name = $name.Substring(0, 20) }
+
+        # Service accounts go into Tier ServiceAccounts OUs
+        $tier = @('Tier 1', 'Tier 2') | Get-Random
+        $dept = ($DepartmentList | Where-Object { $_.Acronym -notin @('TST') } | Get-Random).Acronym
+        $targetOU = "OU=ServiceAccounts,OU=$dept,OU=$tier,$dn"
+
+        # Validate OU exists, fallback
+        try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
+        catch { $targetOU = "OU=$tier,$dn" }
+
+        $description = "Service Account - $dept - Created by BadderBlood"
         $pwd = New-SWRandomPassword -MinPasswordLength 22 -MaxPasswordLength 25
-            if ($passwordinDesc -lt 10) { 
-                $description = 'Just so I dont forget my password is ' + $pwd 
-            }else{}
-    if($name.length -gt 20){
-        $name = $name.substring(0,20)
+
+        # Small chance password in description (realistic misconfiguration)
+        $pwdLeak = Get-Random -Minimum 1 -Maximum 101
+        if ($pwdLeak -le 5) {
+            $description = "Service Account - $dept - pwd: $pwd"
+        }
+
+        $exists = $null
+        try { $exists = Get-ADUser $name -Server $setDC -ErrorAction Stop } catch {}
+        if ($exists) { return $true }
+
+        New-ADUser -Server $setDC -Description $description -DisplayName $name -Name $name `
+            -SamAccountName $name -Enabled $true -Path $targetOU `
+            -AccountPassword (ConvertTo-SecureString $pwd -AsPlainText -Force) `
+            -OtherAttributes @{
+                'employeeType' = 'Service'
+                'departmentNumber' = $dept
+                'department' = ($DepartmentList | Where-Object { $_.Acronym -eq $dept }).'Department Name'
+            }
+
+        try { Set-ADUser -Identity $name -UserPrincipalName "$name@$dnsroot" -Server $setDC } catch {}
+
+    } else {
+        # ---- REGULAR USER ----
+        $surname = Get-Content ("$($scriptpath)\Names\familynames-usa-top1000.txt") | Get-Random
+        $genderpreference = 0, 1 | Get-Random
+        if ($genderpreference -eq 0) {
+            $givenname = Get-Content ("$($scriptpath)\Names\femalenames-usa-top1000.txt") | Get-Random
+        } else {
+            $givenname = Get-Content ($scriptpath + '\Names\malenames-usa-top1000.txt') | Get-Random
+        }
+
+        # Clean up names
+        $givenname = (Get-Culture).TextInfo.ToTitleCase($givenname.Trim().ToLower())
+        $surname = (Get-Culture).TextInfo.ToTitleCase($surname.Trim().ToLower())
+
+        $name = $givenname + "_" + $surname
+        if ($name.Length -gt 20) { $name = $name.Substring(0, 20) }
+
+        # Check for duplicates
+        $exists = $null
+        try { $exists = Get-ADUser $name -Server $setDC -ErrorAction Stop } catch {}
+        if ($exists) { return $true }
+
+        # ---- ASSIGN DEPARTMENT ----
+        # Weight departments: business departments get more users than IT/security
+        $deptWeights = @{
+            'BDE' = 20; 'HRE' = 10; 'FIN' = 15; 'OGC' = 8; 'FSR' = 12
+            'AWS' = 5;  'ESM' = 5;  'SEC' = 5;  'ITS' = 8; 'GOO' = 4
+            'AZR' = 5;  'TST' = 3
+        }
+        $weightedDepts = @()
+        foreach ($d in $deptWeights.Keys) {
+            for ($w = 0; $w -lt $deptWeights[$d]; $w++) { $weightedDepts += $d }
+        }
+        $deptCode = $weightedDepts | Get-Random
+        $deptInfo = $DepartmentList | Where-Object { $_.Acronym -eq $deptCode }
+        $deptName = $deptInfo.'Department Name'
+
+        # ---- ASSIGN OFFICE AND LOCATION ----
+        $office = $OfficeList | Get-Random
+        $phone = New-PhoneNumber -AreaCode $office.AreaCode
+        $employeeID = New-EmployeeID
+
+        # ---- ASSIGN TITLE ----
+        $deptTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode }
+        if ($deptTitles) { $title = ($deptTitles | Get-Random).Title }
+        else { $title = "Analyst" }
+
+        # ---- DETERMINE OU PLACEMENT ----
+        # Normal placement: People > DepartmentCode
+        $targetOU = "OU=$deptCode,OU=People,$dn"
+
+        # Drift: X% chance of being in a slightly wrong but plausible location
+        $driftRoll = Get-Random -Minimum 1 -Maximum 101
+        if ($driftRoll -le $DriftPercent) {
+            $driftType = Get-Random -Minimum 1 -Maximum 101
+            if ($driftType -le 40) {
+                # User in wrong department OU (transferred employee)
+                $wrongDept = ($DepartmentList | Where-Object { $_.Acronym -ne $deptCode -and $_.Acronym -ne 'TST' } | Get-Random).Acronym
+                $targetOU = "OU=$wrongDept,OU=People,$dn"
+            } elseif ($driftType -le 60) {
+                # User in Stage OU (should have been moved out of staging)
+                $targetOU = "OU=$deptCode,OU=Stage,$dn"
+            } elseif ($driftType -le 80) {
+                # User in Tier OU but without any admin rights (someone created it in wrong spot)
+                $tierChoice = @('Tier 1', 'Tier 2') | Get-Random
+                $subOU = @('ServiceAccounts', 'Groups', 'Devices') | Get-Random
+                $targetOU = "OU=$subOU,OU=$deptCode,OU=$tierChoice,$dn"
+            } else {
+                # User in the base People OU, not in a department sub-OU
+                $targetOU = "OU=People,$dn"
+                try {
+                    # Check for Unassociated sub-OU
+                    $unassoc = "OU=Unassociated,OU=People,$dn"
+                    Get-ADOrganizationalUnit $unassoc -Server $setDC | Out-Null
+                    $targetOU = $unassoc
+                } catch {}
+            }
+        }
+
+        # Validate OU exists, fallback to People root
+        try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
+        catch {
+            $targetOU = "OU=People,$dn"
+            try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
+            catch { $targetOU = $dn }
+        }
+
+        # ---- PASSWORD ----
+        $pwd = New-SWRandomPassword -MinPasswordLength 22 -MaxPasswordLength 25
+        $description = "Created with BadderBlood"
+
+        # Small chance (1%) of password in description
+        $pwdLeak = Get-Random -Minimum 1 -Maximum 1001
+        if ($pwdLeak -le 10) {
+            $description = "Just so I dont forget my password is $pwd"
+        }
+
+        # ---- CREATE THE USER ----
+        $displayName = "$givenname $surname"
+
+        try {
+            New-ADUser -Server $setDC `
+                -Name $name `
+                -DisplayName $displayName `
+                -GivenName $givenname `
+                -Surname $surname `
+                -SamAccountName $name `
+                -Description $description `
+                -Department $deptName `
+                -Title $title `
+                -Office $office.Office `
+                -StreetAddress $office.StreetAddress `
+                -City $office.City `
+                -State $office.State `
+                -PostalCode $office.PostalCode `
+                -Country $office.Country `
+                -OfficePhone $phone `
+                -Company "BadderBlood Corp" `
+                -EmployeeID $employeeID `
+                -Enabled $true `
+                -Path $targetOU `
+                -AccountPassword (ConvertTo-SecureString $pwd -AsPlainText -Force) `
+                -OtherAttributes @{
+                    'departmentNumber' = $deptCode
+                    'employeeType' = 'Employee'
+                }
+        } catch {
+            # Fallback: simpler creation if extended attributes fail
+            try {
+                New-ADUser -Server $setDC -Name $name -DisplayName $displayName `
+                    -GivenName $givenname -Surname $surname -SamAccountName $name `
+                    -Description $description -Department $deptName -Title $title `
+                    -Enabled $true -Path $targetOU `
+                    -AccountPassword (ConvertTo-SecureString $pwd -AsPlainText -Force)
+            } catch {}
+        }
+
+        # Set UPN
+        $upn = $name + '@' + $dnsroot
+        try { Set-ADUser -Identity $name -UserPrincipalName $upn -Server $setDC } catch {}
+
+        # Set manager (random chance of having a manager from same department)
+        if ($ExistingUsers -and $ExistingUsers.Count -gt 10) {
+            $managerRoll = Get-Random -Minimum 1 -Maximum 101
+            if ($managerRoll -le 60) {
+                try {
+                    $potentialManager = $ExistingUsers | Get-Random
+                    Set-ADUser -Identity $name -Manager $potentialManager.DistinguishedName -Server $setDC
+                } catch {}
+            }
+        }
     }
 
-    $exists = $null
-    try {
-        $exists = Get-ADUSer $name -ErrorAction Stop
-    } catch{}
-
-    if($exists){
-        return $true
-    }
-
-    new-aduser -server $setdc  -Description $Description -DisplayName $name -name $name -SamAccountName $name -Surname $name -Enabled $true -Path $ouLocation -AccountPassword (ConvertTo-SecureString ($pwd) -AsPlainText -force)
-    
-    
-    
-        
-    
     $pwd = ''
-
-    #==============================
-    # Set Does Not Require Pre-Auth for ASREP
-    #==============================
-    
-    $setASREP = 1..1000|get-random
-    if($setASREP -lt 20){
-	Get-ADuser $name | Set-ADAccountControl -DoesNotRequirePreAuth:$true
-    }
-    
-    #===============================
-    #SET ATTRIBUTES - no additional attributes set at this time besides UPN
-    #Todo: Set SPN for kerberoasting.  Example attribute edit is in createcomputers.ps1
-    #===============================
-    
-    $upn = $name + '@' + $dnsroot
-    try{Set-ADUser -Identity $name -UserPrincipalName "$upn" }
-    catch{}
-    
-    # return $false
-    ################################
-    #End Create User Objects
-    ################################
-    
-    }
-    
+}

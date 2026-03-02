@@ -1,0 +1,19 @@
+[package]
+name = "BadderBlood"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_System_Console",
+    "Win32_Foundation",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

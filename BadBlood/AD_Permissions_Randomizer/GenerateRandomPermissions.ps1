@@ -1,280 +1,188 @@
-﻿#import scripts
+﻿################################
+# GenerateRandomPermissions.ps1 - BadderBlood Realistic ACL Misconfiguration
+# Instead of random GenericAll on root, creates realistic delegation mistakes:
+# - Helpdesk with too-broad password reset
+# - IT groups with WriteDACL on wrong OUs
+# - Leftover project permissions
+# - Chained attack paths for BloodHound exercises
+################################
+
 function Get-ScriptDirectory {
     Split-Path -Parent $PSCommandPath
 }
 $scriptPath = Get-ScriptDirectory
-$adplatformsourcedir = split-path -Path $scriptPath -Parent
+$adplatformsourcedir = Split-Path -Path $scriptPath -Parent
 
-
-#=============================================
-#import ACL function files
+# Import ACL function files
 $ACLScriptspath = $adplatformsourcedir + "\AD_OU_SetACL"
-
-
 $files = Get-ChildItem $ACLScriptspath -Name "*permissions.ps1"
-    foreach ($file in $files){
-    .($aclscriptspath + "\"+$file)
-    }
-
-Function Create-PermissionSet{
-    $Permissions = @()
-    $row = @()
-    
-    #===================================================================
-    #Full Control PERMISSIONS
-    $FunctionSet = "Full Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'FullControl';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'FullControlUsers';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'FullControlGroups';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'FullControlComputers';APPLY = 'FALSE'}
-    
-    #===================================================================
-    #USER PERMISSIONS
-    $FunctionSet = "User Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreateUserAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeleteUserAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'RenameUserAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DisableUserAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'UnlockUserAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'EnableDisabledUserAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ResetUserPasswords';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ForcePasswordChangeAtLogon';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyUserGroupMembership';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyUserProperties';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DenyModifyLogonScript';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DenySetUserSPN';APPLY = 'FALSE'}
-    
-    #END USER PERMISSIONS 
-    #===================================================================
-    #COMPUTER PERMISSIONS
-    $FunctionSet = "Computer Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreateComputerAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeleteComputerAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'RenameComputerAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DisableComputerAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'EnableDisabledComputerAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyComputerProperties';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ResetComputerAccount';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyComputerGroupMembership';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'SetComputerSPN';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ReadComputerTPMBitLockerInfo';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ReadComputerAdmPwd';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ResetComputerAdmPwd';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DomainJoinComputers';APPLY = 'FALSE'}
-    #END COMPUTER PERMISSIONS
-    #===================================================================
-    #GROUP PERMISSIONS
-    $FunctionSet = "Group Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreateGroup';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeleteGroup';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'RenameGroup';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyGroupProperties';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyGroupMembership';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyGroupGroupMembership';APPLY = 'FALSE'}
-    
-    #END GROUP PERMISSIONS
-    #===================================================================
-    #OU PERMISSIONS
-    $FunctionSet = "OU Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreateOU';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeleteOU';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'RenameOU';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyOUProperties';APPLY = 'FALSE'}
-    #END OU PERMISSIONS
-    #===================================================================
-    # GPO PERMISSIONS
-    $FunctionSet = "OU Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'LinkGPO';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'GenerateRsopPlanning';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'GenerateRsopLogging';APPLY = 'FALSE'}
-    #END GPO PERMISSIONS
-    #===================================================================
-    # PRINTER PERMISSIONS
-    $FunctionSet = "Printer Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreatePrintQueue';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeletePrintQueue';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'RenamePrintQueue';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifyPrintQueueProperties';APPLY = 'FALSE'}
-    #END PRINTER PERMISSIONS
-    #===================================================================
-    # Replication  PERMISSIONS
-    $FunctionSet = "Replication Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ManageReplicationTopology';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ReplicatingDirectoryChanges';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ReplicatingDirectoryChangesAll';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ReplicatingDirectoryChangesInFilteredSet';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ReplicationSynchronization';APPLY = 'FALSE'}
-    #END Replication PERMISSIONS
-    #===================================================================
-    # Site and Subnet  PERMISSIONS
-    $FunctionSet = "Site and Subnet Control Permissions"
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreateSiteObjects';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeleteSiteObjects';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifySiteProperties';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreateSubnetObjects';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeleteSubnetObjects';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifySubnetProperties';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'CreateSiteLinkObjects';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'DeleteSiteLinkObjects';APPLY = 'FALSE'}
-    $row += new-object PSObject -Property @{FunctionSet = $FunctionSet;FunctionName = 'ModifySiteLinkProperties';APPLY = 'FALSE'}
-    
-    #===========================================
-    #ADD ALL PARAMETERS TO $PERMISSIONS
-    $Permissions += $row
-    $permissions
-    $permINT = 1..100|get-random 
-    if($permint -gt 25){#if gt this number, assign random permissions
-    $howmanypermissions = 1..60|get-random
-    $p = 1
-    do{$randoperm = 0..(($permissions.count)-1)|Get-random
-        $permissions[$randoperm].APPLY = 'TRUE'
-        $p++
-    }while($P -le $howmanypermissions)
-    }
-    $permissions
-
+foreach ($file in $files) {
+    . ($ACLScriptspath + "\" + $file)
 }
 
-
-#=================
-#Rando permissions now set to the $permissions variable. Time to do some random admin damage
-#=================
-
-$PermissionsToOUMapping = @{}
-$PermissionsToOUMapping.Add('User','ServiceAccounts')
-$PermissionsToOUMapping.Add('Computer','Devices')
-$PermissionsToOUMapping.Add('Group','Groups')
-$PermissionsToOUMapping.Add('OU','OU') #this mapping doesnt entirely matter since on line 94 OU permissions are applied directly to the OU containing the affiliate code
-$PermissionsToOUMapping.Add('Printer', 'Devices')
-#=============================================
-#BEGIN MAKING GROUPS AND SETTING ACLS
-$dom = get-addomain
-$setdc = $dom.pdcemulator
-cd ad:
+# =========================================================================
+# Setup: Schema maps needed for ACL functions
+# =========================================================================
+$dom = Get-ADDomain
+$setDC = $dom.pdcemulator
 $dn = $dom.distinguishedname
-$AllOUs = Get-ADOrganizationalUnit -Filter *
-$allUsers = get-adobject -Filter {objectclass -eq 'user'} -ResultSetSize 2500 -Server $setdc|Where-object -Property objectclass -eq user
+Set-Location AD:
 
-## Create guidmap for acl functions
-cd ad:
-#=============================================
-       
-        #Get a reference to the RootDSE of the current domain
-        $schemaPath = (Get-ADRootDSE)
-        #$schemaobjects = Get-ADObject -filter * -SearchBase $schemaPath.defaultNamingContext -Properties * 
-        #Get a reference to the current domain
-        $domain = Get-ADDomain
-        #============================
-        #Create a hashtable to store the GUID value of each schema class and attribute
-        $guidmap = @{}
-        Get-ADObject -SearchBase ($schemaPath.SchemaNamingContext) -LDAPFilter  `
-        "(schemaidguid=*)" -Properties lDAPDisplayName,schemaIDGUID | 
-        % {$guidmap[$_.lDAPDisplayName]=[System.GUID]$_.schemaIDGUID}
+$schemaPath = Get-ADRootDSE
+$guidmap = @{}
+Get-ADObject -SearchBase ($schemaPath.SchemaNamingContext) -LDAPFilter "(schemaidguid=*)" -Properties lDAPDisplayName, schemaIDGUID |
+    ForEach-Object { $guidmap[$_.lDAPDisplayName] = [System.GUID]$_.schemaIDGUID }
 
-        #Create a hashtable to store the GUID value of each extended right in the forest
-        $extendedrightsmap = @{}
-        Get-ADObject -SearchBase ($schemaPath.ConfigurationNamingContext) -LDAPFilter `
-        "(&(objectclass=controlAccessRight)(rightsguid=*))" -Properties displayName,rightsGuid | 
-        % {$extendedrightsmap[$_.displayName]=[System.GUID]$_.rightsGuid}
+$extendedrightsmap = @{}
+Get-ADObject -SearchBase ($schemaPath.ConfigurationNamingContext) -LDAPFilter "(&(objectclass=controlAccessRight)(rightsguid=*))" -Properties displayName, rightsGuid |
+    ForEach-Object { $extendedrightsmap[$_.displayName] = [System.GUID]$_.rightsGuid }
 
-<#Pick X number of random users#>
-$permint = 5..100|get-random
-$objwithPerms = @()
-$z = 1
-do{$objwithPerms += $allUsers|Get-Random
-$z++}while($z -le $permint)
+$AllOUs = Get-ADOrganizationalUnit -Filter * -Server $setDC
+$allUsers = Get-ADUser -Filter * -ResultSetSize 2500 -Server $setDC
+$allGroups = Get-ADGroup -Filter * -ResultSetSize 2500 -Server $setDC
+$allComputers = Get-ADComputer -Filter * -ResultSetSize 2500 -Server $setDC
 
-    foreach($obj in $objwithPerms){
-        $permissions = Create-PermissionSet
-        $adgroup = get-aduser $obj
-        foreach ($permission in $permissions){
-            if($permissions.count -gt 0){ #Do this permissions thing on the other spots too.
-                if($permission.APPLY -eq 'TRUE'){
-                #apply directly to OU first choice, apply to computer,group,user second choice
-                            if($permission.functionset -eq 'Full Control Permissions'){
-                              
-                                #FullControl 
-                                $OUorRootRando = 1..100|get-random
-                                if ($OUorRootRando -le 3){#lets do root here
-                                    iex ($permission.FunctionName + " -objgroup " + '$adgroup' + " -objou " + '$dn' + " -inheritanceType `'Descendents`'")
-                
-                                }else{
-                                    $OUPicked = $allOUs|Get-random
-                                    iex ($permission.FunctionName + " -objgroup " + '$adgroup' + " -objou " + '$OUPicked' + " -inheritanceType `'Descendents`'")
-                                }
-                            }
-                }else{}
-            }
-}
-}
-    #===========================
-    #End user piece here
-    #===========================
-$AllGroups = get-adgroup -f * -ResultSetSize 2500
-<#Pick X number of random groups#>
-$permint = 5..100|get-random
-$objwithPerms = @()
-$z = 1
-do{$objwithPerms += $AllGroups|Get-Random
-$z++}while($z -le $permint)
+# Non-critical groups only
+$nonCritGroups = Get-ADGroup -Filter { GroupCategory -eq "Security" -and GroupScope -eq "Global" } -Properties isCriticalSystemObject -Server $setDC |
+    Where-Object { $_.isCriticalSystemObject -ne $true }
 
-    foreach($obj in $objwithPerms){
-        $permissions = Create-PermissionSet
-        $adgroup = get-adgroup $obj
-        foreach ($permission in $permissions){
-            if($permissions.count -gt 0){ 
-            if ($permission.APPLY -eq 'TRUE'){
-    #apply directly to OU first choice, apply to computer,group,user second choice
-                if($permission.functionset -eq 'Full Control Permissions'){
-                  
-                    #FullControl 
-                    $OUorRootRando = 1..100|get-random
-                    if ($OUorRootRando -le 5){#lets do root here
-                        iex ($permission.FunctionName + " -objgroup " + '$adgroup' + " -objou " + '$dn' + " -inheritanceType `'Descendents`'")
-    
-                    }else{
-                        $OUPicked = $allOUs|Get-random
-                        iex ($permission.FunctionName + " -objgroup " + '$adgroup' + " -objou " + '$OUPicked' + " -inheritanceType `'Descendents`'")
-                    }
-                }
+# =========================================================================
+# SCENARIO 1: Helpdesk group with password reset on too many OUs
+# (Realistic: IT created a helpdesk delegation that covers admin OUs too)
+# =========================================================================
+Write-Host "  [*] Scenario 1: Overly broad helpdesk delegation..." -ForegroundColor Cyan
+
+$helpdeskGroups = $allGroups | Where-Object { $_.Name -like "*Helpdesk*" -or $_.Name -like "*Service-Desk*" -or $_.Name -like "*PasswordReset*" }
+if ($helpdeskGroups) {
+    $helpdeskGroup = $helpdeskGroups | Get-Random
+    # Grant password reset on People OU (intended) - this is fine
+    $peopleOU = $AllOUs | Where-Object { $_.DistinguishedName -eq "OU=People,$dn" }
+    if ($peopleOU) {
+        try { ResetUserPasswords -objGroup $helpdeskGroup -objOU $peopleOU -inheritanceType 'Descendents' } catch {}
+        try { UnlockUserAccount -objGroup $helpdeskGroup -objOU $peopleOU -inheritanceType 'Descendents' } catch {}
+    }
+    # MISCONFIGURATION: Also grant on Tier 1 OU (covers admin accounts!)
+    $tier1OU = $AllOUs | Where-Object { $_.DistinguishedName -eq "OU=Tier 1,$dn" }
+    if ($tier1OU) {
+        try { ResetUserPasswords -objGroup $helpdeskGroup -objOU $tier1OU -inheritanceType 'Descendents' } catch {}
+        Write-Host "    [!] Helpdesk '$($helpdeskGroup.Name)' has password reset on Tier 1 OU" -ForegroundColor Yellow
     }
 }
-}
-}
-#===========================
-#End group piece here
-#===========================
-$AllComputers = get-adcomputer -f * -ResultSetSize 2500
-<#Pick X number of random groups#>
-$permint = 5..100|get-random
-$objwithPerms = @()
-$z = 1
-do{$objwithPerms += $AllComputers|Get-Random
-$z++}while($z -le $permint)
 
-    foreach($obj in $objwithPerms){
-        $permissions = Create-PermissionSet
-        $adgroup = get-adcomputer $obj
-        foreach ($permission in $permissions){
-            if($permissions.count -gt 0){ 
-            if ($permission.APPLY -eq 'TRUE'){
-    #apply directly to OU first choice, apply to computer,group,user second choice
-                if($permission.functionset -eq 'Full Control Permissions'){
-                  
-                    #FullControl 
-                    $OUorRootRando = 1..100|get-random
-                    if ($OUorRootRando -le 5){#lets do root here
-                        iex ($permission.FunctionName + " -objgroup " + '$adgroup' + " -objou " + '$dn' + " -inheritanceType `'Descendents`'")
-    
-                    }else{
-                        $OUPicked = $allOUs|Get-random
-                        iex ($permission.FunctionName + " -objgroup " + '$adgroup' + " -objou " + '$OUPicked' + " -inheritanceType `'Descendents`'")
-                    }
-                }
+# =========================================================================
+# SCENARIO 2: IT group with FullControl on specific department OUs
+# (Realistic: Departmental IT team got full control for "troubleshooting")
+# =========================================================================
+Write-Host "  [*] Scenario 2: IT group with excessive OU permissions..." -ForegroundColor Cyan
+
+$itGroups = $allGroups | Where-Object { $_.Name -like "*Server-Admin*" -or $_.Name -like "*ADM-*" -or $_.Name -like "*Workstation-Admin*" }
+if ($itGroups) {
+    # Pick 2-3 IT groups and give them FullControl on department OUs
+    $selectedITGroups = $itGroups | Get-Random -Count ([Math]::Min(3, $itGroups.Count))
+    foreach ($itGroup in $selectedITGroups) {
+        $targetOU = $AllOUs | Where-Object { $_.DistinguishedName -like "OU=*,OU=Tier 2,$dn" } | Get-Random
+        if ($targetOU) {
+            try {
+                FullControl -objGroup $itGroup -objOU $targetOU -inheritanceType 'Descendents'
+                Write-Host "    [!] '$($itGroup.Name)' has FullControl on '$($targetOU.Name)'" -ForegroundColor Yellow
+            } catch {}
+        }
     }
 }
+
+# =========================================================================
+# SCENARIO 3: Individual users with GenericAll on specific OUs
+# (Realistic: Someone was granted permissions directly instead of via group)
+# =========================================================================
+Write-Host "  [*] Scenario 3: Direct user ACL grants..." -ForegroundColor Cyan
+
+$directPermUsers = $allUsers | Get-Random -Count ([Math]::Min(5, $allUsers.Count))
+foreach ($user in $directPermUsers) {
+    $targetOU = $AllOUs | Get-Random
+    $permType = Get-Random -Minimum 1 -Maximum 101
+
+    if ($permType -le 30) {
+        try { ModifyUserProperties -objGroup $user -objOU $targetOU -inheritanceType 'Descendents' } catch {}
+    } elseif ($permType -le 50) {
+        try { ModifyComputerProperties -objGroup $user -objOU $targetOU -inheritanceType 'Descendents' } catch {}
+    } elseif ($permType -le 70) {
+        try { ModifyGroupMembership -objGroup $user -objOU $targetOU -inheritanceType 'Descendents' } catch {}
+    } elseif ($permType -le 85) {
+        try { ResetUserPasswords -objGroup $user -objOU $targetOU -inheritanceType 'Descendents' } catch {}
+    } else {
+        try { ForcePasswordChangeAtLogon -objGroup $user -objOU $targetOU -inheritanceType 'Descendents' } catch {}
+    }
 }
+
+# =========================================================================
+# SCENARIO 4: GenericAll on domain root - BUT only 1-2 objects, not dozens
+# (Realistic: A migration tool service account that was never cleaned up)
+# =========================================================================
+Write-Host "  [*] Scenario 4: Leftover migration permissions on domain root..." -ForegroundColor Cyan
+
+$rootPermRoll = Get-Random -Minimum 1 -Maximum 101
+if ($rootPermRoll -le 60) {
+    # One group with GenericAll on root (the "migration team" leftover)
+    $migrationGroup = $nonCritGroups | Where-Object { $_.Name -like "PRJ-*" } | Get-Random
+    if ($migrationGroup) {
+        try {
+            FullControl -objGroup $migrationGroup -objOU $dn -inheritanceType 'Descendents'
+            Write-Host "    [!] '$($migrationGroup.Name)' has FullControl on domain root (migration leftover)" -ForegroundColor Yellow
+        } catch {}
+    }
 }
-#===========================
-#End group piece here
-#===========================
+
+# One user (service account) with GenericAll on root
+$svcAccounts = $allUsers | Where-Object { $_.SamAccountName -like "*SA" }
+if ($svcAccounts -and $svcAccounts.Count -gt 0) {
+    $svcAccount = $svcAccounts | Get-Random
+    $svcRoll = Get-Random -Minimum 1 -Maximum 101
+    if ($svcRoll -le 40) {
+        try {
+            FullControl -objGroup $svcAccount -objOU $dn -inheritanceType 'Descendents'
+            Write-Host "    [!] Service account '$($svcAccount.SamAccountName)' has FullControl on domain root" -ForegroundColor Yellow
+        } catch {}
+    }
+}
+
+# =========================================================================
+# SCENARIO 5: WriteDACL / WriteOwner on critical containers
+# (Realistic: Group that can modify ACLs = can grant itself anything)
+# =========================================================================
+Write-Host "  [*] Scenario 5: WriteDACL escalation paths..." -ForegroundColor Cyan
+
+$writeDaclGroups = $nonCritGroups | Get-Random -Count ([Math]::Min(2, $nonCritGroups.Count))
+foreach ($wdGroup in $writeDaclGroups) {
+    $critOU = $AllOUs | Where-Object { $_.DistinguishedName -like "OU=Tier 0*" -or $_.DistinguishedName -like "OU=Admin*" } | Get-Random
+    if ($critOU) {
+        try {
+            $groupSID = New-Object System.Security.Principal.SecurityIdentifier $wdGroup.SID
+            $objAcl = Get-Acl $critOU
+            $objAcl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $groupSID, "WriteDacl", "Allow", "Descendents"))
+            Set-Acl -AclObject $objAcl -Path $critOU
+            Write-Host "    [!] '$($wdGroup.Name)' has WriteDACL on '$($critOU.Name)'" -ForegroundColor Yellow
+        } catch {}
+    }
+}
+
+# =========================================================================
+# SCENARIO 6: Groups with permissions on other groups (membership modification)
+# (Realistic: A group can add members to a privileged group)
+# =========================================================================
+Write-Host "  [*] Scenario 6: Group-to-group permission chains..." -ForegroundColor Cyan
+
+# Pick a few non-critical groups and give them WriteProperty on member attribute of other groups
+$chainSourceGroups = $nonCritGroups | Get-Random -Count ([Math]::Min(3, $nonCritGroups.Count))
+foreach ($srcGroup in $chainSourceGroups) {
+    $targetGroup = $allGroups | Where-Object { $_.DistinguishedName -ne $srcGroup.DistinguishedName } | Get-Random
+    if ($targetGroup) {
+        try {
+            $groupSID = New-Object System.Security.Principal.SecurityIdentifier $srcGroup.SID
+            $objAcl = Get-Acl "AD:\$($targetGroup.DistinguishedName)"
+            $objAcl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $groupSID, "WriteProperty", "Allow", $guidmap["member"], "None"))
+            Set-Acl -AclObject $objAcl -Path "AD:\$($targetGroup.DistinguishedName)"
+        } catch {}
+    }
+}
+
+Write-Host "  [+] Realistic ACL misconfiguration complete." -ForegroundColor Green

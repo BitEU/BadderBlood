@@ -1,0 +1,13 @@
+﻿Acronym,Department Name,Department Role
+BDE,Business Development,Sales team.
+HRE,Human Relations,"Recruiters, Benefits staff."
+FIN,Finance,"Accountants, Payroll."
+OGC,Office of the General Counsel,"Lawyers, Legal aides."
+FSR,Field Services,Technicians who work off-site.
+AWS,AWS Stuff,Cloud admins.
+ESM,Endpoint System Management,Configures devices.
+SEC,Information Security,Security Ops Center (SOC).
+ITS,Information Technology Services,"Helpdesk, Sysadmins."
+GOO,Google Cloud,Cloud admins.
+AZR,Azure,Cloud admins.
+TST,Testing,Throwaway accounts.

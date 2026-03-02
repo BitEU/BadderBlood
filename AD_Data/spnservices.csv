@@ -1,0 +1,13 @@
+ServiceType,ServiceName,Description,Realistic
+MSSQLSvc,SQL Server,Database service account,TRUE
+HTTP,IIS Web Application,Web application pool identity,TRUE
+HTTP,SharePoint,SharePoint farm account,TRUE
+MSSQLSvc,SQL Reporting,SSRS service account,TRUE
+TERMSRV,Remote Desktop,RDS broker service,TRUE
+exchangeMDB,Exchange Mailbox,Exchange service,TRUE
+SIP,Skype for Business,Lync/SfB service,TRUE
+FTP,Legacy FTP,Legacy file transfer service,TRUE
+CIFS,File Share Service,CIFS service account,FALSE
+kafka,Legacy App,Misconfigured app SPN,FALSE
+POP3,Legacy Mail,Legacy mail retrieval,FALSE
+MSSQL,Old SQL Instance,Legacy SQL instance,FALSE

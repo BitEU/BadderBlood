@@ -43,8 +43,13 @@ function WeakUserPasswords {
     
     foreach($user in $UserList){
         $RandomPassword = Get-random $BadPasswords
-        write-host $RandomPassword
-        $User | Set-ADAccountPassword -Reset -NewPassword (ConvertTo-SecureString $RandomPassword -AsPlainText -Force)
+        try {
+            $User | Set-ADAccountPassword -Reset -NewPassword (ConvertTo-SecureString $RandomPassword -AsPlainText -Force) -ErrorAction Stop
+            Write-Host "    [!] Weak password set: $($User.SamAccountName)" -ForegroundColor Yellow
+        }
+        catch {
+            Write-Host "    [X] Failed to set password for $($User.SamAccountName): $_" -ForegroundColor Red
+        }
     }
 	
     
