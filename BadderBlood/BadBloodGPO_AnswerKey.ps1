@@ -1061,7 +1061,7 @@ foreach ($cat in $categories) {
     foreach ($f in $catFindings) {
         $findNum++
         $reportLines.Add("-" * 70)
-        $reportLines.Add("  Finding $findNum: [$($f.Severity)] $($f.Finding)")
+        $reportLines.Add("  Finding {$findNum}: [$($f.Severity)] $($f.Finding)")
         $reportLines.Add("  GPO:          $($f.GPOName) {$($f.GPOGUID)}")
         $reportLines.Add("  Current:      $($f.CurrentState)")
         $reportLines.Add("  Expected:     $($f.ExpectedState)")

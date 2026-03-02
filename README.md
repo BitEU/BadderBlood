@@ -12,7 +12,6 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 
 ## Installation (on a freshly installed Windows Server)
 
-
 1. ```Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools```
 2. ```Install-ADDSForest -DomainName "contoso.com"```
 3. Wait for the machine to restart
@@ -22,6 +21,23 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\Invoke-BadBlood.ps1```
 8. Once BadBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadBlood\BadBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
 
+## Instalation on QEMU
+
+1. Download virtio-win.iso rom https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/
+2. Download and install QEMU from https://qemu.weilnetz.de/w64/
+3. Download the win server eval ISO you want
+4. You can now cd to the QEMU dir and run this, changing the paths to reflect your install: 
+```.\qemu-system-x86_64.exe -m 16G -smp 8,sockets=1,cores=8,threads=1 -cpu Haswell-v4,vendor=GenuineIntel,+hypervisor,+kvm_pv_unhalt -machine q35 -accel whpx -drive file="C:\Users\wcdaht-srs\Downloads\ws2022.qcow2",format=qcow2,if=virtio -cdrom "C:\Users\wcdaht-srs\Downloads\SERVER_EVAL_x64FRE_en-us.iso" -drive file="C:\Users\wcdaht-srs\Downloads\virtio-win.iso",media=cdrom -boot d -vga std -net nic,model=e1000 -net user```
+5. Go through all the install steps, load storage drivers with virtio, etc
+6. Once the machine restarts, you can now use this cmd:
+```.\qemu-system-x86_64.exe -m 16G -smp 8,sockets=1,cores=8,threads=1 -cpu Haswell-v4,vendor=GenuineIntel,+hypervisor,+kvm_pv_unhalt -machine q35 -accel whpx -drive file="C:\Users\wcdaht-srs\Downloads\ws2022.qcow2",format=qcow2,if=virtio -vga std -net nic,model=e1000 -net user,hostfwd=tcp::3390-:3389```
+7. Now you can rdp into it via localhost:3390
+
+If you want to nuke AD:
+1. Run ```Uninstall-ADDSDomainController -LastDomainControllerInDomain -RemoveApplicationPartitions -IgnoreLastDnsServerForZone -LocalAdministratorPassword $LocalAdminPass -Force```
+2. ```Restart-Computer -Force```
+3. ```Install-ADDSForest -DomainName "sirshanova.com" -Force```
+3. Start from Step 7
 
 ## License
 This project is licensed under the gplv3 License - see the LICENSE.md file for details
