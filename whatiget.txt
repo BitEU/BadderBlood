@@ -1,0 +1,54 @@
+PS C:\Users\Administrator\Desktop> powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadBloodAnswerKey.ps1
+===============================================================================
+   BadBlood Domain Cleanup - Answer Key Generator
+   2026-03-01 19:22:13
+===============================================================================
+[*] Auditing domain: contoso.com
+[*] Domain DN: DC=contoso,DC=com
+[*] Output directory: .\BadBlood_AnswerKey_20260301_192213
+[*] SECTION 1: Identifying all BadBlood-created objects...
+[*] Found 0 BadBlood-created users
+[*] Found 0 BadBlood-created security groups
+[*] SECTION 2: Auditing privileged group memberships...
+[*] Found 5 privileged group membership violations
+[*] SECTION 3: Checking for dangerous user account settings...
+[*] SECTION 4: Analyzing nested group membership chains...
+[*] SECTION 5: Analyzing OU structure...
+[*] SECTION 6: Analyzing ACL delegations on OUs and objects...
+[*] Checking ACLs on 3 critical objects (of 3 total)...
+[*] SECTION 8: Analyzing computer objects...
+[*] Generating reports...
+[*] Master report saved: .\BadBlood_AnswerKey_20260301_192213\AnswerKey_MasterReport.txt
+[*] Privileged group report saved: .\BadBlood_AnswerKey_20260301_192213\PrivilegedGroupMembers.csv
+[*] All findings CSV saved: .\BadBlood_AnswerKey_20260301_192213\AllFindings.csv
+[*] Cheat sheet saved: .\BadBlood_AnswerKey_20260301_192213\QuickReference_CheatSheet.txt
+[*] Remediation script saved: .\BadBlood_AnswerKey_20260301_192213\Remediation_Script.ps1
+[*] Grading rubric saved: .\BadBlood_AnswerKey_20260301_192213\GradingRubric.txt
+
+= * 80
+  ANSWER KEY GENERATION COMPLETE
+= * 80
+
+  Domain:     contoso.com
+  BB Users:   0
+  BB Groups:  0
+
+  FINDINGS:
+    CRITICAL: 2
+    HIGH:     6
+    MEDIUM:   0
+    LOW:      0
+    INFO:     0
+    TOTAL:    8
+
+  OUTPUT FILES:
+    .\BadBlood_AnswerKey_20260301_192213\AnswerKey_MasterReport.txt
+    .\BadBlood_AnswerKey_20260301_192213\PrivilegedGroupMembers.csv
+    .\BadBlood_AnswerKey_20260301_192213\AllFindings.csv
+    .\BadBlood_AnswerKey_20260301_192213\QuickReference_CheatSheet.txt
+    .\BadBlood_AnswerKey_20260301_192213\Remediation_Script.ps1
+    .\BadBlood_AnswerKey_20260301_192213\GradingRubric.txt
+
+  TIP: Run the Remediation_Script.ps1 with -WhatIf first!
+= * 80
+PS C:\Users\Administrator\Desktop>
