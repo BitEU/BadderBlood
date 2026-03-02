@@ -78,28 +78,16 @@ $basescriptPath = Get-ScriptDirectory
 # BANNER
 # =========================================================================
 Clear-Host
-Write-Host ""
-Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Red
-Write-Host "  ║                                                              ║" -ForegroundColor Red
-Write-Host "  ║   ██████╗  █████╗ ██████╗ ██████╗ ███████╗██████╗           ║" -ForegroundColor Red
-Write-Host "  ║   ██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗          ║" -ForegroundColor Red
-Write-Host "  ║   ██████╔╝███████║██║  ██║██║  ██║█████╗  ██████╔╝          ║" -ForegroundColor Red
-Write-Host "  ║   ██╔══██╗██╔══██║██║  ██║██║  ██║██╔══╝  ██╔══██╗          ║" -ForegroundColor Red
-Write-Host "  ║   ██████╔╝██║  ██║██████╔╝██████╔╝███████╗██║  ██║          ║" -ForegroundColor Red
-Write-Host "  ║   ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝          ║" -ForegroundColor Red
-Write-Host "  ║                                                              ║" -ForegroundColor Red
-Write-Host "  ║   ██████╗ ██╗      ██████╗  ██████╗ ██████╗                 ║" -ForegroundColor DarkRed
-Write-Host "  ║   ██╔══██╗██║     ██╔═══██╗██╔═══██╗██╔══██╗                ║" -ForegroundColor DarkRed
-Write-Host "  ║   ██████╔╝██║     ██║   ██║██║   ██║██║  ██║                ║" -ForegroundColor DarkRed
-Write-Host "  ║   ██╔══██╗██║     ██║   ██║██║   ██║██║  ██║                ║" -ForegroundColor DarkRed
-Write-Host "  ║   ██████╔╝███████╗╚██████╔╝╚██████╔╝██████╔╝                ║" -ForegroundColor DarkRed
-Write-Host "  ║   ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝                ║" -ForegroundColor DarkRed
-Write-Host "  ║                                                              ║" -ForegroundColor Red
-Write-Host "  ║   Realistic AD Lab Generator                                 ║" -ForegroundColor Yellow
-Write-Host "  ║   Based on BadBlood by David Rowe (secframe.com)             ║" -ForegroundColor Gray
-Write-Host "  ║                                                              ║" -ForegroundColor Red
-Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Red
-Write-Host ""
+Write-Host ''
+Write-Host '  ================================================================' -ForegroundColor Red
+Write-Host '  =                                                              =' -ForegroundColor Red
+Write-Host '  =              B A D D E R   B L O O D                         =' -ForegroundColor Red
+Write-Host '  =                                                              =' -ForegroundColor Red
+Write-Host '  =         Realistic AD Lab Generator by Steven S.              =' -ForegroundColor Yellow
+Write-Host '  =         Based on BadBlood by David Rowe (secframe.com)       =' -ForegroundColor Gray
+Write-Host '  =                                                              =' -ForegroundColor Red
+Write-Host '  ================================================================' -ForegroundColor Red
+Write-Host ''
 
 # =========================================================================
 # CONFIGURATION DISPLAY
@@ -144,11 +132,13 @@ if ($badblood -eq 'badblood') {
     # =====================================================================
     $phase++
     if ($PSBoundParameters.ContainsKey('SkipLapsInstall') -eq $false) {
-        Write-Host "`n  [$phase/$totalPhases] Installing LAPS Schema..." -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Installing LAPS Schema..." -ForegroundColor Green
         Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: LAPS Schema" -PercentComplete ($phase / $totalPhases * 100)
         . ($basescriptPath + '\AD_LAPS_Install\InstallLAPSSchema.ps1')
     } else {
-        Write-Host "`n  [$phase/$totalPhases] Skipping LAPS installation..." -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Skipping LAPS installation..." -ForegroundColor Gray
     }
 
     # =====================================================================
@@ -156,18 +146,21 @@ if ($badblood -eq 'badblood') {
     # =====================================================================
     $phase++
     if ($PSBoundParameters.ContainsKey('SkipOuCreation') -eq $false) {
-        Write-Host "`n  [$phase/$totalPhases] Creating OU structure..." -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Creating OU structure..." -ForegroundColor Green
         Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: OU Structure" -PercentComplete ($phase / $totalPhases * 100)
         . ($basescriptPath + '\AD_OU_CreateStructure\CreateOUStructure.ps1')
     } else {
-        Write-Host "`n  [$phase/$totalPhases] Skipping OU creation..." -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Skipping OU creation..." -ForegroundColor Gray
     }
 
     # =====================================================================
     # PHASE 3: Load data files
     # =====================================================================
     $phase++
-    Write-Host "`n  [$phase/$totalPhases] Loading data files..." -ForegroundColor Green
+    Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Loading data files..." -ForegroundColor Green
     $OUsAll = Get-ADOrganizationalUnit -Filter * -Server $setDC
     $DepartmentList = Import-Csv ($basescriptPath + "\AD_Data\AD_Departments.csv")
     $JobTitleList = Import-Csv ($basescriptPath + "\AD_Data\JobTitles.csv")
@@ -178,7 +171,8 @@ if ($badblood -eq 'badblood') {
     # PHASE 4: User Creation
     # =====================================================================
     $phase++
-    Write-Host "`n  [$phase/$totalPhases] Creating $UserCount users..." -ForegroundColor Green
+    Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Creating $UserCount users..." -ForegroundColor Green
     . ($basescriptPath + '\AD_Users_Create\CreateUsers.ps1')
     $createuserscriptpath = $basescriptPath + '\AD_Users_Create\'
 
@@ -199,7 +193,8 @@ if ($badblood -eq 'badblood') {
     # =====================================================================
     $phase++
     $AllUsers = Get-ADUser -Filter * -Properties Department,departmentNumber -Server $setDC
-    Write-Host "`n  [$phase/$totalPhases] Creating $GroupCount groups..." -ForegroundColor Green
+    Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Creating $GroupCount groups..." -ForegroundColor Green
     . ($basescriptPath + '\AD_Groups_Create\CreateGroup.ps1')
     $createGroupScriptPath = $basescriptPath + '\AD_Groups_Create\'
 
@@ -221,7 +216,8 @@ if ($badblood -eq 'badblood') {
     # PHASE 6: Computer Creation
     # =====================================================================
     $phase++
-    Write-Host "`n  [$phase/$totalPhases] Creating $ComputerCount computers..." -ForegroundColor Green
+    Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Creating $ComputerCount computers..." -ForegroundColor Green
     . ($basescriptPath + '\AD_Computers_Create\CreateComputers.ps1')
     $createComputerScriptPath = $basescriptPath + '\AD_Computers_Create\'
 
@@ -242,7 +238,8 @@ if ($badblood -eq 'badblood') {
     # PHASE 7: ACL Misconfigurations (Realistic)
     # =====================================================================
     $phase++
-    Write-Host "`n  [$phase/$totalPhases] Creating realistic ACL misconfigurations..." -ForegroundColor Green
+    Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Creating realistic ACL misconfigurations..." -ForegroundColor Green
     Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: ACL Misconfigurations" -PercentComplete ($phase / $totalPhases * 100)
     . ($basescriptPath + '\AD_Permissions_Randomizer\GenerateRandomPermissions.ps1')
 
@@ -250,7 +247,8 @@ if ($badblood -eq 'badblood') {
     # PHASE 8: Group Membership (Realistic Nesting)
     # =====================================================================
     $phase++
-    Write-Host "`n  [$phase/$totalPhases] Populating group memberships..." -ForegroundColor Green
+    Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Populating group memberships..." -ForegroundColor Green
     Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Group Memberships" -PercentComplete ($phase / $totalPhases * 100)
     . ($basescriptPath + '\AD_Groups_Create\AddRandomToGroups.ps1')
     AddRandomToGroups -Domain $Domain -UserList $AllUsers -GroupList $GroupList `
@@ -260,7 +258,8 @@ if ($badblood -eq 'badblood') {
     # PHASE 9: Attack Vectors (Controlled)
     # =====================================================================
     $phase++
-    Write-Host "`n  [$phase/$totalPhases] Injecting controlled attack vectors..." -ForegroundColor Green
+    Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Injecting controlled attack vectors..." -ForegroundColor Green
     Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Attack Vectors" -PercentComplete ($phase / $totalPhases * 100)
 
     # --- SPNs (Kerberoasting) ---
@@ -278,9 +277,20 @@ if ($badblood -eq 'badblood') {
     # --- Weak Passwords (optional) ---
     if ($WeakPasswordCount -gt 0) {
         Write-Host "    Setting weak passwords ($WeakPasswordCount accounts)..." -ForegroundColor Cyan
+        
+        # Temporarily disable password complexity for lab purposes
+        Write-Host "    [*] Temporarily disabling password complexity..." -ForegroundColor Yellow
+        $OriginalComplexity = (Get-ADDefaultDomainPasswordPolicy).ComplexityEnabled
+        $OriginalMinLength = (Get-ADDefaultDomainPasswordPolicy).MinPasswordLength
+        Set-ADDefaultDomainPasswordPolicy -Identity (Get-ADDomain).DistinguishedName -ComplexityEnabled $false -MinPasswordLength 1
+        
         $WeakCandidates = $AllUsers | Get-Random -Count ([Math]::Min($WeakPasswordCount, $AllUsers.Count))
         . ($basescriptPath + '\AD_Attack_Vectors\WeakUserPasswords.ps1')
         WeakUserPasswords -UserList $WeakCandidates
+        
+        # Restore original password policy
+        Write-Host "    [*] Restoring password complexity settings..." -ForegroundColor Yellow
+        Set-ADDefaultDomainPasswordPolicy -Identity (Get-ADDomain).DistinguishedName -ComplexityEnabled $OriginalComplexity -MinPasswordLength $OriginalMinLength
     }
 
     # --- SID History (if DSInternals available) ---
@@ -295,9 +305,9 @@ if ($badblood -eq 'badblood') {
     Write-Progress -Activity "BadderBlood Deployment" -Completed
 
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-    Write-Host "  ║                   DEPLOYMENT COMPLETE                        ║" -ForegroundColor Green
-    Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host '  ================================================================' -ForegroundColor Green
+    Write-Host '                     DEPLOYMENT COMPLETE                          ' -ForegroundColor Green
+    Write-Host '  ================================================================' -ForegroundColor Green
     Write-Host ""
     Write-Host "  Summary:" -ForegroundColor White
     Write-Host "    Users created:      $UserCount ($DriftPercent% drifted)" -ForegroundColor Cyan

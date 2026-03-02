@@ -18,8 +18,8 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 3. Wait for the machine to restart
 4. ```Set-MpPreference -DisableRealtimeMonitoring $true```
 5. Download this repo, extract it to the C drive with a path of ```C:\BadderBlood```
-6. ```Run Get-ChildItem -Path C:\BadderBlood -Recurse | Unblock-File```
-7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadBlood\Invoke-BadBlood.ps1```
+6. Run ```Get-ChildItem -Path C:\BadderBlood -Recurse | Unblock-File```
+7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\Invoke-BadBlood.ps1```
 8. Once BadBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadBlood\BadBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
 
 
