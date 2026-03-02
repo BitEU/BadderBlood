@@ -21,6 +21,7 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\Invoke-BadBlood.ps1```
 8. Once BadBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadBlood\BadBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
 
+
 ## Instalation on QEMU
 
 1. Download virtio-win.iso rom https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/
@@ -38,6 +39,7 @@ If you want to nuke AD:
 2. ```Restart-Computer -Force```
 3. ```Install-ADDSForest -DomainName "sirshanova.com" -Force```
 3. Start from Step 7
+
 
 ## License
 This project is licensed under the gplv3 License - see the LICENSE.md file for details
