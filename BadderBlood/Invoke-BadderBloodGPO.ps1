@@ -173,7 +173,13 @@ $gpo1 = New-InsecureGPO -Name "IT-PasswordPolicy-Standard" `
 # We need to write directly to SYSVOL for security settings
 $gpo1Path = "\\$DomainDNS\SYSVOL\$DomainDNS\Policies\{$($gpo1.Id)}"
 $machPath = "$gpo1Path\Machine\Microsoft\Windows NT\SecEdit"
-New-Item -ItemType Directory -Path $machPath -Force -ErrorAction SilentlyContinue | Out-Null
+$sysvolTimeout = 30
+$sysvolElapsed = 0
+while (-not (Test-Path $gpo1Path) -and $sysvolElapsed -lt $sysvolTimeout) {
+    Start-Sleep -Seconds 1
+    $sysvolElapsed++
+}
+[System.IO.Directory]::CreateDirectory($machPath) | Out-Null
 
 $pwPolicyInf = @"
 [Unicode]
@@ -190,7 +196,7 @@ ClearTextPassword = 0
 signature="`$CHICAGO`$"
 Revision=1
 "@
-$pwPolicyInf | Out-File -FilePath "$machPath\GptTmpl.inf" -Encoding Unicode
+[System.IO.File]::WriteAllText("$machPath\GptTmpl.inf", $pwPolicyInf, [System.Text.Encoding]::Unicode)
 
 # Update GPO version counter so clients know to re-process
 Set-GPRegistryValue -Name "IT-PasswordPolicy-Standard" -Key "HKLM\Software\Policies\BadderBloodGPO" -ValueName "Marker1" -Type String -Value "deployed" -ErrorAction SilentlyContinue | Out-Null
@@ -655,7 +661,13 @@ $gpo17 = New-InsecureGPO -Name "IT-LocalAdmin-Deploy" `
 # (Microsoft published it in MSDN), so any domain user can decrypt it.
 $gpo17Path = "\\$DomainDNS\SYSVOL\$DomainDNS\Policies\{$($gpo17.Id)}"
 $prefPath = "$gpo17Path\Machine\Preferences\Groups"
-New-Item -ItemType Directory -Path $prefPath -Force -ErrorAction SilentlyContinue | Out-Null
+$sysvolTimeout = 30
+$sysvolElapsed = 0
+while (-not (Test-Path $gpo17Path) -and $sysvolElapsed -lt $sysvolTimeout) {
+    Start-Sleep -Seconds 1
+    $sysvolElapsed++
+}
+[System.IO.Directory]::CreateDirectory($prefPath) | Out-Null
 
 # This is the classic cpassword value - AES-256 encrypted with the publicly-known
 # Microsoft key. Decrypts to "P@ssw0rd123!" using gpp-decrypt or Get-GPPPassword
@@ -672,7 +684,7 @@ $groupsXml = @"
   </User>
 </Groups>
 "@
-$groupsXml | Out-File -FilePath "$prefPath\Groups.xml" -Encoding UTF8
+[System.IO.File]::WriteAllText("$prefPath\Groups.xml", $groupsXml, [System.Text.Encoding]::UTF8)
 
 $CreatedGPOs.Add([PSCustomObject]@{
     Name = "IT-LocalAdmin-Deploy"
@@ -986,7 +998,13 @@ try {
 # This creates an Immediate Scheduled Task that runs as SYSTEM
 $gpo20Path = "\\$DomainDNS\SYSVOL\$DomainDNS\Policies\{$($gpo20.Id)}"
 $taskPrefPath = "$gpo20Path\Machine\Preferences\ScheduledTasks"
-New-Item -ItemType Directory -Path $taskPrefPath -Force -ErrorAction SilentlyContinue | Out-Null
+$sysvolTimeout = 30
+$sysvolElapsed = 0
+while (-not (Test-Path $gpo20Path) -and $sysvolElapsed -lt $sysvolTimeout) {
+    Start-Sleep -Seconds 1
+    $sysvolElapsed++
+}
+[System.IO.Directory]::CreateDirectory($taskPrefPath) | Out-Null
 
 # Generate unique task GUID
 $taskGuid = [GUID]::NewGuid().ToString("B").ToUpper()
@@ -1052,7 +1070,7 @@ $scheduledTaskXml = @"
 </ScheduledTasks>
 "@
 
-$scheduledTaskXml | Out-File -FilePath "$taskPrefPath\ScheduledTasks.xml" -Encoding UTF8
+[System.IO.File]::WriteAllText("$taskPrefPath\ScheduledTasks.xml", $scheduledTaskXml, [System.Text.Encoding]::UTF8)
 Write-Host "    [+] Deployed ScheduledTasks.xml to SYSVOL" -ForegroundColor Green
 Write-Host "    [+] Task: 'IT-SystemHealthCheck' runs as SYSTEM every Sunday + at boot" -ForegroundColor Green
 Write-Host "    [+] Executes: \\$dcHostname\ITScripts\$ScriptName" -ForegroundColor Green
@@ -1133,7 +1151,7 @@ if ($IncludeDecoyGPOs) {
 # ============================================================================
 # EXPORT MANIFEST
 # ============================================================================
-$manifestPath = ".\BadderBloodGPO_Manifest_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$manifestPath = "$PSScriptRoot\BadderBloodGPO_Manifest_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
 $CreatedGPOs | Export-Csv -Path $manifestPath -NoTypeInformation
 Write-Host "`n[*] GPO manifest saved: $manifestPath" -ForegroundColor Green
 
