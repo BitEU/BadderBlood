@@ -116,17 +116,17 @@ Write-Host "  It should NEVER be run in a production environment." -ForegroundCo
 Write-Host "  You are responsible for how you use this tool." -ForegroundColor Yellow
 Write-Host ""
 
-$badblood = "badblood"
+$badderblood = "badderblood"
 if ($NonInteractive -eq $false) {
-    $badblood = Read-Host -Prompt "  Type 'badblood' to begin deployment"
-    $badblood = $badblood.ToLower()
-    if ($badblood -ne 'badblood') {
+    $badderblood = Read-Host -Prompt "  Type 'badderblood' to begin deployment"
+    $badderblood = $badderblood.ToLower()
+    if ($badderblood -ne 'badderblood') {
         Write-Host "  Exiting." -ForegroundColor Red
         exit
     }
 }
 
-if ($badblood -eq 'badblood') {
+if ($badderblood -eq 'badderblood') {
 
     $totalPhases = if ($SkipGPODeployment) { 9 } else { 10 }
     $phase = 0
@@ -185,8 +185,8 @@ if ($badblood -eq 'badblood') {
 
     $x = 1
     do {
-        # Refresh ExistingUsers every 100 iterations so manager pool stays current
-        if ($x % 100 -eq 0 -or $x -eq 1) {
+        # Refresh ExistingUsers every 250 iterations so manager pool stays current
+        if ($x % 250 -eq 0 -or $x -eq 1) {
             $ExistingUsersPool = Get-ADUser -Filter { Enabled -eq $true } -Properties Title,DistinguishedName,departmentNumber -Server $setDC
             Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating users ($x/$UserCount)" -PercentComplete ($x / $UserCount * 100)
         }

@@ -14,7 +14,7 @@ function Get-ScriptDirectory {
 }
 $scriptPath = Get-ScriptDirectory
 #$adplatformsourcedir = split-path -Path $scriptPath -Parent
-$adplatformsourcedir = "c:\badblood" #if my scripts and AD_OU_SetACL scripts are in the c:\badblood folder, this will work.  point to the proper parent folder
+$adplatformsourcedir = "c:\badderblood" #if my scripts and AD_OU_SetACL scripts are in the c:\badderblood folder, this will work.  point to the proper parent folder
 
 
 #=============================================

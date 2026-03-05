@@ -4,6 +4,25 @@
 # Org hierarchy is title-aware: only higher-level titles manage lower ones.
 # Singleton roles (CEO, CFO, CISO, etc.) are enforced via MaxCount.
 ################################
+
+# =====================================================================
+# ONE-TIME CACHES (populated on first call, reused across all calls)
+# =====================================================================
+if (-not $script:_bbNamesCached) {
+    $script:_bbNamesCached    = $false
+    $script:_bbFamilyNames    = $null
+    $script:_bbFemaleNames    = $null
+    $script:_bbMaleNames      = $null
+    $script:_bbWeightedDepts  = $null
+    $script:_bbHierarchyMap   = $null   # Title -> ReportsTo
+    $script:_bbTitleLevelMap  = $null   # Title -> Level (int)
+    $script:_bbDeptMap        = $null   # Acronym -> Department Name
+    $script:_bbTitlesByDept   = $null   # DeptCode -> @(title objects)
+    $script:_bbUsersByTitle   = $null   # Title -> @(user objects) from ExistingUsers
+    $script:_bbTitleCounts    = $null   # Title -> count (from ExistingUsers)
+    $script:_bbLocalTitleCounts = @{}   # Title -> count (local running tally, always accurate for capped titles)
+}
+
 Function CreateUser {
     <#
         .SYNOPSIS
@@ -12,7 +31,6 @@ Function CreateUser {
             Generates users with department, title, phone, office, manager, and places them in the
             correct OU. Title-aware manager assignment ensures realistic reporting chains.
             Singleton roles (CEO, CFO, etc.) are enforced so only one can exist.
-            A configurable percentage are intentionally drifted to wrong OUs.
         .NOTES
             BadderBlood - Realistic AD Lab Generator
     #>
@@ -69,6 +87,93 @@ Function CreateUser {
     }
     if (!$PSBoundParameters.ContainsKey('OrgHierarchy')) {
         $OrgHierarchy = Import-Csv ($scriptparent + "\AD_Data\org_hierarchy.csv")
+    }
+
+    # =====================================================================
+    # INITIALIZE ONE-TIME CACHES (first call only)
+    # =====================================================================
+    if (-not $script:_bbNamesCached) {
+        # Cache name lists from disk (eliminates ~7500 file reads over 2500 calls)
+        $script:_bbFamilyNames = @(Get-Content ("$($scriptpath)\Names\familynames-usa-top1000.txt"))
+        $script:_bbFemaleNames = @(Get-Content ("$($scriptpath)\Names\femalenames-usa-top1000.txt"))
+        $script:_bbMaleNames   = @(Get-Content ("$($scriptpath)\Names\malenames-usa-top1000.txt"))
+
+        # Pre-build weighted department array (eliminates rebuild per call)
+        $deptWeights = @{
+            'BDE' = 20; 'HRE' = 10; 'FIN' = 15; 'OGC' = 8; 'FSR' = 12
+            'AWS' = 5;  'ESM' = 5;  'SEC' = 5;  'ITS' = 8; 'GOO' = 4
+            'AZR' = 5;  'TST' = 3
+        }
+        $wd = [System.Collections.Generic.List[string]]::new(100)
+        foreach ($d in $deptWeights.Keys) {
+            for ($w = 0; $w -lt $deptWeights[$d]; $w++) { $wd.Add($d) }
+        }
+        $script:_bbWeightedDepts = $wd.ToArray()
+
+        # Build hierarchy hashtable: Title -> ReportsTo (eliminates Where-Object per lookup)
+        $script:_bbHierarchyMap = @{}
+        foreach ($entry in $OrgHierarchy) {
+            $script:_bbHierarchyMap[$entry.Title] = $entry.ReportsTo
+        }
+
+        # Build title -> level hashtable
+        $script:_bbTitleLevelMap = @{}
+        foreach ($t in $JobTitleList) {
+            $script:_bbTitleLevelMap[$t.Title] = [int]$t.Level
+        }
+
+        # Build department -> name hashtable
+        $script:_bbDeptMap = @{}
+        foreach ($d in $DepartmentList) {
+            $script:_bbDeptMap[$d.Acronym] = $d.'Department Name'
+        }
+
+        # Pre-group titles by department (eliminates Where-Object per call)
+        $script:_bbTitlesByDept = @{}
+        foreach ($t in $JobTitleList) {
+            $key = $t.Acronym
+            if (-not $script:_bbTitlesByDept.ContainsKey($key)) {
+                $script:_bbTitlesByDept[$key] = [System.Collections.Generic.List[object]]::new()
+            }
+            $script:_bbTitlesByDept[$key].Add($t)
+        }
+
+        $script:_bbNamesCached = $true
+        Write-Host "    [perf] Cached name files, weighted depts, hierarchy map, title lookups" -ForegroundColor DarkGray
+    }
+
+    # =====================================================================
+    # REBUILD PER-REFRESH CACHES (when ExistingUsers changes)
+    # The caller refreshes ExistingUsers every 100 iterations.
+    # We detect the change by checking the count.
+    # =====================================================================
+    $euCount = if ($ExistingUsers) { $ExistingUsers.Count } else { 0 }
+    if ($null -eq $script:_bbUsersByTitle -or $script:_bbLastEUCount -ne $euCount) {
+        $script:_bbLastEUCount = $euCount
+        $script:_bbUsersByTitle = @{}
+        $script:_bbTitleCounts  = @{}
+        if ($ExistingUsers) {
+            foreach ($u in $ExistingUsers) {
+                $t = $u.Title
+                if (-not $t) { continue }
+                if (-not $script:_bbUsersByTitle.ContainsKey($t)) {
+                    $script:_bbUsersByTitle[$t] = [System.Collections.Generic.List[object]]::new()
+                }
+                $script:_bbUsersByTitle[$t].Add($u)
+                if ($script:_bbTitleCounts.ContainsKey($t)) {
+                    $script:_bbTitleCounts[$t]++
+                } else {
+                    $script:_bbTitleCounts[$t] = 1
+                }
+            }
+        }
+        # Seed local title counts from ExistingUsers (handles partial reruns)
+        # Only seed on first load; after that, local counts are self-maintained
+        if ($script:_bbLocalTitleCounts.Count -eq 0 -and $script:_bbTitleCounts.Count -gt 0) {
+            foreach ($key in $script:_bbTitleCounts.Keys) {
+                $script:_bbLocalTitleCounts[$key] = $script:_bbTitleCounts[$key]
+            }
+        }
     }
 
     # ----- Password Generator -----
@@ -133,23 +238,24 @@ Function CreateUser {
         return "EMP" + (Get-Random -Minimum 100000 -Maximum 999999).ToString()
     }
 
-    # ----- Title-aware manager resolver -----
-    # Given a title, find an AD user whose title is the direct ReportsTo parent (or any ancestor).
-    # Falls back up the chain if no direct manager exists yet.
+    # ----- Title-aware manager resolver (hashtable-based, no Where-Object) -----
     function Get-HierarchyManager {
         param(
             [string]$Title,
-            [Object[]]$Hierarchy,
-            [Object[]]$CandidateUsers,
             [int]$MaxAncestors = 5
         )
         $current = $Title
         for ($depth = 0; $depth -lt $MaxAncestors; $depth++) {
-            $entry = $Hierarchy | Where-Object { $_.Title -eq $current } | Select-Object -First 1
-            if (!$entry -or [string]::IsNullOrEmpty($entry.ReportsTo)) { return $null }
-            $parentTitle = $entry.ReportsTo
-            $match = $CandidateUsers | Where-Object { $_.Title -eq $parentTitle } | Get-Random -ErrorAction SilentlyContinue
-            if ($match) { return $match }
+            if (-not $script:_bbHierarchyMap.ContainsKey($current)) { return $null }
+            $parentTitle = $script:_bbHierarchyMap[$current]
+            if ([string]::IsNullOrEmpty($parentTitle)) { return $null }
+
+            if ($script:_bbUsersByTitle.ContainsKey($parentTitle)) {
+                $candidates = $script:_bbUsersByTitle[$parentTitle]
+                if ($candidates.Count -gt 0) {
+                    return $candidates | Get-Random
+                }
+            }
             $current = $parentTitle
         }
         return $null
@@ -184,7 +290,7 @@ Function CreateUser {
 
         $exists = $null
         try { $exists = Get-ADUser $name -Server $setDC -ErrorAction Stop } catch {}
-        if ($exists) { return $true }
+        if ($exists) { return }
 
         New-ADUser -Server $setDC -Description $description -DisplayName $name -Name $name `
             -SamAccountName $name -Enabled $true -Path $targetOU `
@@ -192,19 +298,20 @@ Function CreateUser {
             -OtherAttributes @{
                 'employeeType' = 'Service'
                 'departmentNumber' = $dept
-                'department' = ($DepartmentList | Where-Object { $_.Acronym -eq $dept }).'Department Name'
+                'department' = $script:_bbDeptMap[$dept]
             }
 
         try { Set-ADUser -Identity $name -UserPrincipalName "$name@$dnsroot" -Server $setDC } catch {}
 
     } else {
         # ---- REGULAR USER ----
-        $surname = Get-Content ("$($scriptpath)\Names\familynames-usa-top1000.txt") | Get-Random
+        # Use cached name lists instead of reading from disk each time
+        $surname = $script:_bbFamilyNames | Get-Random
         $genderpreference = 0, 1 | Get-Random
         if ($genderpreference -eq 0) {
-            $givenname = Get-Content ("$($scriptpath)\Names\femalenames-usa-top1000.txt") | Get-Random
+            $givenname = $script:_bbFemaleNames | Get-Random
         } else {
-            $givenname = Get-Content ($scriptpath + '\Names\malenames-usa-top1000.txt') | Get-Random
+            $givenname = $script:_bbMaleNames | Get-Random
         }
 
         $givenname = (Get-Culture).TextInfo.ToTitleCase($givenname.Trim().ToLower())
@@ -215,43 +322,34 @@ Function CreateUser {
 
         $exists = $null
         try { $exists = Get-ADUser $name -Server $setDC -ErrorAction Stop } catch {}
-        if ($exists) { return $true }
+        if ($exists) { return }
 
-        # ---- ASSIGN DEPARTMENT ----
-        # Weight departments: business departments get more users than IT/security
-        $deptWeights = @{
-            'BDE' = 20; 'HRE' = 10; 'FIN' = 15; 'OGC' = 8; 'FSR' = 12
-            'AWS' = 5;  'ESM' = 5;  'SEC' = 5;  'ITS' = 8; 'GOO' = 4
-            'AZR' = 5;  'TST' = 3
-        }
-        $weightedDepts = @()
-        foreach ($d in $deptWeights.Keys) {
-            for ($w = 0; $w -lt $deptWeights[$d]; $w++) { $weightedDepts += $d }
-        }
-        $deptCode = $weightedDepts | Get-Random
-        $deptInfo = $DepartmentList | Where-Object { $_.Acronym -eq $deptCode }
-        $deptName = $deptInfo.'Department Name'
+        # ---- ASSIGN DEPARTMENT (using cached weighted array) ----
+        $deptCode = $script:_bbWeightedDepts | Get-Random
+        $deptName = $script:_bbDeptMap[$deptCode]
 
         # ---- ASSIGN TITLE (with singleton enforcement) ----
-        # Titles with MaxCount > 0 are capped; MaxCount = 0 means unlimited IC roles.
-        $deptTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode -or $_.Acronym -eq 'CORP' }
+        # Get titles for this dept + CORP titles, using cached per-dept grouping
+        $deptTitles = @()
+        if ($script:_bbTitlesByDept.ContainsKey($deptCode)) {
+            $deptTitles += $script:_bbTitlesByDept[$deptCode]
+        }
+        if ($script:_bbTitlesByDept.ContainsKey('CORP')) {
+            $deptTitles += $script:_bbTitlesByDept['CORP']
+        }
 
-        # For each capped title, check how many already exist in AD
+        # Use local running tally for capped titles (always accurate, no stale cache)
         $eligibleTitles = @()
         foreach ($t in $deptTitles) {
             $cap = [int]$t.MaxCount
             if ($cap -eq 0) {
-                # Unlimited IC role — always eligible, but weight toward lower-level roles
-                # Level 6 ICs get a higher weight than Level 5 managers to keep the pyramid shape
+                # Unlimited role — weight toward lower-level roles for pyramid shape
                 $icWeight = [math]::Max(1, 10 - [int]$t.Level)
                 for ($w = 0; $w -lt $icWeight; $w++) { $eligibleTitles += $t }
             } else {
-                # Check current count in AD
-                try {
-                    $existing = (Get-ADUser -Filter "Title -eq '$($t.Title)'" -Server $setDC -ErrorAction Stop | Measure-Object).Count
-                } catch { $existing = 0 }
+                # Use local running counter (updated immediately on every assignment)
+                $existing = if ($script:_bbLocalTitleCounts.ContainsKey($t.Title)) { $script:_bbLocalTitleCounts[$t.Title] } else { 0 }
                 if ($existing -lt $cap) {
-                    # Higher-level capped roles get lower weight (pyramid shape)
                     $capWeight = [math]::Max(1, 6 - [int]$t.Level)
                     for ($w = 0; $w -lt $capWeight; $w++) { $eligibleTitles += $t }
                 }
@@ -259,22 +357,29 @@ Function CreateUser {
         }
 
         # Fallback: if all capped roles are full, pick any IC title for this dept
-        if ($eligibleTitles.Count -eq 0) {
-            $eligibleTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode -and $_.MaxCount -eq '0' }
+        if ($eligibleTitles.Count -eq 0 -and $script:_bbTitlesByDept.ContainsKey($deptCode)) {
+            $eligibleTitles = @($script:_bbTitlesByDept[$deptCode] | Where-Object { $_.MaxCount -eq '0' })
         }
-        if ($eligibleTitles.Count -eq 0) {
-            $eligibleTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode }
+        if ($eligibleTitles.Count -eq 0 -and $script:_bbTitlesByDept.ContainsKey($deptCode)) {
+            $eligibleTitles = @($script:_bbTitlesByDept[$deptCode])
         }
 
         $selectedTitle = ($eligibleTitles | Get-Random)
         $title = $selectedTitle.Title
 
-        # CORP-titled users (CEO etc.) use a pseudo-dept for OU placement — put them in the most fitting dept
+        # Immediately increment local counter for capped titles (prevents duplicates between cache refreshes)
+        if ([int]$selectedTitle.MaxCount -gt 0) {
+            if ($script:_bbLocalTitleCounts.ContainsKey($title)) {
+                $script:_bbLocalTitleCounts[$title]++
+            } else {
+                $script:_bbLocalTitleCounts[$title] = 1
+            }
+        }
+
+        # CORP-titled users (CEO etc.) use a pseudo-dept for OU placement
         if ($selectedTitle.Acronym -eq 'CORP') {
-            # CEO/COO land in the ITS or root People OU; use a real dept for OU placement
             $deptCode = 'ITS'
-            $deptInfo = $DepartmentList | Where-Object { $_.Acronym -eq $deptCode }
-            $deptName = $deptInfo.'Department Name'
+            $deptName = $script:_bbDeptMap[$deptCode]
         }
 
         # ---- ASSIGN OFFICE AND LOCATION ----
@@ -368,23 +473,25 @@ Function CreateUser {
         try { Set-ADUser -Identity $name -UserPrincipalName $upn -Server $setDC } catch {}
 
         # ---- TITLE-AWARE MANAGER ASSIGNMENT ----
-        # Try to find a user whose title is the direct ReportsTo parent (walk up if needed).
-        # Only assign manager if we have enough users to search through.
+        # Uses cached hashtable lookups instead of Where-Object pipelines
         if ($ExistingUsers -and $ExistingUsers.Count -gt 5) {
-            $manager = Get-HierarchyManager -Title $title -Hierarchy $OrgHierarchy -CandidateUsers $ExistingUsers
+            $manager = Get-HierarchyManager -Title $title
             if ($manager) {
                 try { Set-ADUser -Identity $name -Manager $manager.DistinguishedName -Server $setDC } catch {}
             } else {
                 # No hierarchy match yet — fall back to same-dept higher-level user (60% chance)
                 $managerRoll = Get-Random -Minimum 1 -Maximum 101
                 if ($managerRoll -le 60) {
-                    $titleLevel = [int]($JobTitleList | Where-Object { $_.Title -eq $title } | Select-Object -First 1).Level
-                    $seniorPool = $ExistingUsers | Where-Object {
-                        $userTitle = $_.Title
-                        $userLevel = [int]($JobTitleList | Where-Object { $_.Title -eq $userTitle } | Select-Object -First 1).Level
-                        $userLevel -gt 0 -and $userLevel -lt $titleLevel
+                    $titleLevel = if ($script:_bbTitleLevelMap.ContainsKey($title)) { $script:_bbTitleLevelMap[$title] } else { 8 }
+                    # Find any user with a higher-level title using cached title-level map
+                    $seniorPool = @()
+                    foreach ($t in $script:_bbUsersByTitle.Keys) {
+                        $tLevel = if ($script:_bbTitleLevelMap.ContainsKey($t)) { $script:_bbTitleLevelMap[$t] } else { 8 }
+                        if ($tLevel -gt 0 -and $tLevel -lt $titleLevel) {
+                            $seniorPool += $script:_bbUsersByTitle[$t]
+                        }
                     }
-                    if ($seniorPool) {
+                    if ($seniorPool.Count -gt 0) {
                         try {
                             $potentialManager = $seniorPool | Get-Random
                             Set-ADUser -Identity $name -Manager $potentialManager.DistinguishedName -Server $setDC

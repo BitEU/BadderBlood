@@ -1160,7 +1160,7 @@ Write-Host "`n[*] GPO manifest saved: $manifestPath" -ForegroundColor Green
 # ============================================================================
 Write-Host ""
 Write-Host "=" * 80 -ForegroundColor Yellow
-Write-Host "  BADBLOOD GPO COMPANION - DEPLOYMENT COMPLETE" -ForegroundColor Green
+Write-Host "  BADDERBLOOD GPO COMPANION - DEPLOYMENT COMPLETE" -ForegroundColor Green
 Write-Host "=" * 80 -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  GPOs Created: $($CreatedGPOs.Count)" -ForegroundColor White

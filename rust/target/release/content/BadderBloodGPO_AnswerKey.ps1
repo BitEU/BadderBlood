@@ -1000,7 +1000,7 @@ Write-Status "Generating reports..."
 $reportLines = [System.Collections.Generic.List[string]]::new()
 
 $reportLines.Add("=" * 80)
-$reportLines.Add("  BADBLOOD GPO ANSWER KEY - GROUP POLICY MISCONFIGURATIONS")
+$reportLines.Add("  BADDERBLOOD GPO ANSWER KEY - GROUP POLICY MISCONFIGURATIONS")
 $reportLines.Add("  Domain: $DomainDNS")
 $reportLines.Add("  Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $reportLines.Add("  Total GPO Findings: $($AllFindings.Count)")

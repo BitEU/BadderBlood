@@ -649,7 +649,7 @@ foreach ($gpo in (Get-GPO -All)) {
                         Write-Log "[FAILED] Could not remove '$trustee' from '$($gpo.DisplayName)': $_" "Red" "ERROR"
                     }
                 } else {
-                    $bbTag = if ($isBB) { " [BADBLOOD]" } else { "" }
+                    $bbTag = if ($isBB) { " [BADDERBLOOD]" } else { "" }
                     Write-Log "[WOULD FIX] Remove $permLevel from '$trustee'$bbTag on '$($gpo.DisplayName)'" "Yellow" "PLAN"
                 }
                 Add-Remediation -GPOName $gpo.DisplayName -Action "REMOVE_PERM" -Setting "$trustee -> $permLevel" `
