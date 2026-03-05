@@ -175,52 +175,228 @@ if ($SkipOrphans) {
 Write-Host "[*] Chart will contain $($nodesToRender.Count) nodes and $($edgesToRender.Count) edges." -ForegroundColor Cyan
 
 # -----------------------------------------------------------------------
-# 6. Assign draw.io cell IDs and compute layout positions
+# 6. Load title level map BEFORE layout (needed for positioning)
 # -----------------------------------------------------------------------
-# Group by level
-$byLevel = @{}
-foreach ($dn in $nodesToRender) {
-    $lv = if ($levelMap.ContainsKey($dn)) { $levelMap[$dn] } else { 999 }
-    if (-not $byLevel.ContainsKey($lv)) { $byLevel[$lv] = [System.Collections.Generic.List[string]]::new() }
-    $byLevel[$lv].Add($dn)
+$titleLevelMap = @{}
+$jtPath = Join-Path $PSScriptRoot "AD_Data\jobtitles.csv"
+if (Test-Path $jtPath) {
+    Import-Csv $jtPath | ForEach-Object { $titleLevelMap[$_.Title] = [int]$_.Level }
+    Write-Host "[*] Loaded $($titleLevelMap.Count) job title levels from jobtitles.csv" -ForegroundColor Cyan
+} else {
+    Write-Warning "jobtitles.csv not found at $jtPath - all users will be positioned as level 6"
 }
 
+# -----------------------------------------------------------------------
+# 7. Assign draw.io cell IDs and compute layout positions
+# -----------------------------------------------------------------------
 # Node dimensions and spacing
 $nodeW = 180
 $nodeH = 70
-$hGap  = 20
-$vGap  = 50
+$hGap  = 15          # Horizontal gap between sibling nodes
+$vGap  = 60          # Vertical gap between levels
 
 # Position map
 $posMap = @{}
 $idMap  = @{}
 $cellId = 2
 
-foreach ($level in ($byLevel.Keys | Sort-Object)) {
-    $nodesAtLevel = $byLevel[$level]
-    $count = $nodesAtLevel.Count
-    $totalWidth = $count * $nodeW + ($count - 1) * $hGap
-    $startX = -[math]::Floor($totalWidth / 2)
-    $y = $level * ($nodeH + $vGap)
+# Build parent->children map for layout
+$childrenMap = @{}
+foreach ($edge in $edgesToRender) {
+    if (-not $childrenMap.ContainsKey($edge.From)) {
+        $childrenMap[$edge.From] = [System.Collections.Generic.List[string]]::new()
+    }
+    $childrenMap[$edge.From].Add($edge.To)
+}
 
-    for ($i = 0; $i -lt $count; $i++) {
-        $dn = $nodesAtLevel[$i]
-        $x = $startX + $i * ($nodeW + $hGap)
+# --- Tree layout: vertical hierarchy like a real org chart ---
+# Key idea: separate children into "managers" (have reports) and "leaf ICs" (no reports).
+# Managers are laid out horizontally as subtrees (they need width for their own subtrees).
+# Leaf ICs are stacked vertically in a single column to the right of their manager,
+# keeping the chart TALL not wide.
+
+$maxLeafCols = 4   # Max columns for leaf IC block under a manager
+$widthCache  = @{}
+$heightCache = @{}
+
+# Separate a node's children into managers (have subtrees) and leaves (no subtrees)
+function Get-ChildGroups {
+    param([string]$dn)
+    $managers = [System.Collections.Generic.List[string]]::new()
+    $leaves   = [System.Collections.Generic.List[string]]::new()
+    if ($childrenMap.ContainsKey($dn)) {
+        foreach ($child in $childrenMap[$dn]) {
+            if ($childrenMap.ContainsKey($child)) {
+                $managers.Add($child)
+            } else {
+                $leaves.Add($child)
+            }
+        }
+    }
+    return @{ Managers = $managers; Leaves = $leaves }
+}
+
+# Width of a subtree
+function Get-SubtreeWidth {
+    param([string]$dn)
+    if ($widthCache.ContainsKey($dn)) { return $widthCache[$dn] }
+
+    if (-not $childrenMap.ContainsKey($dn)) {
+        $widthCache[$dn] = $nodeW
+        return $nodeW
+    }
+
+    $groups = Get-ChildGroups -dn $dn
+
+    # Width needed for manager subtrees side by side
+    $mgrWidth = 0
+    foreach ($m in $groups.Managers) {
+        if ($mgrWidth -gt 0) { $mgrWidth += $hGap }
+        $mgrWidth += (Get-SubtreeWidth -dn $m)
+    }
+
+    # Width needed for leaf IC block (columns of nodeW)
+    $leafCount = $groups.Leaves.Count
+    $leafCols  = if ($leafCount -gt 0) { [math]::Min($leafCount, $maxLeafCols) } else { 0 }
+    $leafBlockW = if ($leafCols -gt 0) { $leafCols * $nodeW + ($leafCols - 1) * $hGap } else { 0 }
+
+    # Total children width: managers + gap + leaf block, side by side
+    $childrenWidth = 0
+    if ($mgrWidth -gt 0 -and $leafBlockW -gt 0) {
+        $childrenWidth = $mgrWidth + $hGap + $leafBlockW
+    } elseif ($mgrWidth -gt 0) {
+        $childrenWidth = $mgrWidth
+    } else {
+        $childrenWidth = $leafBlockW
+    }
+
+    $w = [math]::Max($nodeW, $childrenWidth)
+    $widthCache[$dn] = $w
+    return $w
+}
+
+# Height of a subtree (needed for proper vertical stacking)
+function Get-SubtreeHeight {
+    param([string]$dn)
+    if ($heightCache.ContainsKey($dn)) { return $heightCache[$dn] }
+
+    if (-not $childrenMap.ContainsKey($dn)) {
+        $heightCache[$dn] = $nodeH
+        return $nodeH
+    }
+
+    $groups = Get-ChildGroups -dn $dn
+
+    # Height of manager subtrees (take the tallest)
+    $maxMgrH = 0
+    foreach ($m in $groups.Managers) {
+        $mh = Get-SubtreeHeight -dn $m
+        $maxMgrH = [math]::Max($maxMgrH, $mh)
+    }
+
+    # Height of leaf block
+    $leafCount = $groups.Leaves.Count
+    $leafRows  = if ($leafCount -gt 0) { [math]::Ceiling($leafCount / $maxLeafCols) } else { 0 }
+    $leafBlockH = if ($leafRows -gt 0) { $leafRows * $nodeH + ($leafRows - 1) * $hGap } else { 0 }
+
+    $childH = [math]::Max($maxMgrH, $leafBlockH)
+    $h = $nodeH + $vGap + $childH
+    $heightCache[$dn] = $h
+    return $h
+}
+
+# Position nodes recursively
+function Set-SubtreePositions {
+    param(
+        [string]$dn,
+        [double]$leftX,
+        [double]$y
+    )
+
+    $user = $dnMap[$dn]
+    if (-not $user) { return }
+
+    $subtreeW = Get-SubtreeWidth -dn $dn
+
+    # Center this node above its subtree
+    $nodeX = $leftX + ($subtreeW / 2) - ($nodeW / 2)
+    $posMap[$dn] = [PSCustomObject]@{ X = $nodeX; Y = $y }
+    $idMap[$dn] = "node_$script:cellId"
+    $script:cellId++
+
+    if (-not $childrenMap.ContainsKey($dn)) { return }
+
+    $groups  = Get-ChildGroups -dn $dn
+    $childY  = $y + $nodeH + $vGap
+
+    # Calculate total children width to center under parent
+    $mgrWidth = 0
+    foreach ($m in $groups.Managers) {
+        if ($mgrWidth -gt 0) { $mgrWidth += $hGap }
+        $mgrWidth += (Get-SubtreeWidth -dn $m)
+    }
+    $leafCount = $groups.Leaves.Count
+    $leafCols  = if ($leafCount -gt 0) { [math]::Min($leafCount, $maxLeafCols) } else { 0 }
+    $leafBlockW = if ($leafCols -gt 0) { $leafCols * $nodeW + ($leafCols - 1) * $hGap } else { 0 }
+
+    $totalChildW = 0
+    if ($mgrWidth -gt 0 -and $leafBlockW -gt 0) {
+        $totalChildW = $mgrWidth + $hGap + $leafBlockW
+    } elseif ($mgrWidth -gt 0) {
+        $totalChildW = $mgrWidth
+    } else {
+        $totalChildW = $leafBlockW
+    }
+
+    # Center children block under parent
+    $startX = $leftX + ($subtreeW - $totalChildW) / 2
+
+    # Place manager subtrees first
+    $currentX = $startX
+    foreach ($m in $groups.Managers) {
+        $mw = Get-SubtreeWidth -dn $m
+        Set-SubtreePositions -dn $m -leftX $currentX -y $childY
+        $currentX += $mw + $hGap
+    }
+
+    # Place leaf ICs in a block of columns/rows
+    if ($leafCount -gt 0) {
+        $leafStartX = $currentX
+        $leafIndex = 0
+        foreach ($leaf in $groups.Leaves) {
+            $col = $leafIndex % $maxLeafCols
+            $row = [math]::Floor($leafIndex / $maxLeafCols)
+            $lx = $leafStartX + $col * ($nodeW + $hGap)
+            $ly = $childY + $row * ($nodeH + $hGap)
+
+            $posMap[$leaf] = [PSCustomObject]@{ X = $lx; Y = $ly }
+            $idMap[$leaf] = "node_$script:cellId"
+            $script:cellId++
+            $leafIndex++
+        }
+    }
+}
+
+# Start layout from root
+if ($rootUser) {
+    Get-SubtreeWidth -dn $rootUser.DistinguishedName | Out-Null
+    Get-SubtreeHeight -dn $rootUser.DistinguishedName | Out-Null
+    Set-SubtreePositions -dn $rootUser.DistinguishedName -leftX 0 -y 0
+} else {
+    Write-Warning "No root found, using fallback grid layout"
+    $x = 0; $y = 0; $maxX = 2000
+    foreach ($dn in $nodesToRender) {
         $posMap[$dn] = [PSCustomObject]@{ X = $x; Y = $y }
-        $idMap[$dn]  = "node_$cellId"
+        $idMap[$dn] = "node_$cellId"
         $cellId++
+        $x += $nodeW + $hGap
+        if ($x -gt $maxX) { $x = 0; $y += $nodeH + $vGap }
     }
 }
 
 # -----------------------------------------------------------------------
-# 7. Color scheme by title level
+# 8. Color scheme by title level
 # -----------------------------------------------------------------------
-$titleLevelMap = @{}
-$jtPath = Join-Path $PSScriptRoot "AD_Data\jobtitles.csv"
-if (Test-Path $jtPath) {
-    Import-Csv $jtPath | ForEach-Object { $titleLevelMap[$_.Title] = [int]$_.Level }
-}
-
 function Get-NodeColor {
     param([string]$Title)
     $lv = if ($titleLevelMap.ContainsKey($Title)) { $titleLevelMap[$Title] } else { 6 }
@@ -235,7 +411,7 @@ function Get-NodeColor {
 }
 
 # -----------------------------------------------------------------------
-# 8. Build draw.io XML
+# 9. Build draw.io XML
 # -----------------------------------------------------------------------
 $sb = [System.Text.StringBuilder]::new()
 
@@ -293,7 +469,7 @@ foreach ($edge in $edgesToRender) {
     $toId   = $idMap[$edge.To]
     if (-not $fromId -or -not $toId) { continue }
 
-    $style = "edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;"
+    $style = "edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#666666;"
     [void]$sb.AppendLine("    <mxCell id=""edge_$edgeId"" style=""$style"" edge=""1"" source=""$fromId"" target=""$toId"" parent=""1"">")
     [void]$sb.AppendLine('      <mxGeometry relative="1" as="geometry" />')
     [void]$sb.AppendLine('    </mxCell>')
@@ -304,7 +480,7 @@ foreach ($edge in $edgesToRender) {
 [void]$sb.AppendLine('</mxGraphModel>')
 
 # -----------------------------------------------------------------------
-# 9. Write output file
+# 10. Write output file
 # -----------------------------------------------------------------------
 $outPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputFile)
 [System.IO.File]::WriteAllText($outPath, $sb.ToString(), [System.Text.Encoding]::UTF8)
