@@ -21,9 +21,9 @@
     .PARAMETER WeakPasswordCount
        Number of accounts to set weak passwords on (default: 10)
     .EXAMPLE
-       .\Invoke-BadBlood.ps1
-       .\Invoke-BadBlood.ps1 -UserCount 1000 -GroupCount 200 -ComputerCount 50
-       .\Invoke-BadBlood.ps1 -NonInteractive -DriftPercent 15 -ASREPCount 8
+       .\Invoke-BadderBlood.ps1
+       .\Invoke-BadderBlood.ps1 -UserCount 1000 -GroupCount 200 -ComputerCount 50
+       .\Invoke-BadderBlood.ps1 -NonInteractive -DriftPercent 15 -ASREPCount 8
     .NOTES
        BadderBlood - Realistic AD Lab Generator
        Based on BadBlood by David Rowe (secframe.com)
@@ -66,7 +66,13 @@ param
     [switch]$SkipLapsInstall,
 
     [Parameter(Mandatory = $false)]
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipGPODeployment,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$IncludeDecoyGPOs
 )
 
 function Get-ScriptDirectory {
@@ -122,7 +128,7 @@ if ($NonInteractive -eq $false) {
 
 if ($badblood -eq 'badblood') {
 
-    $totalPhases = 9
+    $totalPhases = if ($SkipGPODeployment) { 9 } else { 10 }
     $phase = 0
     $Domain = Get-ADDomain
     $setDC = $Domain.PDCEmulator
@@ -300,6 +306,28 @@ if ($badblood -eq 'badblood') {
     }
 
     # =====================================================================
+    # PHASE 10: GPO Misconfigurations (Optional)
+    # =====================================================================
+    $phase++
+    if ($PSBoundParameters.ContainsKey('SkipGPODeployment') -eq $false) {
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Deploying insecure GPOs..." -ForegroundColor Green
+        Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: GPO Misconfigurations" -PercentComplete ($phase / $totalPhases * 100)
+
+        $gpoScript = $basescriptPath + '\Invoke-BadderBloodGPO.ps1'
+        if (Test-Path $gpoScript) {
+            $gpoArgs = @{ SkipLinking = $false }
+            if ($IncludeDecoyGPOs) { $gpoArgs['IncludeDecoyGPOs'] = $true }
+            & $gpoScript @gpoArgs
+        } else {
+            Write-Warning "  Invoke-BadderBloodGPO.ps1 not found at '$gpoScript'. Skipping GPO phase."
+        }
+    } else {
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Skipping GPO deployment..." -ForegroundColor Gray
+    }
+
+    # =====================================================================
     # COMPLETE
     # =====================================================================
     Write-Progress -Activity "BadderBlood Deployment" -Completed
@@ -330,6 +358,10 @@ if ($badblood -eq 'badblood') {
     Write-Host "    - Users in wrong OUs (departmental drift)" -ForegroundColor Yellow
     Write-Host "    - Passwords in description fields" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  Next step: Run BadBloodAnswerKey.ps1 to generate the findings report." -ForegroundColor White
+    if ($PSBoundParameters.ContainsKey('SkipGPODeployment') -eq $false) {
+        Write-Host "    GPO misconfigs:     deployed (18-20 insecure GPOs)" -ForegroundColor Cyan
+    }
+    Write-Host ""
+    Write-Host "  Next step: Run BadderBloodAnswerKey.ps1 -IncludeGPOAnalysis to generate the findings report." -ForegroundColor White
     Write-Host ""
 }
