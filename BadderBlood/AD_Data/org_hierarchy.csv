@@ -1,0 +1,97 @@
+Title,ReportsTo,Dept
+Chief Executive Officer,,CORP
+Chief Operating Officer,Chief Executive Officer,CORP
+Chief Financial Officer,Chief Executive Officer,FIN
+Chief Information Security Officer,Chief Executive Officer,SEC
+Chief Information Officer,Chief Executive Officer,ITS
+General Counsel,Chief Executive Officer,OGC
+Chief People Officer,Chief Executive Officer,HRE
+Chief Revenue Officer,Chief Executive Officer,BDE
+VP of Business Development,Chief Revenue Officer,BDE
+VP of Finance,Chief Financial Officer,FIN
+VP of Human Resources,Chief People Officer,HRE
+VP of Information Security,Chief Information Security Officer,SEC
+VP of Information Technology,Chief Information Officer,ITS
+VP of Cloud Engineering,Chief Information Officer,AWS
+VP of Field Operations,Chief Operating Officer,FSR
+Deputy General Counsel,General Counsel,OGC
+Regional Sales Director,VP of Business Development,BDE
+Director of Sales,VP of Business Development,BDE
+Director of Human Resources,VP of Human Resources,HRE
+Director of Finance,VP of Finance,FIN
+Director of Security Operations,VP of Information Security,SEC
+IT Director,VP of Information Technology,ITS
+Director of Cloud Infrastructure,VP of Cloud Engineering,AWS
+Director of Endpoint Management,VP of Information Technology,ESM
+Director of Field Services,VP of Field Operations,FSR
+Director of Google Cloud,VP of Cloud Engineering,GOO
+Director of Azure Operations,VP of Cloud Engineering,AZR
+Senior Counsel,Deputy General Counsel,OGC
+Sales Manager,Director of Sales,BDE
+HR Business Partner,Director of Human Resources,HRE
+HR Manager,Director of Human Resources,HRE
+Controller,Director of Finance,FIN
+Finance Manager,Director of Finance,FIN
+Security Manager,Director of Security Operations,SEC
+Security Architect,Director of Security Operations,SEC
+IT Manager,IT Director,ITS
+Service Desk Lead,IT Director,ITS
+Cloud Engineering Manager,Director of Cloud Infrastructure,AWS
+Endpoint Management Manager,Director of Endpoint Management,ESM
+Field Operations Supervisor,Director of Field Services,FSR
+Service Delivery Manager,Director of Field Services,FSR
+Associate Counsel,Senior Counsel,OGC
+Compliance Officer,Senior Counsel,OGC
+QA Lead,IT Director,TST
+Account Executive,Sales Manager,BDE
+Business Development Representative,Sales Manager,BDE
+Sales Engineer,Sales Manager,BDE
+Channel Partner Manager,Sales Manager,BDE
+Recruiter,HR Business Partner,HRE
+Talent Acquisition Specialist,HR Business Partner,HRE
+HR Coordinator,HR Manager,HRE
+Benefits Administrator,HR Manager,HRE
+Compensation Analyst,HR Manager,HRE
+HR Generalist,HR Business Partner,HRE
+Financial Analyst,Finance Manager,FIN
+Staff Accountant,Controller,FIN
+Payroll Specialist,Controller,FIN
+Accounts Payable Clerk,Controller,FIN
+Budget Analyst,Finance Manager,FIN
+Contract Administrator,Associate Counsel,OGC
+Legal Aide,Associate Counsel,OGC
+Paralegal,Associate Counsel,OGC
+SOC Analyst,Security Manager,SEC
+Security Engineer,Security Manager,SEC
+Threat Hunter,Security Manager,SEC
+Incident Responder,Security Manager,SEC
+Penetration Tester,Security Architect,SEC
+GRC Analyst,Security Architect,SEC
+Systems Administrator,IT Manager,ITS
+Network Engineer,IT Manager,ITS
+Helpdesk Analyst,Service Desk Lead,ITS
+Database Administrator,IT Manager,ITS
+Infrastructure Engineer,IT Manager,ITS
+Senior Cloud Engineer,Cloud Engineering Manager,AWS
+Cloud Engineer,Cloud Engineering Manager,AWS
+Solutions Architect,Cloud Engineering Manager,AWS
+DevOps Engineer,Cloud Engineering Manager,AWS
+Cloud Security Engineer,Cloud Engineering Manager,AWS
+Site Reliability Engineer,Cloud Engineering Manager,AWS
+Platform Engineer,Cloud Engineering Manager,AWS
+Senior Endpoint Administrator,Endpoint Management Manager,ESM
+Endpoint Administrator,Endpoint Management Manager,ESM
+Desktop Support Technician,Endpoint Management Manager,ESM
+SCCM Administrator,Endpoint Management Manager,ESM
+Intune Administrator,Endpoint Management Manager,ESM
+Patch Management Specialist,Endpoint Management Manager,ESM
+Imaging Technician,Endpoint Management Manager,ESM
+Senior Field Engineer,Field Operations Supervisor,FSR
+Field Service Technician,Field Operations Supervisor,FSR
+Remote Support Specialist,Field Operations Supervisor,FSR
+Installation Technician,Field Operations Supervisor,FSR
+Dispatch Coordinator,Service Delivery Manager,FSR
+Automation Engineer,QA Lead,TST
+QA Analyst,QA Lead,TST
+Test Engineer,QA Lead,TST
+Performance Tester,QA Lead,TST

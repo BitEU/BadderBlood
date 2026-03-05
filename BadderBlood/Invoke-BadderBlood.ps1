@@ -171,7 +171,8 @@ if ($badblood -eq 'badblood') {
     $DepartmentList = Import-Csv ($basescriptPath + "\AD_Data\AD_Departments.csv")
     $JobTitleList = Import-Csv ($basescriptPath + "\AD_Data\JobTitles.csv")
     $OfficeList = Import-Csv ($basescriptPath + "\AD_Data\Offices.csv")
-    Write-Host "    Loaded $($DepartmentList.Count) departments, $($JobTitleList.Count) titles, $($OfficeList.Count) offices" -ForegroundColor Gray
+    $OrgHierarchy = Import-Csv ($basescriptPath + "\AD_Data\org_hierarchy.csv")
+    Write-Host "    Loaded $($DepartmentList.Count) departments, $($JobTitleList.Count) titles, $($OfficeList.Count) offices, $($OrgHierarchy.Count) hierarchy entries" -ForegroundColor Gray
 
     # =====================================================================
     # PHASE 4: User Creation
@@ -184,15 +185,25 @@ if ($badblood -eq 'badblood') {
 
     $x = 1
     do {
-        CreateUser -Domain $Domain -OUList $OUsAll -ScriptDir $createuserscriptpath `
-            -DepartmentList $DepartmentList -JobTitleList $JobTitleList -OfficeList $OfficeList `
-            -DriftPercent $DriftPercent
-        if ($x % 100 -eq 0) {
+        # Refresh ExistingUsers every 100 iterations so manager pool stays current
+        if ($x % 100 -eq 0 -or $x -eq 1) {
+            $ExistingUsersPool = Get-ADUser -Filter { Enabled -eq $true } -Properties Title,DistinguishedName,departmentNumber -Server $setDC
             Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating users ($x/$UserCount)" -PercentComplete ($x / $UserCount * 100)
         }
+        CreateUser -Domain $Domain -OUList $OUsAll -ScriptDir $createuserscriptpath `
+            -DepartmentList $DepartmentList -JobTitleList $JobTitleList -OfficeList $OfficeList `
+            -OrgHierarchy $OrgHierarchy -ExistingUsers $ExistingUsersPool `
+            -DriftPercent $DriftPercent
         $x++
     } while ($x -le $UserCount)
     Write-Host "    Created $UserCount users (drift: $DriftPercent%)" -ForegroundColor Gray
+
+    # =====================================================================
+    # PHASE 4.5: Fix Manager Relationships
+    # =====================================================================
+    Write-Host ""
+    Write-Host "  [+] Fixing manager relationships..." -ForegroundColor Green
+    & ($basescriptPath + '\AD_Users_Create\Fix-ManagerRelationships.ps1')
 
     # =====================================================================
     # PHASE 5: Group Creation

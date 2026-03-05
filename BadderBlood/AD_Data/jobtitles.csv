@@ -1,84 +1,113 @@
-Acronym,Title
-BDE,Account Executive
-BDE,Business Development Representative
-BDE,Sales Manager
-BDE,Sales Engineer
-BDE,Director of Sales
-BDE,VP of Business Development
-BDE,Channel Partner Manager
-BDE,Regional Sales Director
-HRE,HR Coordinator
-HRE,Recruiter
-HRE,Benefits Administrator
-HRE,HR Business Partner
-HRE,Talent Acquisition Specialist
-HRE,Director of Human Resources
-HRE,Compensation Analyst
-HRE,HR Generalist
-FIN,Staff Accountant
-FIN,Payroll Specialist
-FIN,Financial Analyst
-FIN,Controller
-FIN,Accounts Payable Clerk
-FIN,Budget Analyst
-FIN,Director of Finance
-FIN,CFO
-OGC,Associate Counsel
-OGC,Senior Counsel
-OGC,Legal Aide
-OGC,Paralegal
-OGC,General Counsel
-OGC,Compliance Officer
-OGC,Contract Administrator
-FSR,Field Service Technician
-FSR,Senior Field Engineer
-FSR,Service Delivery Manager
-FSR,Field Operations Supervisor
-FSR,Remote Support Specialist
-FSR,Dispatch Coordinator
-FSR,Installation Technician
-AWS,Cloud Engineer
-AWS,Solutions Architect
-AWS,DevOps Engineer
-AWS,Cloud Security Engineer
-AWS,Site Reliability Engineer
-AWS,Platform Engineer
-ESM,Endpoint Administrator
-ESM,Desktop Support Technician
-ESM,SCCM Administrator
-ESM,Intune Administrator
-ESM,Patch Management Specialist
-ESM,Imaging Technician
-SEC,SOC Analyst
-SEC,Security Engineer
-SEC,Threat Hunter
-SEC,Incident Responder
-SEC,Security Architect
-SEC,CISO
-SEC,Penetration Tester
-SEC,GRC Analyst
-ITS,Systems Administrator
-ITS,Network Engineer
-ITS,Helpdesk Analyst
-ITS,IT Manager
-ITS,Database Administrator
-ITS,Infrastructure Engineer
-ITS,Service Desk Lead
-ITS,IT Director
-GOO,Cloud Engineer
-GOO,Solutions Architect
-GOO,DevOps Engineer
-GOO,Cloud Security Engineer
-GOO,Site Reliability Engineer
-GOO,Platform Engineer
-AZR,Cloud Engineer
-AZR,Solutions Architect
-AZR,DevOps Engineer
-AZR,Cloud Security Engineer
-AZR,Site Reliability Engineer
-AZR,Platform Engineer
-TST,QA Analyst
-TST,Test Engineer
-TST,QA Lead
-TST,Automation Engineer
-TST,Performance Tester
+Acronym,Title,Level,MaxCount
+CORP,Chief Executive Officer,1,1
+CORP,Chief Operating Officer,2,1
+FIN,Chief Financial Officer,2,1
+SEC,Chief Information Security Officer,2,1
+ITS,Chief Information Officer,2,1
+OGC,General Counsel,2,1
+HRE,Chief People Officer,2,1
+BDE,Chief Revenue Officer,2,1
+BDE,VP of Business Development,3,2
+BDE,Regional Sales Director,4,4
+BDE,Director of Sales,4,4
+BDE,Sales Manager,5,8
+BDE,Account Executive,6,0
+BDE,Business Development Representative,6,0
+BDE,Sales Engineer,6,0
+BDE,Channel Partner Manager,6,0
+HRE,VP of Human Resources,3,1
+HRE,Director of Human Resources,4,2
+HRE,HR Business Partner,5,4
+HRE,HR Manager,5,4
+HRE,Recruiter,6,0
+HRE,Talent Acquisition Specialist,6,0
+HRE,HR Coordinator,6,0
+HRE,Benefits Administrator,6,0
+HRE,Compensation Analyst,6,0
+HRE,HR Generalist,6,0
+FIN,VP of Finance,3,1
+FIN,Director of Finance,4,2
+FIN,Controller,5,3
+FIN,Finance Manager,5,3
+FIN,Financial Analyst,6,0
+FIN,Staff Accountant,6,0
+FIN,Payroll Specialist,6,0
+FIN,Accounts Payable Clerk,6,0
+FIN,Budget Analyst,6,0
+OGC,Deputy General Counsel,3,1
+OGC,Senior Counsel,4,3
+OGC,Associate Counsel,5,4
+OGC,Compliance Officer,5,3
+OGC,Contract Administrator,6,0
+OGC,Legal Aide,6,0
+OGC,Paralegal,6,0
+FSR,VP of Field Operations,3,1
+FSR,Director of Field Services,4,2
+FSR,Field Operations Supervisor,5,4
+FSR,Service Delivery Manager,5,4
+FSR,Senior Field Engineer,6,0
+FSR,Field Service Technician,6,0
+FSR,Remote Support Specialist,6,0
+FSR,Installation Technician,6,0
+FSR,Dispatch Coordinator,6,0
+AWS,VP of Cloud Engineering,3,1
+AWS,Director of Cloud Infrastructure,4,2
+AWS,Cloud Engineering Manager,5,3
+AWS,Senior Cloud Engineer,6,0
+AWS,Cloud Engineer,6,0
+AWS,Solutions Architect,6,0
+AWS,DevOps Engineer,6,0
+AWS,Cloud Security Engineer,6,0
+AWS,Site Reliability Engineer,6,0
+AWS,Platform Engineer,6,0
+ESM,Director of Endpoint Management,4,1
+ESM,Endpoint Management Manager,5,2
+ESM,Senior Endpoint Administrator,6,0
+ESM,Endpoint Administrator,6,0
+ESM,Desktop Support Technician,6,0
+ESM,SCCM Administrator,6,0
+ESM,Intune Administrator,6,0
+ESM,Patch Management Specialist,6,0
+ESM,Imaging Technician,6,0
+SEC,VP of Information Security,3,1
+SEC,Director of Security Operations,4,2
+SEC,Security Manager,5,3
+SEC,Security Architect,5,3
+SEC,SOC Analyst,6,0
+SEC,Security Engineer,6,0
+SEC,Threat Hunter,6,0
+SEC,Incident Responder,6,0
+SEC,Penetration Tester,6,0
+SEC,GRC Analyst,6,0
+ITS,VP of Information Technology,3,1
+ITS,IT Director,4,2
+ITS,IT Manager,5,4
+ITS,Service Desk Lead,5,4
+ITS,Systems Administrator,6,0
+ITS,Network Engineer,6,0
+ITS,Helpdesk Analyst,6,0
+ITS,Database Administrator,6,0
+ITS,Infrastructure Engineer,6,0
+GOO,Director of Google Cloud,4,1
+GOO,Cloud Engineering Manager,5,2
+GOO,Senior Cloud Engineer,6,0
+GOO,Cloud Engineer,6,0
+GOO,Solutions Architect,6,0
+GOO,DevOps Engineer,6,0
+GOO,Cloud Security Engineer,6,0
+GOO,Site Reliability Engineer,6,0
+GOO,Platform Engineer,6,0
+AZR,Director of Azure Operations,4,1
+AZR,Cloud Engineering Manager,5,2
+AZR,Senior Cloud Engineer,6,0
+AZR,Cloud Engineer,6,0
+AZR,Solutions Architect,6,0
+AZR,DevOps Engineer,6,0
+AZR,Cloud Security Engineer,6,0
+AZR,Site Reliability Engineer,6,0
+AZR,Platform Engineer,6,0
+TST,QA Lead,5,2
+TST,Automation Engineer,6,0
+TST,QA Analyst,6,0
+TST,Test Engineer,6,0
+TST,Performance Tester,6,0

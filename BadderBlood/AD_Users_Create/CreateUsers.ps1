@@ -1,7 +1,8 @@
-﻿################################
+################################
 # CreateUsers.ps1 - BadderBlood Realistic User Generator
 # Users are placed in correct department OUs with full AD attributes.
-# A small percentage are "drifted" to simulate real-world misplacement.
+# Org hierarchy is title-aware: only higher-level titles manage lower ones.
+# Singleton roles (CEO, CFO, CISO, etc.) are enforced via MaxCount.
 ################################
 Function CreateUser {
     <#
@@ -9,12 +10,11 @@ Function CreateUser {
             Creates a realistic user in Active Directory with proper department placement and full attributes.
         .DESCRIPTION
             Generates users with department, title, phone, office, manager, and places them in the
-            correct OU. A configurable percentage are intentionally drifted to wrong OUs to simulate
-            real-world AD misplacement.
+            correct OU. Title-aware manager assignment ensures realistic reporting chains.
+            Singleton roles (CEO, CFO, etc.) are enforced so only one can exist.
+            A configurable percentage are intentionally drifted to wrong OUs.
         .NOTES
             BadderBlood - Realistic AD Lab Generator
-            Original BadBlood by David Rowe (secframe.com)
-            Rewritten for realism by BadderBlood project
     #>
     [CmdletBinding()]
     param
@@ -31,6 +31,8 @@ Function CreateUser {
         [Object[]]$JobTitleList,
         [Parameter(Mandatory = $false)]
         [Object[]]$OfficeList,
+        [Parameter(Mandatory = $false)]
+        [Object[]]$OrgHierarchy,
         [Parameter(Mandatory = $false)]
         [Object[]]$ExistingUsers,
         [Parameter(Mandatory = $false)]
@@ -64,6 +66,9 @@ Function CreateUser {
     }
     if (!$PSBoundParameters.ContainsKey('OfficeList')) {
         $OfficeList = Import-Csv ($scriptparent + "\AD_Data\Offices.csv")
+    }
+    if (!$PSBoundParameters.ContainsKey('OrgHierarchy')) {
+        $OrgHierarchy = Import-Csv ($scriptparent + "\AD_Data\org_hierarchy.csv")
     }
 
     # ----- Password Generator -----
@@ -128,6 +133,28 @@ Function CreateUser {
         return "EMP" + (Get-Random -Minimum 100000 -Maximum 999999).ToString()
     }
 
+    # ----- Title-aware manager resolver -----
+    # Given a title, find an AD user whose title is the direct ReportsTo parent (or any ancestor).
+    # Falls back up the chain if no direct manager exists yet.
+    function Get-HierarchyManager {
+        param(
+            [string]$Title,
+            [Object[]]$Hierarchy,
+            [Object[]]$CandidateUsers,
+            [int]$MaxAncestors = 5
+        )
+        $current = $Title
+        for ($depth = 0; $depth -lt $MaxAncestors; $depth++) {
+            $entry = $Hierarchy | Where-Object { $_.Title -eq $current } | Select-Object -First 1
+            if (!$entry -or [string]::IsNullOrEmpty($entry.ReportsTo)) { return $null }
+            $parentTitle = $entry.ReportsTo
+            $match = $CandidateUsers | Where-Object { $_.Title -eq $parentTitle } | Get-Random -ErrorAction SilentlyContinue
+            if ($match) { return $match }
+            $current = $parentTitle
+        }
+        return $null
+    }
+
     # ===================================================================
     # DECIDE: Regular user (97%) or Service account (3%)
     # ===================================================================
@@ -141,17 +168,15 @@ Function CreateUser {
 
         # Service accounts go into Tier ServiceAccounts OUs
         $tier = @('Tier 1', 'Tier 2') | Get-Random
-        $dept = ($DepartmentList | Where-Object { $_.Acronym -notin @('TST') } | Get-Random).Acronym
+        $dept = ($DepartmentList | Where-Object { $_.Acronym -notin @('TST','CORP') } | Get-Random).Acronym
         $targetOU = "OU=ServiceAccounts,OU=$dept,OU=$tier,$dn"
 
-        # Validate OU exists, fallback
         try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
         catch { $targetOU = "OU=$tier,$dn" }
 
         $description = "Service Account - $dept - Created by BadderBlood"
         $pwd = New-SWRandomPassword -MinPasswordLength 22 -MaxPasswordLength 25
 
-        # Small chance password in description (realistic misconfiguration)
         $pwdLeak = Get-Random -Minimum 1 -Maximum 101
         if ($pwdLeak -le 5) {
             $description = "Service Account - $dept - pwd: $pwd"
@@ -182,14 +207,12 @@ Function CreateUser {
             $givenname = Get-Content ($scriptpath + '\Names\malenames-usa-top1000.txt') | Get-Random
         }
 
-        # Clean up names
         $givenname = (Get-Culture).TextInfo.ToTitleCase($givenname.Trim().ToLower())
         $surname = (Get-Culture).TextInfo.ToTitleCase($surname.Trim().ToLower())
 
         $name = $givenname + "_" + $surname
         if ($name.Length -gt 20) { $name = $name.Substring(0, 20) }
 
-        # Check for duplicates
         $exists = $null
         try { $exists = Get-ADUser $name -Server $setDC -ErrorAction Stop } catch {}
         if ($exists) { return $true }
@@ -209,18 +232,57 @@ Function CreateUser {
         $deptInfo = $DepartmentList | Where-Object { $_.Acronym -eq $deptCode }
         $deptName = $deptInfo.'Department Name'
 
+        # ---- ASSIGN TITLE (with singleton enforcement) ----
+        # Titles with MaxCount > 0 are capped; MaxCount = 0 means unlimited IC roles.
+        $deptTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode -or $_.Acronym -eq 'CORP' }
+
+        # For each capped title, check how many already exist in AD
+        $eligibleTitles = @()
+        foreach ($t in $deptTitles) {
+            $cap = [int]$t.MaxCount
+            if ($cap -eq 0) {
+                # Unlimited IC role — always eligible, but weight toward lower-level roles
+                # Level 6 ICs get a higher weight than Level 5 managers to keep the pyramid shape
+                $icWeight = [math]::Max(1, 8 - [int]$t.Level)
+                for ($w = 0; $w -lt $icWeight; $w++) { $eligibleTitles += $t }
+            } else {
+                # Check current count in AD
+                try {
+                    $existing = (Get-ADUser -Filter "Title -eq '$($t.Title)'" -Server $setDC -ErrorAction Stop | Measure-Object).Count
+                } catch { $existing = 0 }
+                if ($existing -lt $cap) {
+                    # Higher-level capped roles get lower weight (pyramid shape)
+                    $capWeight = [math]::Max(1, 4 - [int]$t.Level)
+                    for ($w = 0; $w -lt $capWeight; $w++) { $eligibleTitles += $t }
+                }
+            }
+        }
+
+        # Fallback: if all capped roles are full, pick any IC title for this dept
+        if ($eligibleTitles.Count -eq 0) {
+            $eligibleTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode -and $_.MaxCount -eq '0' }
+        }
+        if ($eligibleTitles.Count -eq 0) {
+            $eligibleTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode }
+        }
+
+        $selectedTitle = ($eligibleTitles | Get-Random)
+        $title = $selectedTitle.Title
+
+        # CORP-titled users (CEO etc.) use a pseudo-dept for OU placement — put them in the most fitting dept
+        if ($selectedTitle.Acronym -eq 'CORP') {
+            # CEO/COO land in the ITS or root People OU; use a real dept for OU placement
+            $deptCode = 'ITS'
+            $deptInfo = $DepartmentList | Where-Object { $_.Acronym -eq $deptCode }
+            $deptName = $deptInfo.'Department Name'
+        }
+
         # ---- ASSIGN OFFICE AND LOCATION ----
         $office = $OfficeList | Get-Random
         $phone = New-PhoneNumber -AreaCode $office.AreaCode
         $employeeID = New-EmployeeID
 
-        # ---- ASSIGN TITLE ----
-        $deptTitles = $JobTitleList | Where-Object { $_.Acronym -eq $deptCode }
-        if ($deptTitles) { $title = ($deptTitles | Get-Random).Title }
-        else { $title = "Analyst" }
-
         # ---- DETERMINE OU PLACEMENT ----
-        # Normal placement: People > DepartmentCode
         $targetOU = "OU=$deptCode,OU=People,$dn"
 
         # Drift: X% chance of being in a slightly wrong but plausible location
@@ -228,22 +290,17 @@ Function CreateUser {
         if ($driftRoll -le $DriftPercent) {
             $driftType = Get-Random -Minimum 1 -Maximum 101
             if ($driftType -le 40) {
-                # User in wrong department OU (transferred employee)
-                $wrongDept = ($DepartmentList | Where-Object { $_.Acronym -ne $deptCode -and $_.Acronym -ne 'TST' } | Get-Random).Acronym
+                $wrongDept = ($DepartmentList | Where-Object { $_.Acronym -ne $deptCode -and $_.Acronym -notin @('TST','CORP') } | Get-Random).Acronym
                 $targetOU = "OU=$wrongDept,OU=People,$dn"
             } elseif ($driftType -le 60) {
-                # User in Stage OU (should have been moved out of staging)
                 $targetOU = "OU=$deptCode,OU=Stage,$dn"
             } elseif ($driftType -le 80) {
-                # User in Tier OU but without any admin rights (someone created it in wrong spot)
                 $tierChoice = @('Tier 1', 'Tier 2') | Get-Random
                 $subOU = @('ServiceAccounts', 'Groups', 'Devices') | Get-Random
                 $targetOU = "OU=$subOU,OU=$deptCode,OU=$tierChoice,$dn"
             } else {
-                # User in the base People OU, not in a department sub-OU
                 $targetOU = "OU=People,$dn"
                 try {
-                    # Check for Unassociated sub-OU
                     $unassoc = "OU=Unassociated,OU=People,$dn"
                     Get-ADOrganizationalUnit $unassoc -Server $setDC | Out-Null
                     $targetOU = $unassoc
@@ -251,7 +308,6 @@ Function CreateUser {
             }
         }
 
-        # Validate OU exists, fallback to People root
         try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
         catch {
             $targetOU = "OU=People,$dn"
@@ -263,7 +319,6 @@ Function CreateUser {
         $pwd = New-SWRandomPassword -MinPasswordLength 22 -MaxPasswordLength 25
         $description = "Created with BadderBlood"
 
-        # Small chance (1%) of password in description
         $pwdLeak = Get-Random -Minimum 1 -Maximum 1001
         if ($pwdLeak -le 10) {
             $description = "Just so I dont forget my password is $pwd"
@@ -299,7 +354,6 @@ Function CreateUser {
                     'employeeType' = 'Employee'
                 }
         } catch {
-            # Fallback: simpler creation if extended attributes fail
             try {
                 New-ADUser -Server $setDC -Name $name -DisplayName $displayName `
                     -GivenName $givenname -Surname $surname -SamAccountName $name `
@@ -313,14 +367,30 @@ Function CreateUser {
         $upn = $name + '@' + $dnsroot
         try { Set-ADUser -Identity $name -UserPrincipalName $upn -Server $setDC } catch {}
 
-        # Set manager (random chance of having a manager from same department)
-        if ($ExistingUsers -and $ExistingUsers.Count -gt 10) {
-            $managerRoll = Get-Random -Minimum 1 -Maximum 101
-            if ($managerRoll -le 60) {
-                try {
-                    $potentialManager = $ExistingUsers | Get-Random
-                    Set-ADUser -Identity $name -Manager $potentialManager.DistinguishedName -Server $setDC
-                } catch {}
+        # ---- TITLE-AWARE MANAGER ASSIGNMENT ----
+        # Try to find a user whose title is the direct ReportsTo parent (walk up if needed).
+        # Only assign manager if we have enough users to search through.
+        if ($ExistingUsers -and $ExistingUsers.Count -gt 5) {
+            $manager = Get-HierarchyManager -Title $title -Hierarchy $OrgHierarchy -CandidateUsers $ExistingUsers
+            if ($manager) {
+                try { Set-ADUser -Identity $name -Manager $manager.DistinguishedName -Server $setDC } catch {}
+            } else {
+                # No hierarchy match yet — fall back to same-dept higher-level user (60% chance)
+                $managerRoll = Get-Random -Minimum 1 -Maximum 101
+                if ($managerRoll -le 60) {
+                    $titleLevel = [int]($JobTitleList | Where-Object { $_.Title -eq $title } | Select-Object -First 1).Level
+                    $seniorPool = $ExistingUsers | Where-Object {
+                        $userTitle = $_.Title
+                        $userLevel = [int]($JobTitleList | Where-Object { $_.Title -eq $userTitle } | Select-Object -First 1).Level
+                        $userLevel -gt 0 -and $userLevel -lt $titleLevel
+                    }
+                    if ($seniorPool) {
+                        try {
+                            $potentialManager = $seniorPool | Get-Random
+                            Set-ADUser -Identity $name -Manager $potentialManager.DistinguishedName -Server $setDC
+                        } catch {}
+                    }
+                }
             }
         }
     }
