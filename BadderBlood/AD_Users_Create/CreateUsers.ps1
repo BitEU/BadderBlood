@@ -243,7 +243,7 @@ Function CreateUser {
             if ($cap -eq 0) {
                 # Unlimited IC role — always eligible, but weight toward lower-level roles
                 # Level 6 ICs get a higher weight than Level 5 managers to keep the pyramid shape
-                $icWeight = [math]::Max(1, 8 - [int]$t.Level)
+                $icWeight = [math]::Max(1, 10 - [int]$t.Level)
                 for ($w = 0; $w -lt $icWeight; $w++) { $eligibleTitles += $t }
             } else {
                 # Check current count in AD
@@ -252,7 +252,7 @@ Function CreateUser {
                 } catch { $existing = 0 }
                 if ($existing -lt $cap) {
                     # Higher-level capped roles get lower weight (pyramid shape)
-                    $capWeight = [math]::Max(1, 4 - [int]$t.Level)
+                    $capWeight = [math]::Max(1, 6 - [int]$t.Level)
                     for ($w = 0; $w -lt $capWeight; $w++) { $eligibleTitles += $t }
                 }
             }

@@ -36,62 +36,113 @@ Security Manager,Director of Security Operations,SEC
 Security Architect,Director of Security Operations,SEC
 IT Manager,IT Director,ITS
 Service Desk Lead,IT Director,ITS
-Cloud Engineering Manager,Director of Cloud Infrastructure,AWS
+AWS Engineering Manager,Director of Cloud Infrastructure,AWS
 Endpoint Management Manager,Director of Endpoint Management,ESM
 Field Operations Supervisor,Director of Field Services,FSR
 Service Delivery Manager,Director of Field Services,FSR
 Associate Counsel,Senior Counsel,OGC
 Compliance Officer,Senior Counsel,OGC
+GCP Engineering Manager,Director of Google Cloud,GOO
+Azure Engineering Manager,Director of Azure Operations,AZR
 QA Lead,IT Director,TST
-Account Executive,Sales Manager,BDE
-Business Development Representative,Sales Manager,BDE
-Sales Engineer,Sales Manager,BDE
-Channel Partner Manager,Sales Manager,BDE
-Recruiter,HR Business Partner,HRE
-Talent Acquisition Specialist,HR Business Partner,HRE
-HR Coordinator,HR Manager,HRE
-Benefits Administrator,HR Manager,HRE
-Compensation Analyst,HR Manager,HRE
-HR Generalist,HR Business Partner,HRE
-Financial Analyst,Finance Manager,FIN
-Staff Accountant,Controller,FIN
-Payroll Specialist,Controller,FIN
-Accounts Payable Clerk,Controller,FIN
-Budget Analyst,Finance Manager,FIN
-Contract Administrator,Associate Counsel,OGC
-Legal Aide,Associate Counsel,OGC
-Paralegal,Associate Counsel,OGC
-SOC Analyst,Security Manager,SEC
-Security Engineer,Security Manager,SEC
-Threat Hunter,Security Manager,SEC
-Incident Responder,Security Manager,SEC
-Penetration Tester,Security Architect,SEC
-GRC Analyst,Security Architect,SEC
-Systems Administrator,IT Manager,ITS
-Network Engineer,IT Manager,ITS
-Helpdesk Analyst,Service Desk Lead,ITS
-Database Administrator,IT Manager,ITS
-Infrastructure Engineer,IT Manager,ITS
-Senior Cloud Engineer,Cloud Engineering Manager,AWS
-Cloud Engineer,Cloud Engineering Manager,AWS
-Solutions Architect,Cloud Engineering Manager,AWS
-DevOps Engineer,Cloud Engineering Manager,AWS
-Cloud Security Engineer,Cloud Engineering Manager,AWS
-Site Reliability Engineer,Cloud Engineering Manager,AWS
-Platform Engineer,Cloud Engineering Manager,AWS
-Senior Endpoint Administrator,Endpoint Management Manager,ESM
-Endpoint Administrator,Endpoint Management Manager,ESM
-Desktop Support Technician,Endpoint Management Manager,ESM
-SCCM Administrator,Endpoint Management Manager,ESM
-Intune Administrator,Endpoint Management Manager,ESM
-Patch Management Specialist,Endpoint Management Manager,ESM
-Imaging Technician,Endpoint Management Manager,ESM
-Senior Field Engineer,Field Operations Supervisor,FSR
-Field Service Technician,Field Operations Supervisor,FSR
-Remote Support Specialist,Field Operations Supervisor,FSR
-Installation Technician,Field Operations Supervisor,FSR
-Dispatch Coordinator,Service Delivery Manager,FSR
-Automation Engineer,QA Lead,TST
-QA Analyst,QA Lead,TST
-Test Engineer,QA Lead,TST
-Performance Tester,QA Lead,TST
+Senior Account Executive,Sales Manager,BDE
+Senior Sales Engineer,Sales Manager,BDE
+Senior HR Business Partner,HR Business Partner,HRE
+Senior HR Manager,HR Manager,HRE
+Senior Controller,Controller,FIN
+Senior Finance Manager,Finance Manager,FIN
+Senior Associate Counsel,Associate Counsel,OGC
+Senior Compliance Officer,Compliance Officer,OGC
+Senior Field Supervisor,Field Operations Supervisor,FSR
+Senior Service Delivery Coordinator,Service Delivery Manager,FSR
+Senior AWS Engineer,AWS Engineering Manager,AWS
+Senior Endpoint Manager,Endpoint Management Manager,ESM
+Senior Security Manager,Security Manager,SEC
+Senior Security Architect,Security Architect,SEC
+Senior IT Manager,IT Manager,ITS
+Senior Service Desk Lead,Service Desk Lead,ITS
+Senior GCP Engineer,GCP Engineering Manager,GOO
+Senior Azure Engineer,Azure Engineering Manager,AZR
+Senior QA Lead,QA Lead,TST
+Sales Team Lead,Senior Account Executive,BDE
+Sales Engineering Lead,Senior Sales Engineer,BDE
+HR Team Lead,Senior HR Business Partner,HRE
+HR Operations Lead,Senior HR Manager,HRE
+Accounting Team Lead,Senior Controller,FIN
+Finance Team Lead,Senior Finance Manager,FIN
+Legal Team Lead,Senior Associate Counsel,OGC
+Compliance Team Lead,Senior Compliance Officer,OGC
+Field Team Lead,Senior Field Supervisor,FSR
+Service Delivery Lead,Senior Service Delivery Coordinator,FSR
+AWS Team Lead,Senior AWS Engineer,AWS
+Endpoint Team Lead,Senior Endpoint Manager,ESM
+SOC Team Lead,Senior Security Manager,SEC
+Security Engineering Lead,Senior Security Architect,SEC
+IT Team Lead,Senior IT Manager,ITS
+Service Desk Team Lead,Senior Service Desk Lead,ITS
+GCP Team Lead,Senior GCP Engineer,GOO
+Azure Team Lead,Senior Azure Engineer,AZR
+QA Team Lead,Senior QA Lead,TST
+Account Executive,Sales Team Lead,BDE
+Business Development Representative,Sales Team Lead,BDE
+Sales Engineer,Sales Engineering Lead,BDE
+Channel Partner Manager,Sales Team Lead,BDE
+Recruiter,HR Team Lead,HRE
+Talent Acquisition Specialist,HR Team Lead,HRE
+HR Coordinator,HR Operations Lead,HRE
+Benefits Administrator,HR Operations Lead,HRE
+Compensation Analyst,HR Operations Lead,HRE
+HR Generalist,HR Team Lead,HRE
+Financial Analyst,Finance Team Lead,FIN
+Staff Accountant,Accounting Team Lead,FIN
+Payroll Specialist,Accounting Team Lead,FIN
+Accounts Payable Clerk,Accounting Team Lead,FIN
+Budget Analyst,Finance Team Lead,FIN
+Contract Administrator,Legal Team Lead,OGC
+Legal Aide,Legal Team Lead,OGC
+Paralegal,Legal Team Lead,OGC
+Senior Field Engineer,Field Team Lead,FSR
+Field Service Technician,Field Team Lead,FSR
+Remote Support Specialist,Service Delivery Lead,FSR
+Installation Technician,Field Team Lead,FSR
+Dispatch Coordinator,Service Delivery Lead,FSR
+AWS Cloud Engineer,AWS Team Lead,AWS
+AWS Solutions Architect,AWS Team Lead,AWS
+AWS DevOps Engineer,AWS Team Lead,AWS
+AWS Cloud Security Engineer,AWS Team Lead,AWS
+AWS Site Reliability Engineer,AWS Team Lead,AWS
+AWS Platform Engineer,AWS Team Lead,AWS
+Senior Endpoint Administrator,Endpoint Team Lead,ESM
+Endpoint Administrator,Endpoint Team Lead,ESM
+Desktop Support Technician,Endpoint Team Lead,ESM
+SCCM Administrator,Endpoint Team Lead,ESM
+Intune Administrator,Endpoint Team Lead,ESM
+Patch Management Specialist,Endpoint Team Lead,ESM
+Imaging Technician,Endpoint Team Lead,ESM
+SOC Analyst,SOC Team Lead,SEC
+Security Engineer,Security Engineering Lead,SEC
+Threat Hunter,SOC Team Lead,SEC
+Incident Responder,SOC Team Lead,SEC
+Penetration Tester,Security Engineering Lead,SEC
+GRC Analyst,Security Engineering Lead,SEC
+Systems Administrator,IT Team Lead,ITS
+Network Engineer,IT Team Lead,ITS
+Helpdesk Analyst,Service Desk Team Lead,ITS
+Database Administrator,IT Team Lead,ITS
+Infrastructure Engineer,IT Team Lead,ITS
+GCP Cloud Engineer,GCP Team Lead,GOO
+GCP Solutions Architect,GCP Team Lead,GOO
+GCP DevOps Engineer,GCP Team Lead,GOO
+GCP Cloud Security Engineer,GCP Team Lead,GOO
+GCP Site Reliability Engineer,GCP Team Lead,GOO
+GCP Platform Engineer,GCP Team Lead,GOO
+Azure Cloud Engineer,Azure Team Lead,AZR
+Azure Solutions Architect,Azure Team Lead,AZR
+Azure DevOps Engineer,Azure Team Lead,AZR
+Azure Cloud Security Engineer,Azure Team Lead,AZR
+Azure Site Reliability Engineer,Azure Team Lead,AZR
+Azure Platform Engineer,Azure Team Lead,AZR
+Automation Engineer,QA Team Lead,TST
+QA Analyst,QA Team Lead,TST
+Test Engineer,QA Team Lead,TST
+Performance Tester,QA Team Lead,TST

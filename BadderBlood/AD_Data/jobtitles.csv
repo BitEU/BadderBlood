@@ -10,104 +10,139 @@ BDE,Chief Revenue Officer,2,1
 BDE,VP of Business Development,3,2
 BDE,Regional Sales Director,4,4
 BDE,Director of Sales,4,4
-BDE,Sales Manager,5,8
-BDE,Account Executive,6,0
-BDE,Business Development Representative,6,0
-BDE,Sales Engineer,6,0
-BDE,Channel Partner Manager,6,0
+BDE,Sales Manager,5,12
+BDE,Senior Account Executive,6,0
+BDE,Senior Sales Engineer,6,0
+BDE,Sales Team Lead,7,0
+BDE,Sales Engineering Lead,7,0
+BDE,Account Executive,8,0
+BDE,Business Development Representative,8,0
+BDE,Sales Engineer,8,0
+BDE,Channel Partner Manager,8,0
 HRE,VP of Human Resources,3,1
 HRE,Director of Human Resources,4,2
-HRE,HR Business Partner,5,4
-HRE,HR Manager,5,4
-HRE,Recruiter,6,0
-HRE,Talent Acquisition Specialist,6,0
-HRE,HR Coordinator,6,0
-HRE,Benefits Administrator,6,0
-HRE,Compensation Analyst,6,0
-HRE,HR Generalist,6,0
+HRE,HR Business Partner,5,6
+HRE,HR Manager,5,6
+HRE,Senior HR Business Partner,6,0
+HRE,Senior HR Manager,6,0
+HRE,HR Team Lead,7,0
+HRE,HR Operations Lead,7,0
+HRE,Recruiter,8,0
+HRE,Talent Acquisition Specialist,8,0
+HRE,HR Coordinator,8,0
+HRE,Benefits Administrator,8,0
+HRE,Compensation Analyst,8,0
+HRE,HR Generalist,8,0
 FIN,VP of Finance,3,1
 FIN,Director of Finance,4,2
-FIN,Controller,5,3
-FIN,Finance Manager,5,3
-FIN,Financial Analyst,6,0
-FIN,Staff Accountant,6,0
-FIN,Payroll Specialist,6,0
-FIN,Accounts Payable Clerk,6,0
-FIN,Budget Analyst,6,0
+FIN,Controller,5,5
+FIN,Finance Manager,5,5
+FIN,Senior Controller,6,0
+FIN,Senior Finance Manager,6,0
+FIN,Accounting Team Lead,7,0
+FIN,Finance Team Lead,7,0
+FIN,Financial Analyst,8,0
+FIN,Staff Accountant,8,0
+FIN,Payroll Specialist,8,0
+FIN,Accounts Payable Clerk,8,0
+FIN,Budget Analyst,8,0
 OGC,Deputy General Counsel,3,1
 OGC,Senior Counsel,4,3
-OGC,Associate Counsel,5,4
-OGC,Compliance Officer,5,3
-OGC,Contract Administrator,6,0
-OGC,Legal Aide,6,0
-OGC,Paralegal,6,0
+OGC,Associate Counsel,5,6
+OGC,Compliance Officer,5,5
+OGC,Senior Associate Counsel,6,0
+OGC,Senior Compliance Officer,6,0
+OGC,Legal Team Lead,7,0
+OGC,Compliance Team Lead,7,0
+OGC,Contract Administrator,8,0
+OGC,Legal Aide,8,0
+OGC,Paralegal,8,0
 FSR,VP of Field Operations,3,1
 FSR,Director of Field Services,4,2
-FSR,Field Operations Supervisor,5,4
-FSR,Service Delivery Manager,5,4
-FSR,Senior Field Engineer,6,0
-FSR,Field Service Technician,6,0
-FSR,Remote Support Specialist,6,0
-FSR,Installation Technician,6,0
-FSR,Dispatch Coordinator,6,0
+FSR,Field Operations Supervisor,5,6
+FSR,Service Delivery Manager,5,6
+FSR,Senior Field Supervisor,6,0
+FSR,Senior Service Delivery Coordinator,6,0
+FSR,Field Team Lead,7,0
+FSR,Service Delivery Lead,7,0
+FSR,Senior Field Engineer,8,0
+FSR,Field Service Technician,8,0
+FSR,Remote Support Specialist,8,0
+FSR,Installation Technician,8,0
+FSR,Dispatch Coordinator,8,0
 AWS,VP of Cloud Engineering,3,1
 AWS,Director of Cloud Infrastructure,4,2
-AWS,Cloud Engineering Manager,5,3
-AWS,Senior Cloud Engineer,6,0
-AWS,Cloud Engineer,6,0
-AWS,Solutions Architect,6,0
-AWS,DevOps Engineer,6,0
-AWS,Cloud Security Engineer,6,0
-AWS,Site Reliability Engineer,6,0
-AWS,Platform Engineer,6,0
+AWS,AWS Engineering Manager,5,5
+AWS,Senior AWS Engineer,6,0
+AWS,AWS Team Lead,7,0
+AWS,AWS Cloud Engineer,8,0
+AWS,AWS Solutions Architect,8,0
+AWS,AWS DevOps Engineer,8,0
+AWS,AWS Cloud Security Engineer,8,0
+AWS,AWS Site Reliability Engineer,8,0
+AWS,AWS Platform Engineer,8,0
 ESM,Director of Endpoint Management,4,1
-ESM,Endpoint Management Manager,5,2
-ESM,Senior Endpoint Administrator,6,0
-ESM,Endpoint Administrator,6,0
-ESM,Desktop Support Technician,6,0
-ESM,SCCM Administrator,6,0
-ESM,Intune Administrator,6,0
-ESM,Patch Management Specialist,6,0
-ESM,Imaging Technician,6,0
+ESM,Endpoint Management Manager,5,4
+ESM,Senior Endpoint Manager,6,0
+ESM,Endpoint Team Lead,7,0
+ESM,Senior Endpoint Administrator,8,0
+ESM,Endpoint Administrator,8,0
+ESM,Desktop Support Technician,8,0
+ESM,SCCM Administrator,8,0
+ESM,Intune Administrator,8,0
+ESM,Patch Management Specialist,8,0
+ESM,Imaging Technician,8,0
 SEC,VP of Information Security,3,1
 SEC,Director of Security Operations,4,2
-SEC,Security Manager,5,3
-SEC,Security Architect,5,3
-SEC,SOC Analyst,6,0
-SEC,Security Engineer,6,0
-SEC,Threat Hunter,6,0
-SEC,Incident Responder,6,0
-SEC,Penetration Tester,6,0
-SEC,GRC Analyst,6,0
+SEC,Security Manager,5,5
+SEC,Security Architect,5,5
+SEC,Senior Security Manager,6,0
+SEC,Senior Security Architect,6,0
+SEC,SOC Team Lead,7,0
+SEC,Security Engineering Lead,7,0
+SEC,SOC Analyst,8,0
+SEC,Security Engineer,8,0
+SEC,Threat Hunter,8,0
+SEC,Incident Responder,8,0
+SEC,Penetration Tester,8,0
+SEC,GRC Analyst,8,0
 ITS,VP of Information Technology,3,1
 ITS,IT Director,4,2
-ITS,IT Manager,5,4
-ITS,Service Desk Lead,5,4
-ITS,Systems Administrator,6,0
-ITS,Network Engineer,6,0
-ITS,Helpdesk Analyst,6,0
-ITS,Database Administrator,6,0
-ITS,Infrastructure Engineer,6,0
+ITS,IT Manager,5,6
+ITS,Service Desk Lead,5,6
+ITS,Senior IT Manager,6,0
+ITS,Senior Service Desk Lead,6,0
+ITS,IT Team Lead,7,0
+ITS,Service Desk Team Lead,7,0
+ITS,Systems Administrator,8,0
+ITS,Network Engineer,8,0
+ITS,Helpdesk Analyst,8,0
+ITS,Database Administrator,8,0
+ITS,Infrastructure Engineer,8,0
 GOO,Director of Google Cloud,4,1
-GOO,Cloud Engineering Manager,5,2
-GOO,Senior Cloud Engineer,6,0
-GOO,Cloud Engineer,6,0
-GOO,Solutions Architect,6,0
-GOO,DevOps Engineer,6,0
-GOO,Cloud Security Engineer,6,0
-GOO,Site Reliability Engineer,6,0
-GOO,Platform Engineer,6,0
+GOO,GCP Engineering Manager,5,4
+GOO,Senior GCP Engineer,6,0
+GOO,GCP Team Lead,7,0
+GOO,GCP Cloud Engineer,8,0
+GOO,GCP Solutions Architect,8,0
+GOO,GCP DevOps Engineer,8,0
+GOO,GCP Cloud Security Engineer,8,0
+GOO,GCP Site Reliability Engineer,8,0
+GOO,GCP Platform Engineer,8,0
 AZR,Director of Azure Operations,4,1
-AZR,Cloud Engineering Manager,5,2
-AZR,Senior Cloud Engineer,6,0
-AZR,Cloud Engineer,6,0
-AZR,Solutions Architect,6,0
-AZR,DevOps Engineer,6,0
-AZR,Cloud Security Engineer,6,0
-AZR,Site Reliability Engineer,6,0
-AZR,Platform Engineer,6,0
-TST,QA Lead,5,2
-TST,Automation Engineer,6,0
-TST,QA Analyst,6,0
-TST,Test Engineer,6,0
-TST,Performance Tester,6,0
+AZR,Azure Engineering Manager,5,4
+AZR,Senior Azure Engineer,6,0
+AZR,Azure Team Lead,7,0
+AZR,Azure Cloud Engineer,8,0
+AZR,Azure Solutions Architect,8,0
+AZR,Azure DevOps Engineer,8,0
+AZR,Azure Cloud Security Engineer,8,0
+AZR,Azure Site Reliability Engineer,8,0
+AZR,Azure Platform Engineer,8,0
+TST,QA Lead,5,4
+TST,Senior QA Lead,6,0
+TST,QA Team Lead,7,0
+TST,Automation Engineer,8,0
+TST,QA Analyst,8,0
+TST,Test Engineer,8,0
+TST,Performance Tester,8,0

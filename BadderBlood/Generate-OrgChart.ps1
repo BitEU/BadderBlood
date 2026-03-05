@@ -193,7 +193,7 @@ if (Test-Path $jtPath) {
 $nodeW = 180
 $nodeH = 70
 $hGap  = 15          # Horizontal gap between sibling nodes
-$vGap  = 60          # Vertical gap between levels
+$vGap  = 120         # Vertical gap between levels
 
 # Position map
 $posMap = @{}
@@ -399,13 +399,15 @@ if ($rootUser) {
 # -----------------------------------------------------------------------
 function Get-NodeColor {
     param([string]$Title)
-    $lv = if ($titleLevelMap.ContainsKey($Title)) { $titleLevelMap[$Title] } else { 6 }
+    $lv = if ($titleLevelMap.ContainsKey($Title)) { $titleLevelMap[$Title] } else { 8 }
     switch ($lv) {
         1 { return @{ Fill = '#1a237e'; Font = '#ffffff'; Stroke = '#0d1657' } }
         2 { return @{ Fill = '#283593'; Font = '#ffffff'; Stroke = '#1a237e' } }
         3 { return @{ Fill = '#1565c0'; Font = '#ffffff'; Stroke = '#0d47a1' } }
         4 { return @{ Fill = '#1976d2'; Font = '#ffffff'; Stroke = '#1565c0' } }
-        5 { return @{ Fill = '#42a5f5'; Font = '#000000'; Stroke = '#1976d2' } }
+        5 { return @{ Fill = '#1e88e5'; Font = '#ffffff'; Stroke = '#1976d2' } }
+        6 { return @{ Fill = '#42a5f5'; Font = '#000000'; Stroke = '#1e88e5' } }
+        7 { return @{ Fill = '#90caf9'; Font = '#000000'; Stroke = '#42a5f5' } }
         default { return @{ Fill = '#e3f2fd'; Font = '#000000'; Stroke = '#90caf9' } }
     }
 }
