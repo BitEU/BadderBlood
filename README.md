@@ -18,8 +18,8 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 4. ```Set-MpPreference -DisableRealtimeMonitoring $true```
 5. Download this repo, extract it to the C drive with a path of ```C:\BadderBlood```
 6. Run ```Get-ChildItem -Path C:\BadderBlood -Recurse | Unblock-File```
-7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\Invoke-BadBlood.ps1```
-8. Once BadBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadBlood\BadBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
+7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadderBloodInvoke-BadderBlood.ps1```
+8. Once BadBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadderBlood\BadderBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
 
 
 ## Instalation on QEMU
@@ -33,6 +33,8 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 6. Once the machine restarts, you can now use this cmd:
 ```.\qemu-system-x86_64.exe -m 16G -smp 8,sockets=1,cores=8,threads=1 -cpu Haswell-v4,vendor=GenuineIntel,+hypervisor,+kvm_pv_unhalt -machine q35 -accel whpx -drive file="C:\Users\wcdaht-srs\Downloads\ws2022.qcow2",format=qcow2,if=virtio -vga std -net nic,model=e1000 -net user,hostfwd=tcp::3390-:3389```
 7. Now you can rdp into it via localhost:3390
+
+## Nuking your AD (Just use snapshots instead, really dont do this)
 
 If you want to nuke AD:
 1. Run ```Uninstall-ADDSDomainController -LastDomainControllerInDomain -RemoveApplicationPartitions -IgnoreLastDnsServerForZone -LocalAdministratorPassword $LocalAdminPass -Force```
