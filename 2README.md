@@ -58,7 +58,7 @@ BadderBlood rewrites the core generation scripts so the domain looks like a **re
 - Default 5 accounts (not 5% of all users)
 - Simulates "vendor said to disable pre-auth" scenario
 
-### Invoke-BadBlood.ps1 (REWRITTEN)
+### Invoke-BadderBlood.ps1 (REWRITTEN)
 - Clear phase-by-phase execution with progress bars
 - All misconfiguration counts are **configurable parameters**
 - Summary report of what was injected
@@ -68,19 +68,19 @@ BadderBlood rewrites the core generation scripts so the domain looks like a **re
 
 ```powershell
 # Default (2500 users, 500 groups, 100 computers, 8% drift)
-.\Invoke-BadBlood.ps1
+.\Invoke-BadderBlood.ps1
 
 # Smaller lab
-.\Invoke-BadBlood.ps1 -UserCount 500 -GroupCount 100 -ComputerCount 25
+.\Invoke-BadderBlood.ps1 -UserCount 500 -GroupCount 100 -ComputerCount 25
 
 # More misconfigurations for harder lab
-.\Invoke-BadBlood.ps1 -DriftPercent 15 -ASREPCount 10 -SPNCount 20 -WeakPasswordCount 25
+.\Invoke-BadderBlood.ps1 -DriftPercent 15 -ASREPCount 10 -SPNCount 20 -WeakPasswordCount 25
 
 # Non-interactive (for automation)
-.\Invoke-BadBlood.ps1 -NonInteractive -SkipLapsInstall
+.\Invoke-BadderBlood.ps1 -NonInteractive -SkipLapsInstall
 
 # Skip OU creation (already done)
-.\Invoke-BadBlood.ps1 -SkipOuCreation -SkipLapsInstall
+.\Invoke-BadderBlood.ps1 -SkipOuCreation -SkipLapsInstall
 ```
 
 ## Expected Findings Profile (vs Original)

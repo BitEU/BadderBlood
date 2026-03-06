@@ -1,10 +1,10 @@
 #Requires -Modules ActiveDirectory, GroupPolicy
 <#
 .SYNOPSIS
-    BadBlood GPO Companion - Deploys deliberately misconfigured Group Policy Objects
+    BadderBlood GPO Companion - Deploys deliberately misconfigured Group Policy Objects
 .DESCRIPTION
     Creates 18-20 insecure/misconfigured GPOs linked at the domain level to complement
-    BadBlood's user/group/ACL misconfigurations. Designed for lab environments where
+    BadderBlood's user/group/ACL misconfigurations. Designed for lab environments where
     students practice identifying and remediating AD security issues.
 
     GPO categories created:
@@ -17,9 +17,9 @@
       - Lateral movement enablers
       - LAPS misconfiguration (overpermissioned OU ACL backdoor)
       - GPO persistence via writable scheduled task scripts
-      - GPO permission delegation to BadBlood users
+      - GPO permission delegation to BadderBlood users
 
-    MUST be run AFTER BadBlood has populated the domain with users/groups.
+    MUST be run AFTER BadderBlood has populated the domain with users/groups.
 
 .PARAMETER SkipLinking
     Creates GPOs but does not link them to the domain (for testing).
@@ -28,12 +28,12 @@
     Adds 2-3 harmless but suspiciously-named GPOs as red herrings.
 
 .EXAMPLE
-    .\Invoke-BadBloodGPO.ps1
-    .\Invoke-BadBloodGPO.ps1 -IncludeDecoyGPOs
+    .\Invoke-BadderBloodGPO.ps1
+    .\Invoke-BadderBloodGPO.ps1 -IncludeDecoyGPOs
 
 .NOTES
     Run on a Domain Controller as Domain Admin.
-    Run AFTER BadBlood has completed.
+    Run AFTER BadderBlood has completed.
     Requires: ActiveDirectory and GroupPolicy PowerShell modules.
 #>
 
@@ -49,7 +49,7 @@ param(
 
 Write-Host @"
 ===============================================================================
-   BadBlood GPO Companion - Insecure GPO Deployment
+   BadderBlood GPO Companion - Insecure GPO Deployment
    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 ===============================================================================
 "@ -ForegroundColor Yellow
@@ -71,26 +71,39 @@ $DomainNetBIOS = $DomainInfo.NetBIOSName
 Write-Host "[*] Domain: $DomainDNS" -ForegroundColor Cyan
 Write-Host "[*] Domain DN: $DomainDN" -ForegroundColor Cyan
 
-# Verify BadBlood has run - look for BadBlood-created users
-$BBDescPatterns = @("*secframe.com/badblood*", "*Badblood github.com*", "*davidprowe/badblood*", "*Created with secframe*")
-$SampleBBUsers = Get-ADUser -Filter * -Properties Description -ResultSetSize 10 | Where-Object {
+# Verify BadderBlood has run - look for BadderBlood-created users/groups
+# These patterns match what BadderBlood actually writes to Description fields.
+# Original BadBlood patterns are also included for compatibility.
+$BBDescPatterns = @(
+    "*Created with BadderBlood*"
+    "*Created by BadderBlood*"
+    "*Service Account*Created by BadderBlood*"
+    "*BadderBlood*"
+    # Original BadBlood patterns (backwards compat)
+    "*secframe.com/badblood*"
+    "*Badblood github.com*"
+    "*davidprowe/badblood*"
+    "*Created with secframe*"
+    "*User Group Created by Badblood*"
+)
+$SampleBBUsers = Get-ADUser -Filter * -Properties Description -ResultSetSize 20 | Where-Object {
     $desc = $_.Description
     ($BBDescPatterns | ForEach-Object { $desc -like $_ }) -contains $true
 }
 
 if (-not $SampleBBUsers) {
-    Write-Warning "No BadBlood-created users found. Run BadBlood first!"
+    Write-Warning "No BadderBlood-created users found. Run Invoke-BadderBlood.ps1 first!"
     Write-Warning "Continuing anyway, but GPO permission delegation will be skipped."
-    $BadBloodPresent = $false
+    $BadderBloodPresent = $false
 } else {
-    Write-Host "[*] BadBlood users detected. Proceeding." -ForegroundColor Green
-    $BadBloodPresent = $true
+    Write-Host "[*] BadderBlood users detected ($($SampleBBUsers.Count) sampled). Proceeding." -ForegroundColor Green
+    $BadderBloodPresent = $true
 }
 
-# Collect some BadBlood users/groups for GPO permission delegation
+# Collect BadderBlood users/groups for GPO permission delegation
 $BBUsers = @()
 $BBGroups = @()
-if ($BadBloodPresent) {
+if ($BadderBloodPresent) {
     $BBUsers = Get-ADUser -Filter * -Properties Description, SamAccountName | Where-Object {
         $desc = $_.Description
         ($BBDescPatterns | ForEach-Object { $desc -like $_ }) -contains $true
@@ -160,7 +173,13 @@ $gpo1 = New-InsecureGPO -Name "IT-PasswordPolicy-Standard" `
 # We need to write directly to SYSVOL for security settings
 $gpo1Path = "\\$DomainDNS\SYSVOL\$DomainDNS\Policies\{$($gpo1.Id)}"
 $machPath = "$gpo1Path\Machine\Microsoft\Windows NT\SecEdit"
-New-Item -ItemType Directory -Path $machPath -Force -ErrorAction SilentlyContinue | Out-Null
+$sysvolTimeout = 30
+$sysvolElapsed = 0
+while (-not (Test-Path $gpo1Path) -and $sysvolElapsed -lt $sysvolTimeout) {
+    Start-Sleep -Seconds 1
+    $sysvolElapsed++
+}
+[System.IO.Directory]::CreateDirectory($machPath) | Out-Null
 
 $pwPolicyInf = @"
 [Unicode]
@@ -177,10 +196,10 @@ ClearTextPassword = 0
 signature="`$CHICAGO`$"
 Revision=1
 "@
-$pwPolicyInf | Out-File -FilePath "$machPath\GptTmpl.inf" -Encoding Unicode
+[System.IO.File]::WriteAllText("$machPath\GptTmpl.inf", $pwPolicyInf, [System.Text.Encoding]::Unicode)
 
-# Update GPO version
-$gpo1 | Set-GPRegistryValue -Key "HKLM\Software\Policies\BadBloodGPO" -ValueName "Marker1" -Type String -Value "deployed" -ErrorAction SilentlyContinue | Out-Null
+# Update GPO version counter so clients know to re-process
+Set-GPRegistryValue -Name "IT-PasswordPolicy-Standard" -Key "HKLM\Software\Policies\BadderBloodGPO" -ValueName "Marker1" -Type String -Value "deployed" -ErrorAction SilentlyContinue | Out-Null
 
 $CreatedGPOs.Add([PSCustomObject]@{
     Name = "IT-PasswordPolicy-Standard"
@@ -312,7 +331,8 @@ Write-Host "[*] Creating GPO 6: Enable LLMNR/NetBIOS..." -ForegroundColor Cyan
 $gpo6 = New-InsecureGPO -Name "NET-NameResolution-Compat" `
     -Comment "Name resolution compatibility for legacy devices" -LinkToDomain
 
-# Enable LLMNR (0 = enabled by default, but explicitly not disabling it)
+# Explicitly enforce LLMNR enabled (1 = enabled; without this key, Windows defaults to enabled,
+# but setting it explicitly prevents a remediation GPO from disabling it via the same key)
 Set-GPORegistryValue -GPOName "NET-NameResolution-Compat" `
     -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" `
     -ValueName "EnableMulticast" -Type DWord -Value 1
@@ -641,7 +661,13 @@ $gpo17 = New-InsecureGPO -Name "IT-LocalAdmin-Deploy" `
 # (Microsoft published it in MSDN), so any domain user can decrypt it.
 $gpo17Path = "\\$DomainDNS\SYSVOL\$DomainDNS\Policies\{$($gpo17.Id)}"
 $prefPath = "$gpo17Path\Machine\Preferences\Groups"
-New-Item -ItemType Directory -Path $prefPath -Force -ErrorAction SilentlyContinue | Out-Null
+$sysvolTimeout = 30
+$sysvolElapsed = 0
+while (-not (Test-Path $gpo17Path) -and $sysvolElapsed -lt $sysvolTimeout) {
+    Start-Sleep -Seconds 1
+    $sysvolElapsed++
+}
+[System.IO.Directory]::CreateDirectory($prefPath) | Out-Null
 
 # This is the classic cpassword value - AES-256 encrypted with the publicly-known
 # Microsoft key. Decrypts to "P@ssw0rd123!" using gpp-decrypt or Get-GPPPassword
@@ -658,7 +684,7 @@ $groupsXml = @"
   </User>
 </Groups>
 "@
-$groupsXml | Out-File -FilePath "$prefPath\Groups.xml" -Encoding UTF8
+[System.IO.File]::WriteAllText("$prefPath\Groups.xml", $groupsXml, [System.Text.Encoding]::UTF8)
 
 $CreatedGPOs.Add([PSCustomObject]@{
     Name = "IT-LocalAdmin-Deploy"
@@ -972,7 +998,13 @@ try {
 # This creates an Immediate Scheduled Task that runs as SYSTEM
 $gpo20Path = "\\$DomainDNS\SYSVOL\$DomainDNS\Policies\{$($gpo20.Id)}"
 $taskPrefPath = "$gpo20Path\Machine\Preferences\ScheduledTasks"
-New-Item -ItemType Directory -Path $taskPrefPath -Force -ErrorAction SilentlyContinue | Out-Null
+$sysvolTimeout = 30
+$sysvolElapsed = 0
+while (-not (Test-Path $gpo20Path) -and $sysvolElapsed -lt $sysvolTimeout) {
+    Start-Sleep -Seconds 1
+    $sysvolElapsed++
+}
+[System.IO.Directory]::CreateDirectory($taskPrefPath) | Out-Null
 
 # Generate unique task GUID
 $taskGuid = [GUID]::NewGuid().ToString("B").ToUpper()
@@ -1038,7 +1070,7 @@ $scheduledTaskXml = @"
 </ScheduledTasks>
 "@
 
-$scheduledTaskXml | Out-File -FilePath "$taskPrefPath\ScheduledTasks.xml" -Encoding UTF8
+[System.IO.File]::WriteAllText("$taskPrefPath\ScheduledTasks.xml", $scheduledTaskXml, [System.Text.Encoding]::UTF8)
 Write-Host "    [+] Deployed ScheduledTasks.xml to SYSVOL" -ForegroundColor Green
 Write-Host "    [+] Task: 'IT-SystemHealthCheck' runs as SYSTEM every Sunday + at boot" -ForegroundColor Green
 Write-Host "    [+] Executes: \\$dcHostname\ITScripts\$ScriptName" -ForegroundColor Green
@@ -1056,10 +1088,10 @@ $CreatedGPOs.Add([PSCustomObject]@{
 # ============================================================================
 # GPO PERMISSION DELEGATION TO BADBLOOD OBJECTS
 # ============================================================================
-if ($BadBloodPresent -and $BBUsers.Count -ge 5) {
-    Write-Host "`n[*] Delegating GPO edit permissions to random BadBlood users..." -ForegroundColor Cyan
+if ($BadderBloodPresent -and $BBUsers.Count -ge 5) {
+    Write-Host "`n[*] Delegating GPO edit permissions to random BadderBlood users..." -ForegroundColor Cyan
 
-    # Pick 3-5 random BadBlood users to grant GPO edit rights to random GPOs
+    # Pick 3-5 random BadderBlood users to grant GPO edit rights to random GPOs
     $DelegationTargets = $BBUsers | Get-Random -Count ([Math]::Min(5, $BBUsers.Count))
     $GPOsToDelegate = $CreatedGPOs | Get-Random -Count ([Math]::Min(5, $CreatedGPOs.Count))
 
@@ -1075,7 +1107,7 @@ if ($BadBloodPresent -and $BBUsers.Count -ge 5) {
         }
     }
 
-    # Also grant a couple BadBlood groups
+    # Also grant a couple BadderBlood groups
     if ($BBGroups.Count -ge 2) {
         $GroupDelegates = $BBGroups | Get-Random -Count 2
         $GPOsForGroups = $CreatedGPOs | Get-Random -Count 2
@@ -1119,7 +1151,7 @@ if ($IncludeDecoyGPOs) {
 # ============================================================================
 # EXPORT MANIFEST
 # ============================================================================
-$manifestPath = ".\BadBloodGPO_Manifest_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$manifestPath = "$PSScriptRoot\BadderBloodGPO_Manifest_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
 $CreatedGPOs | Export-Csv -Path $manifestPath -NoTypeInformation
 Write-Host "`n[*] GPO manifest saved: $manifestPath" -ForegroundColor Green
 
@@ -1128,7 +1160,7 @@ Write-Host "`n[*] GPO manifest saved: $manifestPath" -ForegroundColor Green
 # ============================================================================
 Write-Host ""
 Write-Host "=" * 80 -ForegroundColor Yellow
-Write-Host "  BADBLOOD GPO COMPANION - DEPLOYMENT COMPLETE" -ForegroundColor Green
+Write-Host "  BADDERBLOOD GPO COMPANION - DEPLOYMENT COMPLETE" -ForegroundColor Green
 Write-Host "=" * 80 -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  GPOs Created: $($CreatedGPOs.Count)" -ForegroundColor White
@@ -1139,6 +1171,6 @@ Write-Host "    CRITICAL: $(($CreatedGPOs | Where-Object Severity -eq 'CRITICAL'
 Write-Host "    HIGH:     $(($CreatedGPOs | Where-Object Severity -eq 'HIGH').Count)" -ForegroundColor DarkYellow
 Write-Host "    MEDIUM:   $(($CreatedGPOs | Where-Object Severity -eq 'MEDIUM').Count)" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "  Run BadBloodAnswerKey.ps1 -IncludeGPOAnalysis to add these to the answer key." -ForegroundColor Cyan
-Write-Host "  Or run BadBloodGPO_AnswerKey.ps1 for a standalone GPO audit." -ForegroundColor Cyan
+Write-Host "  Run BadderBloodAnswerKey.ps1 -IncludeGPOAnalysis to add these to the answer key." -ForegroundColor Cyan
+Write-Host "  Or run BadderBloodGPO_AnswerKey.ps1 for a standalone GPO audit." -ForegroundColor Cyan
 Write-Host "=" * 80 -ForegroundColor Yellow

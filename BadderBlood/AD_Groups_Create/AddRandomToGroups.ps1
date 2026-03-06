@@ -46,9 +46,9 @@ Function AddRandomToGroups {
 
     Set-Location AD:
 
-    $allGroupsFiltered = $allGroups | Where-Object { $_.isCriticalSystemObject -ne $true }
-    $allGroupsCrit = $allGroups | Where-Object { $_.isCriticalSystemObject -eq $true } |
-        Where-Object { $_.Name -ne "Domain Users" -and $_.Name -ne "Domain Guests" }
+    $allGroupsFiltered = @($allGroups | Where-Object { $_.isCriticalSystemObject -ne $true })
+    $allGroupsCrit = @($allGroups | Where-Object { $_.isCriticalSystemObject -eq $true } |
+        Where-Object { $_.Name -ne "Domain Users" -and $_.Name -ne "Domain Guests" })
 
     # =========================================================================
     # 1. DEPARTMENT-BASED GROUP MEMBERSHIP
@@ -56,9 +56,18 @@ Function AddRandomToGroups {
     # =========================================================================
     Write-Host "  [*] Adding users to department-matching groups..." -ForegroundColor Cyan
 
+    # Pre-index groups by department code (eliminates per-user Where-Object scan)
+    $deptCodes = @('BDE','HRE','FIN','OGC','FSR','AWS','ESM','SEC','ITS','GOO','AZR','TST')
+    $groupsByDept = @{}
+    foreach ($dc in $deptCodes) {
+        $groupsByDept[$dc] = @($allGroupsFiltered | Where-Object {
+            $_.Name -like "*$dc*" -or $_.Name -like "DEPT-$dc*" -or $_.Name -like "DL-$dc*"
+        })
+    }
+    Write-Host "    [perf] Pre-indexed groups by department" -ForegroundColor DarkGray
+
+    $userIndex = 0
     foreach ($user in $allUsers) {
-        # Determine user's department from DN or departmentNumber
-        $userDN = $user.DistinguishedName
         $userDept = $null
 
         # Try departmentNumber attribute first
@@ -66,7 +75,7 @@ Function AddRandomToGroups {
 
         # Try parsing from DN
         if (!$userDept) {
-            $dnParts = $userDN -split ','
+            $dnParts = $user.DistinguishedName -split ','
             foreach ($part in $dnParts) {
                 $ouName = ($part -replace 'OU=','').Trim()
                 if ($ouName -match '^(BDE|HRE|FIN|OGC|FSR|AWS|ESM|SEC|ITS|GOO|AZR|TST)$') {
@@ -79,21 +88,16 @@ Function AddRandomToGroups {
         # Add to 1-4 relevant groups
         $numGroups = Get-Random -Minimum 1 -Maximum 5
         $n = 0
-        $matchingGroups = @()
 
-        if ($userDept) {
-            # Prefer groups that contain the department code in name or description
-            $matchingGroups = $allGroupsFiltered | Where-Object {
-                $_.Name -like "*$userDept*" -or $_.Name -like "DEPT-$userDept*" -or $_.Name -like "DL-$userDept*"
-            }
-        }
-
-        # Add to matching groups first
-        if ($matchingGroups -and $matchingGroups.Count -gt 0) {
-            $groupsToAdd = $matchingGroups | Get-Random -Count ([Math]::Min($numGroups, $matchingGroups.Count))
-            foreach ($g in $groupsToAdd) {
-                try { Add-ADGroupMember -Identity $g -Members $user -Server $setDC -ErrorAction Stop } catch {}
-                $n++
+        # Use pre-indexed dept groups (O(1) lookup instead of O(groups) scan)
+        if ($userDept -and $groupsByDept.ContainsKey($userDept)) {
+            $matchingGroups = $groupsByDept[$userDept]
+            if ($matchingGroups.Count -gt 0) {
+                $groupsToAdd = $matchingGroups | Get-Random -Count ([Math]::Min($numGroups, $matchingGroups.Count))
+                foreach ($g in $groupsToAdd) {
+                    try { Add-ADGroupMember -Identity $g -Members $user -Server $setDC -ErrorAction Stop } catch {}
+                    $n++
+                }
             }
         }
 
@@ -102,6 +106,11 @@ Function AddRandomToGroups {
             $randoGroup = $allGroupsFiltered | Get-Random
             try { Add-ADGroupMember -Identity $randoGroup -Members $user -Server $setDC -ErrorAction Stop } catch {}
             $n++
+        }
+
+        $userIndex++
+        if ($userIndex % 250 -eq 0) {
+            Write-Progress -Activity "Group Memberships" -Status "Processing user $userIndex/$($allUsers.Count)" -PercentComplete ($userIndex / $allUsers.Count * 100)
         }
     }
 

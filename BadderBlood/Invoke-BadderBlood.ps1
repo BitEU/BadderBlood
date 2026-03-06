@@ -21,9 +21,9 @@
     .PARAMETER WeakPasswordCount
        Number of accounts to set weak passwords on (default: 10)
     .EXAMPLE
-       .\Invoke-BadBlood.ps1
-       .\Invoke-BadBlood.ps1 -UserCount 1000 -GroupCount 200 -ComputerCount 50
-       .\Invoke-BadBlood.ps1 -NonInteractive -DriftPercent 15 -ASREPCount 8
+       .\Invoke-BadderBlood.ps1
+       .\Invoke-BadderBlood.ps1 -UserCount 1000 -GroupCount 200 -ComputerCount 50
+       .\Invoke-BadderBlood.ps1 -NonInteractive -DriftPercent 15 -ASREPCount 8
     .NOTES
        BadderBlood - Realistic AD Lab Generator
        Based on BadBlood by David Rowe (secframe.com)
@@ -66,7 +66,13 @@ param
     [switch]$SkipLapsInstall,
 
     [Parameter(Mandatory = $false)]
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipGPODeployment,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$IncludeDecoyGPOs
 )
 
 function Get-ScriptDirectory {
@@ -110,19 +116,19 @@ Write-Host "  It should NEVER be run in a production environment." -ForegroundCo
 Write-Host "  You are responsible for how you use this tool." -ForegroundColor Yellow
 Write-Host ""
 
-$badblood = "badblood"
+$badderblood = "badderblood"
 if ($NonInteractive -eq $false) {
-    $badblood = Read-Host -Prompt "  Type 'badblood' to begin deployment"
-    $badblood = $badblood.ToLower()
-    if ($badblood -ne 'badblood') {
+    $badderblood = Read-Host -Prompt "  Type 'badderblood' to begin deployment"
+    $badderblood = $badderblood.ToLower()
+    if ($badderblood -ne 'badderblood') {
         Write-Host "  Exiting." -ForegroundColor Red
         exit
     }
 }
 
-if ($badblood -eq 'badblood') {
+if ($badderblood -eq 'badderblood') {
 
-    $totalPhases = 9
+    $totalPhases = if ($SkipGPODeployment) { 9 } else { 10 }
     $phase = 0
     $Domain = Get-ADDomain
     $setDC = $Domain.PDCEmulator
@@ -165,7 +171,8 @@ if ($badblood -eq 'badblood') {
     $DepartmentList = Import-Csv ($basescriptPath + "\AD_Data\AD_Departments.csv")
     $JobTitleList = Import-Csv ($basescriptPath + "\AD_Data\JobTitles.csv")
     $OfficeList = Import-Csv ($basescriptPath + "\AD_Data\Offices.csv")
-    Write-Host "    Loaded $($DepartmentList.Count) departments, $($JobTitleList.Count) titles, $($OfficeList.Count) offices" -ForegroundColor Gray
+    $OrgHierarchy = Import-Csv ($basescriptPath + "\AD_Data\org_hierarchy.csv")
+    Write-Host "    Loaded $($DepartmentList.Count) departments, $($JobTitleList.Count) titles, $($OfficeList.Count) offices, $($OrgHierarchy.Count) hierarchy entries" -ForegroundColor Gray
 
     # =====================================================================
     # PHASE 4: User Creation
@@ -178,15 +185,25 @@ if ($badblood -eq 'badblood') {
 
     $x = 1
     do {
-        CreateUser -Domain $Domain -OUList $OUsAll -ScriptDir $createuserscriptpath `
-            -DepartmentList $DepartmentList -JobTitleList $JobTitleList -OfficeList $OfficeList `
-            -DriftPercent $DriftPercent
-        if ($x % 100 -eq 0) {
+        # Refresh ExistingUsers every 250 iterations so manager pool stays current
+        if ($x % 250 -eq 0 -or $x -eq 1) {
+            $ExistingUsersPool = Get-ADUser -Filter { Enabled -eq $true } -Properties Title,DistinguishedName,departmentNumber -Server $setDC
             Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating users ($x/$UserCount)" -PercentComplete ($x / $UserCount * 100)
         }
+        CreateUser -Domain $Domain -OUList $OUsAll -ScriptDir $createuserscriptpath `
+            -DepartmentList $DepartmentList -JobTitleList $JobTitleList -OfficeList $OfficeList `
+            -OrgHierarchy $OrgHierarchy -ExistingUsers $ExistingUsersPool `
+            -DriftPercent $DriftPercent
         $x++
     } while ($x -le $UserCount)
     Write-Host "    Created $UserCount users (drift: $DriftPercent%)" -ForegroundColor Gray
+
+    # =====================================================================
+    # PHASE 4.5: Fix Manager Relationships
+    # =====================================================================
+    Write-Host ""
+    Write-Host "  [+] Fixing manager relationships..." -ForegroundColor Green
+    & ($basescriptPath + '\AD_Users_Create\Fix-ManagerRelationships.ps1')
 
     # =====================================================================
     # PHASE 5: Group Creation
@@ -300,6 +317,28 @@ if ($badblood -eq 'badblood') {
     }
 
     # =====================================================================
+    # PHASE 10: GPO Misconfigurations (Optional)
+    # =====================================================================
+    $phase++
+    if ($PSBoundParameters.ContainsKey('SkipGPODeployment') -eq $false) {
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Deploying insecure GPOs..." -ForegroundColor Green
+        Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: GPO Misconfigurations" -PercentComplete ($phase / $totalPhases * 100)
+
+        $gpoScript = $basescriptPath + '\Invoke-BadderBloodGPO.ps1'
+        if (Test-Path $gpoScript) {
+            $gpoArgs = @{ SkipLinking = $false }
+            if ($IncludeDecoyGPOs) { $gpoArgs['IncludeDecoyGPOs'] = $true }
+            & $gpoScript @gpoArgs
+        } else {
+            Write-Warning "  Invoke-BadderBloodGPO.ps1 not found at '$gpoScript'. Skipping GPO phase."
+        }
+    } else {
+        Write-Host ""
+        Write-Host "  [$phase/$totalPhases] Skipping GPO deployment..." -ForegroundColor Gray
+    }
+
+    # =====================================================================
     # COMPLETE
     # =====================================================================
     Write-Progress -Activity "BadderBlood Deployment" -Completed
@@ -330,6 +369,10 @@ if ($badblood -eq 'badblood') {
     Write-Host "    - Users in wrong OUs (departmental drift)" -ForegroundColor Yellow
     Write-Host "    - Passwords in description fields" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  Next step: Run BadBloodAnswerKey.ps1 to generate the findings report." -ForegroundColor White
+    if ($PSBoundParameters.ContainsKey('SkipGPODeployment') -eq $false) {
+        Write-Host "    GPO misconfigs:     deployed (18-20 insecure GPOs)" -ForegroundColor Cyan
+    }
+    Write-Host ""
+    Write-Host "  Next step: Run BadderBloodAnswerKey.ps1 -IncludeGPOAnalysis to generate the findings report." -ForegroundColor White
     Write-Host ""
 }
