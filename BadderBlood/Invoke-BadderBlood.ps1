@@ -60,6 +60,30 @@ param
     [Int32]$WeakPasswordCount = 10,
 
     [Parameter(Mandatory = $false)]
+    [ValidateRange(0,20)]
+    [Int32]$RBCDCount = 3,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0,15)]
+    [Int32]$ShadowCredCount = 3,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0,10)]
+    [Int32]$ADCSCount = 4,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0,10)]
+    [Int32]$GMSACount = 3,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0,20)]
+    [Int32]$StaleRecordCount = 5,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0,15)]
+    [Int32]$LAPSBypassCount = 4,
+
+    [Parameter(Mandatory = $false)]
     [switch]$SkipOuCreation,
 
     [Parameter(Mandatory = $false)]
@@ -106,6 +130,12 @@ Write-Host "    OU Drift:        $DriftPercent%" -ForegroundColor Cyan
 Write-Host "    AS-REP targets:  $ASREPCount" -ForegroundColor Cyan
 Write-Host "    SPN targets:     $SPNCount" -ForegroundColor Cyan
 Write-Host "    Weak passwords:  $WeakPasswordCount" -ForegroundColor Cyan
+Write-Host "    RBCD misconfigs: $RBCDCount" -ForegroundColor Cyan
+Write-Host "    Shadow Creds:    $ShadowCredCount" -ForegroundColor Cyan
+Write-Host "    ADCS templates:  $ADCSCount" -ForegroundColor Cyan
+Write-Host "    gMSA misconfigs: $GMSACount" -ForegroundColor Cyan
+Write-Host "    Stale DNS:       $StaleRecordCount" -ForegroundColor Cyan
+Write-Host "    LAPS bypasses:   $LAPSBypassCount" -ForegroundColor Cyan
 Write-Host ""
 
 # =========================================================================
@@ -321,6 +351,48 @@ if ($badderblood -eq 'badderblood') {
         . ($basescriptPath + '\AD_Attack_Vectors\SIDHistory_dsinternals.ps1')
     }
 
+    # --- RBCD Misconfiguration ---
+    if ($RBCDCount -gt 0) {
+        Write-Host "    Setting up RBCD misconfigurations ($RBCDCount targets)..." -ForegroundColor Cyan
+        . ($basescriptPath + '\AD_Attack_Vectors\RBCD_Misconfiguration.ps1')
+        Set-RBCDMisconfiguration -RBCDCount $RBCDCount
+    }
+
+    # --- Shadow Credentials ---
+    if ($ShadowCredCount -gt 0) {
+        Write-Host "    Setting up Shadow Credentials attack paths ($ShadowCredCount targets)..." -ForegroundColor Cyan
+        . ($basescriptPath + '\AD_Attack_Vectors\ShadowCredentials.ps1')
+        Set-ShadowCredentialsMisconfiguration -ShadowCredCount $ShadowCredCount
+    }
+
+    # --- ADCS Misconfigurations ---
+    if ($ADCSCount -gt 0) {
+        Write-Host "    Setting up ADCS misconfigurations ($ADCSCount templates)..." -ForegroundColor Cyan
+        . ($basescriptPath + '\AD_Attack_Vectors\ADCS_Misconfiguration.ps1')
+        Set-ADCSMisconfiguration -TemplateCount $ADCSCount
+    }
+
+    # --- gMSA Abuse ---
+    if ($GMSACount -gt 0) {
+        Write-Host "    Setting up gMSA misconfigurations ($GMSACount accounts)..." -ForegroundColor Cyan
+        . ($basescriptPath + '\AD_Attack_Vectors\GMSA_Misconfiguration.ps1')
+        Set-GMSAMisconfiguration -GMSACount $GMSACount
+    }
+
+    # --- ADIDNS Poisoning ---
+    if ($StaleRecordCount -gt 0) {
+        Write-Host "    Setting up ADIDNS misconfigurations ($StaleRecordCount stale records)..." -ForegroundColor Cyan
+        . ($basescriptPath + '\AD_Attack_Vectors\ADIDNS_Poisoning.ps1')
+        Set-ADIDNSMisconfiguration -StaleRecordCount $StaleRecordCount
+    }
+
+    # --- LAPS Bypass ---
+    if ($LAPSBypassCount -gt 0) {
+        Write-Host "    Setting up LAPS bypass paths ($LAPSBypassCount targets)..." -ForegroundColor Cyan
+        . ($basescriptPath + '\AD_Attack_Vectors\LAPS_Bypass.ps1')
+        Set-LAPSBypassMisconfiguration -LAPSBypassCount $LAPSBypassCount
+    }
+
     # =====================================================================
     # PHASE 10: GPO Misconfigurations (Optional)
     # =====================================================================
@@ -360,6 +432,12 @@ if ($badderblood -eq 'badderblood') {
     Write-Host "    Kerberoast targets: $SPNCount" -ForegroundColor Cyan
     Write-Host "    AS-REP targets:     $ASREPCount" -ForegroundColor Cyan
     Write-Host "    Weak passwords:     $WeakPasswordCount" -ForegroundColor Cyan
+    Write-Host "    RBCD misconfigs:    $RBCDCount" -ForegroundColor Cyan
+    Write-Host "    Shadow Creds:       $ShadowCredCount" -ForegroundColor Cyan
+    Write-Host "    ADCS templates:     $ADCSCount" -ForegroundColor Cyan
+    Write-Host "    gMSA misconfigs:    $GMSACount" -ForegroundColor Cyan
+    Write-Host "    Stale DNS records:  $StaleRecordCount" -ForegroundColor Cyan
+    Write-Host "    LAPS bypasses:      $LAPSBypassCount" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Attack vectors injected:" -ForegroundColor White
     Write-Host "    - Overly broad helpdesk delegation" -ForegroundColor Yellow
@@ -373,6 +451,12 @@ if ($badderblood -eq 'badderblood') {
     Write-Host "    - AS-REP Roastable accounts" -ForegroundColor Yellow
     Write-Host "    - Users in wrong OUs (departmental drift)" -ForegroundColor Yellow
     Write-Host "    - Passwords in description fields" -ForegroundColor Yellow
+    Write-Host "    - Resource-Based Constrained Delegation (RBCD)" -ForegroundColor Yellow
+    Write-Host "    - Shadow Credentials (msDS-KeyCredentialLink)" -ForegroundColor Yellow
+    Write-Host "    - ADCS certificate template misconfigurations (ESC1/2/4)" -ForegroundColor Yellow
+    Write-Host "    - gMSA password retrieval by low-priv principals" -ForegroundColor Yellow
+    Write-Host "    - ADIDNS stale records and zone ACL misconfigs" -ForegroundColor Yellow
+    Write-Host "    - LAPS password read by non-admin groups" -ForegroundColor Yellow
     Write-Host ""
     if ($PSBoundParameters.ContainsKey('SkipGPODeployment') -eq $false) {
         Write-Host "    GPO misconfigs:     deployed (18-20 insecure GPOs)" -ForegroundColor Cyan

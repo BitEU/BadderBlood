@@ -16,6 +16,8 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 2. ```Install-ADDSForest -DomainName "contoso.com"```
 3. Wait for the machine to restart
 4. ```Set-MpPreference -DisableRealtimeMonitoring $true```
+5. ```Install-WindowsFeature -Name ADCS-Cert-Authority -IncludeManagementTools```
+6. ```Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -CryptoProviderName "RSA#Microsoft Software Key Storage Provider" -KeyLength 2048 -HashAlgorithmName SHA256 -Force```
 5. Download this repo, extract it to the C drive with a path of ```C:\BadderBlood```
 6. Run ```Get-ChildItem -Path C:\BadderBlood -Recurse | Unblock-File```
 7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\Invoke-BadderBlood.ps1```
@@ -39,7 +41,7 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 If you want to nuke AD:
 1. Run ```Uninstall-ADDSDomainController -LastDomainControllerInDomain -RemoveApplicationPartitions -IgnoreLastDnsServerForZone -LocalAdministratorPassword $LocalAdminPass -Force```
 2. ```Restart-Computer -Force```
-3. ```Install-ADDSForest -DomainName "sirshanova.com" -Force```
+3. ```Install-ADDSForest -DomainName "contoso.com" -Force```
 3. Start from Step 7
 
 

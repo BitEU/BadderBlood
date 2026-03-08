@@ -119,6 +119,18 @@ $SettingRiskExplanations = @{
     "OUDrift" = @{ Why="User is placed in a department OU that does not match their actual department attribute. This breaks OU-scoped GPOs, delegated permissions, and audit scoping."; Attack="A drifted user may receive wrong GPO settings (e.g., missing security controls) or escape OU-based access reviews."; Principle="User OU placement must match their department. Automate OU placement via HR provisioning." }
 }
 
+$NewAttackVectorExplanations = @{
+    "RBCD" = @{ Risk="IMPERSONATION VIA DELEGATION"; Why="Resource-Based Constrained Delegation (msDS-AllowedToActOnBehalfOfOtherIdentity) allows the configured principal to impersonate ANY user (including Domain Admins) to the target service."; Attack="Rubeus s4u /impersonateuser:administrator /msdsspn:cifs/target /user:attacker -> service ticket as DA to target."; Principle="Only specific, documented computer accounts should have RBCD configured. Review and remove any unauthorized entries." }
+    "ShadowCredentials" = @{ Risk="CREDENTIAL THEFT VIA PKINIT"; Why="WriteProperty on msDS-KeyCredentialLink allows adding a certificate-based credential. The attacker can then authenticate as the target via PKINIT without knowing the password."; Attack="Whisker add /target:victim -> PKINIT auth as victim -> request TGT as victim -> full access."; Principle="WriteProperty on msDS-KeyCredentialLink should only be granted to ADCS enrollment agents and Domain Controllers." }
+    "ADCS_ESC1" = @{ Risk="DOMAIN ADMIN VIA CERTIFICATE"; Why="A template with ENROLLEE_SUPPLIES_SUBJECT + Client Authentication EKU allows any enrollee to request a certificate as any user, including Domain Admin."; Attack="Certify find /vulnerable -> certipy req /template:vuln /altname:administrator -> PKINIT as DA."; Principle="Never allow enrollee to supply subject on templates with Client Authentication EKU. Require manager approval." }
+    "ADCS_ESC2" = @{ Risk="ANY PURPOSE CERTIFICATE"; Why="A template with the Any Purpose EKU (2.5.29.37.0) or SubCA can be used for client auth, code signing, or any other purpose. Effectively a skeleton key."; Attack="Request cert with Any Purpose EKU -> use for client auth as any user or sign malicious code."; Principle="Templates should have specific, minimal EKUs. Never use Any Purpose or SubCA unless absolutely required." }
+    "ADCS_ESC4" = @{ Risk="TEMPLATE TAKEOVER"; Why="WriteProperty or WriteDACL on a certificate template allows an attacker to modify the template to add ENROLLEE_SUPPLIES_SUBJECT or change EKUs, converting it into an ESC1-vulnerable template."; Attack="Modify template -> add CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT + Client Auth EKU -> request cert as DA."; Principle="Certificate template ACLs should only grant write access to CA Admins and Enterprise Admins." }
+    "GMSA" = @{ Risk="SERVICE ACCOUNT PASSWORD THEFT"; Why="PrincipalsAllowedToRetrieveManagedPassword controls who can read the gMSA password. If overly broad (Domain Computers, IT groups), any member can retrieve the 240-character password and authenticate as the service account."; Attack="gMSADumper / GMSAPasswordReader -> retrieve managed password -> authenticate as gMSA -> access all resources the gMSA has rights to."; Principle="PrincipalsAllowedToRetrieveManagedPassword should list ONLY the specific computer accounts that run the service. Never use broad groups like Domain Computers." }
+    "ADIDNS_ACL" = @{ Risk="DNS RECORD MANIPULATION"; Why="Write access to AD-integrated DNS zones allows creating or modifying DNS records. An attacker can redirect traffic to their machine for credential capture or MITM attacks."; Attack="dnstool.py add wildcard record -> all failed lookups resolve to attacker IP -> Responder captures NTLMv2 hashes domain-wide."; Principle="DNS zone ACLs should only allow Authenticated Users to create records (default), not modify or delete. Remove any non-admin CreateChild/GenericWrite permissions." }
+    "ADIDNS_Stale" = @{ Risk="DNS RECORD TAKEOVER"; Why="Stale DNS records pointing to decommissioned servers can be hijacked by an attacker who configures the old IP on their machine, receiving all traffic intended for the defunct service."; Attack="Find stale record -> assign old IP to attacker NIC -> receive auth attempts -> relay credentials."; Principle="Regularly audit DNS for stale records. Remove A records for decommissioned servers. Use DNS scavenging with appropriate aging settings." }
+    "LAPSBypass" = @{ Risk="LOCAL ADMIN PASSWORD EXPOSURE"; Why="If non-admin groups can read ms-Mcs-AdmPwd or msLAPS-Password, any member can retrieve every local admin password in scope and pivot to all managed machines."; Attack="Get-ADComputer -Filter * -Properties ms-Mcs-AdmPwd -> plaintext local admin passwords -> PSExec to any managed workstation."; Principle="LAPS password read access must be restricted to dedicated admin groups. Audit with LAPSToolkit or Find-AdmPwdExtendedRights." }
+}
+
 $ACLRiskExplanations = @{
     "GenericAll"    = "FULL CONTROL - read/write all properties, reset passwords, modify group membership, delete."
     "GenericWrite"  = "WRITE ALL PROPERTIES - can modify SPNs (Kerberoasting), script paths (code exec), group memberships."
@@ -1041,6 +1053,399 @@ foreach ($comp in $Computers) {
 }
 
 # ============================================================================
+# SECTION 9: RBCD MISCONFIGURATION DETECTION
+# ============================================================================
+Write-Status "SECTION 9: Checking for Resource-Based Constrained Delegation misconfigurations..."
+
+$AllComputers = Get-ADComputer -Filter * -Properties 'msDS-AllowedToActOnBehalfOfOtherIdentity', DistinguishedName, Name
+foreach ($comp in $AllComputers) {
+    $rbcdRaw = $comp.'msDS-AllowedToActOnBehalfOfOtherIdentity'
+    if ($rbcdRaw) {
+        # Parse the security descriptor to find allowed principals
+        $rbcdSD = New-Object Security.AccessControl.RawSecurityDescriptor($rbcdRaw, 0)
+        foreach ($ace in $rbcdSD.DiscretionaryAcl) {
+            $principalSID = $ace.SecurityIdentifier.ToString()
+            $principalName = $principalSID
+            try {
+                $adObj = Get-ADObject -Filter { objectSid -eq $principalSID } -Properties SamAccountName -ErrorAction Stop
+                if ($adObj) { $principalName = $adObj.SamAccountName }
+            } catch {}
+
+            $ri = $NewAttackVectorExplanations["RBCD"]
+            $AllFindings.Add((Write-Finding -Category "Resource-Based Constrained Delegation" `
+                -Severity "HIGH" `
+                -Finding "Computer '$($comp.Name)' allows '$principalName' to delegate via RBCD" `
+                -CurrentState "msDS-AllowedToActOnBehalfOfOtherIdentity contains SID: $principalSID" `
+                -ExpectedState "Remove RBCD entry or validate it is required for a specific service" `
+                -WhyBad $ri.Why `
+                -AttackScenario $ri.Attack `
+                -Principle $ri.Principle `
+                -ObjectDN $comp.DistinguishedName))
+        }
+    }
+}
+
+# ============================================================================
+# SECTION 10: SHADOW CREDENTIALS DETECTION
+# ============================================================================
+Write-Status "SECTION 10: Checking for Shadow Credentials (msDS-KeyCredentialLink) ACL misconfigurations..."
+
+# Get the schema GUID for msDS-KeyCredentialLink
+$schemaNC_AK = (Get-ADRootDSE).SchemaNamingContext
+$keyCredLinkGuid_AK = $null
+try {
+    $schemaObj_AK = Get-ADObject -SearchBase $schemaNC_AK -LDAPFilter "(&(lDAPDisplayName=msDS-KeyCredentialLink)(schemaidguid=*))" -Properties schemaIDGUID -ErrorAction Stop
+    if ($schemaObj_AK) { $keyCredLinkGuid_AK = [System.GUID]$schemaObj_AK.schemaIDGUID }
+} catch {}
+
+if ($keyCredLinkGuid_AK) {
+    # Check a sample of user objects for non-default WriteProperty on KeyCredentialLink
+    $sampleUsers = $BadderBloodUsers | Get-Random -Count ([Math]::Min(200, $BadderBloodUsers.Count))
+    Set-Location AD:
+    foreach ($user in $sampleUsers) {
+        try {
+            $acl = Get-Acl "AD:\$($user.DistinguishedName)" -ErrorAction SilentlyContinue
+            if (-not $acl) { continue }
+            foreach ($ace in $acl.Access) {
+                if ($ace.ObjectType -eq $keyCredLinkGuid_AK -and
+                    $ace.ActiveDirectoryRights -match "WriteProperty" -and
+                    $ace.AccessControlType -eq "Allow" -and
+                    $ace.IdentityReference -notmatch "(SYSTEM|Domain Admins|Enterprise Admins|Administrators|SELF)$") {
+
+                    $ri = $NewAttackVectorExplanations["ShadowCredentials"]
+                    $AllFindings.Add((Write-Finding -Category "Shadow Credentials" `
+                        -Severity "HIGH" `
+                        -Finding "'$($ace.IdentityReference)' can write msDS-KeyCredentialLink on '$($user.SamAccountName)'" `
+                        -CurrentState "WriteProperty on msDS-KeyCredentialLink granted to '$($ace.IdentityReference)'" `
+                        -ExpectedState "Remove WriteProperty on msDS-KeyCredentialLink. Only DCs and ADCS enrollment agents need this" `
+                        -WhyBad $ri.Why `
+                        -AttackScenario $ri.Attack `
+                        -Principle $ri.Principle `
+                        -ObjectDN $user.DistinguishedName))
+                }
+            }
+        } catch {}
+    }
+} else {
+    Write-Status "  msDS-KeyCredentialLink not found in schema (requires Server 2016+). Skipping." "Gray"
+}
+
+# ============================================================================
+# SECTION 11: ADCS MISCONFIGURATION DETECTION
+# ============================================================================
+Write-Status "SECTION 11: Checking for ADCS certificate template misconfigurations..."
+
+$configNC_AK = (Get-ADRootDSE).ConfigurationNamingContext
+$templateBaseDN_AK = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC_AK"
+
+try {
+    $certTemplates = Get-ADObject -SearchBase $templateBaseDN_AK -Filter { objectClass -eq "pKICertificateTemplate" } `
+        -Properties 'msPKI-Certificate-Name-Flag','pKIExtendedKeyUsage','displayName','msPKI-Cert-Template-OID' -ErrorAction Stop
+
+    foreach ($tmpl in $certTemplates) {
+        $nameFlag = $tmpl.'msPKI-Certificate-Name-Flag'
+        $ekus = $tmpl.pKIExtendedKeyUsage
+
+        # ESC1: ENROLLEE_SUPPLIES_SUBJECT (flag bit 1) + Client Auth EKU
+        if ($nameFlag -band 1) {
+            $hasClientAuth = $ekus -contains '1.3.6.1.5.5.7.3.2'
+            if ($hasClientAuth) {
+                $ri = $NewAttackVectorExplanations["ADCS_ESC1"]
+                $AllFindings.Add((Write-Finding -Category "ADCS Misconfiguration" `
+                    -Severity "CRITICAL" `
+                    -Finding "Certificate template '$($tmpl.Name)' allows enrollee to supply subject AND has Client Authentication EKU (ESC1)" `
+                    -CurrentState "CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT=1, EKU includes Client Authentication" `
+                    -ExpectedState "Remove ENROLLEE_SUPPLIES_SUBJECT flag or remove Client Authentication EKU. Require CA manager approval" `
+                    -WhyBad $ri.Why `
+                    -AttackScenario $ri.Attack `
+                    -Principle $ri.Principle `
+                    -ObjectDN $tmpl.DistinguishedName))
+            }
+        }
+
+        # ESC2: Any Purpose EKU or no EKU restriction
+        if ($ekus -contains '2.5.29.37.0' -or ($null -eq $ekus -and $null -ne $nameFlag)) {
+            $ri = $NewAttackVectorExplanations["ADCS_ESC2"]
+            $AllFindings.Add((Write-Finding -Category "ADCS Misconfiguration" `
+                -Severity "HIGH" `
+                -Finding "Certificate template '$($tmpl.Name)' has Any Purpose or unrestricted EKU (ESC2)" `
+                -CurrentState "EKU: $(if($ekus){'Any Purpose (2.5.29.37.0)'}else{'No EKU restriction'})" `
+                -ExpectedState "Restrict EKUs to specific required purposes only (e.g., Server Authentication)" `
+                -WhyBad $ri.Why `
+                -AttackScenario $ri.Attack `
+                -Principle $ri.Principle `
+                -ObjectDN $tmpl.DistinguishedName))
+        }
+
+        # ESC4: Check ACLs on templates for low-priv write access
+        try {
+            Set-Location AD:
+            $tmplAcl = Get-Acl "AD:\$($tmpl.DistinguishedName)" -ErrorAction SilentlyContinue
+            if ($tmplAcl) {
+                foreach ($ace in $tmplAcl.Access) {
+                    if ($ace.AccessControlType -eq "Allow" -and
+                        ($ace.ActiveDirectoryRights -match "WriteProperty|WriteDacl|WriteOwner|GenericAll|GenericWrite") -and
+                        $ace.IdentityReference -notmatch "(SYSTEM|Domain Admins|Enterprise Admins|Administrators|CREATOR OWNER|Cert Publishers)$") {
+
+                        $ri = $NewAttackVectorExplanations["ADCS_ESC4"]
+                        $AllFindings.Add((Write-Finding -Category "ADCS Misconfiguration" `
+                            -Severity "HIGH" `
+                            -Finding "'$($ace.IdentityReference)' has '$($ace.ActiveDirectoryRights)' on certificate template '$($tmpl.Name)' (ESC4)" `
+                            -CurrentState "ACE: $($ace.IdentityReference) -> $($ace.ActiveDirectoryRights)" `
+                            -ExpectedState "Remove write access. Only CA Admins and Enterprise Admins should modify templates" `
+                            -WhyBad $ri.Why `
+                            -AttackScenario $ri.Attack `
+                            -Principle $ri.Principle `
+                            -ObjectDN $tmpl.DistinguishedName))
+                    }
+                }
+            }
+        } catch {}
+    }
+} catch {
+    Write-Status "  ADCS templates not found or not accessible. Skipping." "Gray"
+}
+
+# Also check PKI container ACLs (for when ADCS is not installed but ACL misconfigs exist)
+$pkiContainerDN_AK = "CN=Public Key Services,CN=Services,$configNC_AK"
+try {
+    Set-Location AD:
+    $pkiAcl = Get-Acl "AD:\$pkiContainerDN_AK" -ErrorAction SilentlyContinue
+    if ($pkiAcl) {
+        foreach ($ace in $pkiAcl.Access) {
+            if ($ace.AccessControlType -eq "Allow" -and
+                ($ace.ActiveDirectoryRights -match "WriteProperty|WriteDacl|WriteOwner|GenericAll|GenericWrite|CreateChild") -and
+                $ace.IdentityReference -notmatch "(SYSTEM|Domain Admins|Enterprise Admins|Administrators|CREATOR OWNER)$") {
+
+                $samName = $ace.IdentityReference.ToString() -replace "^.*\\"
+                $isBB = ($BadderBloodUsers | Where-Object { $_.SamAccountName -eq $samName }) -or
+                        ($BadderBloodGroups | Where-Object { $_.SamAccountName -eq $samName })
+                if ($isBB) {
+                    $AllFindings.Add((Write-Finding -Category "ADCS Misconfiguration" `
+                        -Severity "HIGH" `
+                        -Finding "BadderBlood object '$samName' has '$($ace.ActiveDirectoryRights)' on PKI container" `
+                        -CurrentState "ACE on Public Key Services container" `
+                        -ExpectedState "Remove this ACE. Only PKI Admins should have write access to PKI containers" `
+                        -ObjectDN $pkiContainerDN_AK))
+                }
+            }
+        }
+    }
+} catch {}
+
+# ============================================================================
+# SECTION 12: gMSA MISCONFIGURATION DETECTION
+# ============================================================================
+Write-Status "SECTION 12: Checking for gMSA password retrieval misconfigurations..."
+
+try {
+    $gmsaAccounts = Get-ADServiceAccount -Filter * -Properties PrincipalsAllowedToRetrieveManagedPassword, DistinguishedName, Name -ErrorAction Stop
+
+    foreach ($gmsa in $gmsaAccounts) {
+        $principals = $gmsa.PrincipalsAllowedToRetrieveManagedPassword
+        if (-not $principals -or $principals.Count -eq 0) { continue }
+
+        foreach ($principalDN in $principals) {
+            $principalName = ($principalDN -split ',')[0] -replace '^CN=',''
+            $isBroadGroup = $false
+
+            try {
+                $pObj = Get-ADObject $principalDN -Properties SamAccountName, objectClass -ErrorAction Stop
+                $principalName = $pObj.SamAccountName
+
+                # Flag broad groups
+                if ($pObj.objectClass -eq 'group') {
+                    $groupMembers = Get-ADGroupMember $pObj.SamAccountName -ErrorAction SilentlyContinue
+                    if ($groupMembers.Count -gt 10) { $isBroadGroup = $true }
+                    if ($principalName -in @('Domain Computers','Domain Users','Authenticated Users')) { $isBroadGroup = $true }
+                }
+            } catch {}
+
+            $sev = if ($isBroadGroup) { "CRITICAL" } else { "MEDIUM" }
+            $ri = $NewAttackVectorExplanations["GMSA"]
+            $AllFindings.Add((Write-Finding -Category "gMSA Misconfiguration" `
+                -Severity $sev `
+                -Finding "gMSA '$($gmsa.Name)' password readable by '$principalName'$(if($isBroadGroup){' (BROAD GROUP)'})" `
+                -CurrentState "PrincipalsAllowedToRetrieveManagedPassword includes '$principalName'" `
+                -ExpectedState "Restrict to ONLY the specific computer accounts that run this service" `
+                -WhyBad $ri.Why `
+                -AttackScenario $ri.Attack `
+                -Principle $ri.Principle `
+                -ObjectDN $gmsa.DistinguishedName))
+        }
+    }
+} catch {
+    Write-Status "  gMSA query failed (may require specific permissions or Server 2012+). Skipping." "Gray"
+}
+
+# ============================================================================
+# SECTION 13: ADIDNS MISCONFIGURATION DETECTION
+# ============================================================================
+Write-Status "SECTION 13: Checking for ADIDNS misconfigurations..."
+
+$dnsRoot_AK = $DomainInfo.DNSRoot
+$dnsZoneDN_AK = "DC=$dnsRoot_AK,CN=MicrosoftDNS,DC=DomainDnsZones,$DomainDN"
+
+# Check DNS zone ACLs for non-default write permissions
+try {
+    Set-Location AD:
+    foreach ($dnsDN in @($dnsZoneDN_AK, "CN=MicrosoftDNS,DC=DomainDnsZones,$DomainDN")) {
+        $dnsAcl = Get-Acl "AD:\$dnsDN" -ErrorAction SilentlyContinue
+        if (-not $dnsAcl) { continue }
+
+        foreach ($ace in $dnsAcl.Access) {
+            if ($ace.AccessControlType -eq "Allow" -and
+                ($ace.ActiveDirectoryRights -match "CreateChild|DeleteChild|GenericWrite|GenericAll|WriteDacl") -and
+                $ace.IdentityReference -notmatch "(SYSTEM|Domain Admins|Enterprise Admins|Administrators|DnsAdmins|DnsUpdateProxy|CREATOR OWNER)$") {
+
+                $samName = $ace.IdentityReference.ToString() -replace "^.*\\"
+                $isBB = ($BadderBloodUsers | Where-Object { $_.SamAccountName -eq $samName }) -or
+                        ($BadderBloodGroups | Where-Object { $_.SamAccountName -eq $samName })
+                if ($isBB) {
+                    $ri = $NewAttackVectorExplanations["ADIDNS_ACL"]
+                    $AllFindings.Add((Write-Finding -Category "ADIDNS Misconfiguration" `
+                        -Severity "HIGH" `
+                        -Finding "BadderBlood object '$samName' has '$($ace.ActiveDirectoryRights)' on DNS zone" `
+                        -CurrentState "ACE: $($ace.IdentityReference) -> $($ace.ActiveDirectoryRights) on $dnsDN" `
+                        -ExpectedState "Remove this ACE. Only DNS Admins should have write access to DNS zones" `
+                        -WhyBad $ri.Why `
+                        -AttackScenario $ri.Attack `
+                        -Principle $ri.Principle `
+                        -ObjectDN $dnsDN))
+                }
+            }
+        }
+    }
+} catch {}
+
+# Detect stale DNS records pointing to non-routable IPs
+try {
+    $dnsRecords = Get-ADObject -SearchBase $dnsZoneDN_AK -Filter { objectClass -eq "dnsNode" } -Properties dnsRecord, Name -ErrorAction Stop
+    $staleHostnames = @('oldfileserver','legacy-sql01','dev-web03','staging-app','test-dc02','backup-nas01',
+        'print-srv02','decomm-exch01','temp-jump01','poc-server','migration-svc','old-intranet',
+        'retired-vpn','unused-proxy','former-ca01','old-wsus','legacy-sccm','prev-adfs','old-radius','decomm-nps')
+
+    foreach ($record in $dnsRecords) {
+        if ($record.Name -in $staleHostnames) {
+            $ri = $NewAttackVectorExplanations["ADIDNS_Stale"]
+            $AllFindings.Add((Write-Finding -Category "ADIDNS Misconfiguration" `
+                -Severity "MEDIUM" `
+                -Finding "Stale DNS record '$($record.Name).$dnsRoot_AK' points to a decommissioned server" `
+                -CurrentState "DNS A record exists for hostname '$($record.Name)' (likely non-existent host)" `
+                -ExpectedState "Delete stale DNS record. Enable DNS scavenging to prevent future stale records" `
+                -WhyBad $ri.Why `
+                -AttackScenario $ri.Attack `
+                -Principle $ri.Principle `
+                -ObjectDN $record.DistinguishedName))
+        }
+    }
+} catch {}
+
+# ============================================================================
+# SECTION 14: LAPS BYPASS DETECTION
+# ============================================================================
+Write-Status "SECTION 14: Checking for LAPS password read bypass paths..."
+
+# Detect which LAPS attribute exists
+$lapsAttrGuid_AK = $null
+$lapsAttrName_AK = $null
+try {
+    $wlaps = Get-ADObject -SearchBase $schemaNC_AK -LDAPFilter "(&(lDAPDisplayName=msLAPS-Password)(schemaidguid=*))" -Properties schemaIDGUID -ErrorAction Stop
+    if ($wlaps) { $lapsAttrGuid_AK = [System.GUID]$wlaps.schemaIDGUID; $lapsAttrName_AK = "msLAPS-Password" }
+} catch {}
+if (-not $lapsAttrGuid_AK) {
+    try {
+        $llaps = Get-ADObject -SearchBase $schemaNC_AK -LDAPFilter "(&(lDAPDisplayName=ms-Mcs-AdmPwd)(schemaidguid=*))" -Properties schemaIDGUID -ErrorAction Stop
+        if ($llaps) { $lapsAttrGuid_AK = [System.GUID]$llaps.schemaIDGUID; $lapsAttrName_AK = "ms-Mcs-AdmPwd" }
+    } catch {}
+}
+
+if ($lapsAttrGuid_AK) {
+    Write-Status "  Using LAPS attribute: $lapsAttrName_AK"
+
+    # Check OUs containing computers for non-admin ReadProperty on LAPS attribute
+    $computerOUs_AK = @{}
+    foreach ($comp in $AllComputers) {
+        $parentOU = ($comp.DistinguishedName -split ',', 2)[1]
+        $computerOUs_AK[$parentOU] = $true
+    }
+
+    Set-Location AD:
+    foreach ($ouDN in $computerOUs_AK.Keys) {
+        try {
+            $ouAcl = Get-Acl "AD:\$ouDN" -ErrorAction SilentlyContinue
+            if (-not $ouAcl) { continue }
+
+            foreach ($ace in $ouAcl.Access) {
+                # Check for ReadProperty on LAPS attr or GenericAll (which implies read)
+                $isLAPSRead = ($ace.ObjectType -eq $lapsAttrGuid_AK -and $ace.ActiveDirectoryRights -match "ReadProperty")
+                $isGenericAll = ($ace.ActiveDirectoryRights -match "GenericAll")
+
+                if (($isLAPSRead -or $isGenericAll) -and
+                    $ace.AccessControlType -eq "Allow" -and
+                    $ace.IdentityReference -notmatch "(SYSTEM|Domain Admins|Enterprise Admins|Administrators|CREATOR OWNER)$") {
+
+                    $samName = $ace.IdentityReference.ToString() -replace "^.*\\"
+                    $isBB = ($BadderBloodUsers | Where-Object { $_.SamAccountName -eq $samName }) -or
+                            ($BadderBloodGroups | Where-Object { $_.SamAccountName -eq $samName })
+                    if (-not $isBB) { continue }
+
+                    $ouName = ($ouDN -split ',')[0] -replace 'OU=',''
+                    $rightDesc = if ($isGenericAll) { "GenericAll (implies LAPS read)" } else { "ReadProperty on $lapsAttrName_AK" }
+
+                    $ri = $NewAttackVectorExplanations["LAPSBypass"]
+                    $AllFindings.Add((Write-Finding -Category "LAPS Bypass" `
+                        -Severity "CRITICAL" `
+                        -Finding "'$samName' can read LAPS passwords in OU '$ouName' via $rightDesc" `
+                        -CurrentState "$($ace.IdentityReference) has $rightDesc on $ouDN" `
+                        -ExpectedState "Remove this ACE. Only designated LAPS admin groups should read $lapsAttrName_AK" `
+                        -WhyBad $ri.Why `
+                        -AttackScenario $ri.Attack `
+                        -Principle $ri.Principle `
+                        -ObjectDN $ouDN))
+                }
+            }
+        } catch {}
+    }
+
+    # Also check individual computer objects
+    $sampleComputers = $AllComputers | Get-Random -Count ([Math]::Min(50, $AllComputers.Count))
+    foreach ($comp in $sampleComputers) {
+        try {
+            $compAcl = Get-Acl "AD:\$($comp.DistinguishedName)" -ErrorAction SilentlyContinue
+            if (-not $compAcl) { continue }
+
+            foreach ($ace in $compAcl.Access) {
+                if ($ace.ObjectType -eq $lapsAttrGuid_AK -and
+                    $ace.ActiveDirectoryRights -match "ReadProperty" -and
+                    $ace.AccessControlType -eq "Allow" -and
+                    -not $ace.IsInherited -and
+                    $ace.IdentityReference -notmatch "(SYSTEM|Domain Admins|Enterprise Admins|Administrators)$") {
+
+                    $samName = $ace.IdentityReference.ToString() -replace "^.*\\"
+                    $isBB = ($BadderBloodUsers | Where-Object { $_.SamAccountName -eq $samName }) -or
+                            ($BadderBloodGroups | Where-Object { $_.SamAccountName -eq $samName })
+                    if (-not $isBB) { continue }
+
+                    $ri = $NewAttackVectorExplanations["LAPSBypass"]
+                    $AllFindings.Add((Write-Finding -Category "LAPS Bypass" `
+                        -Severity "HIGH" `
+                        -Finding "'$samName' can read LAPS password on computer '$($comp.Name)' (direct ACE)" `
+                        -CurrentState "Non-inherited ReadProperty on $lapsAttrName_AK" `
+                        -ExpectedState "Remove direct ACE. Use OU-level delegation to designated admin groups only" `
+                        -WhyBad $ri.Why `
+                        -AttackScenario $ri.Attack `
+                        -Principle $ri.Principle `
+                        -ObjectDN $comp.DistinguishedName))
+                }
+            }
+        } catch {}
+    }
+} else {
+    Write-Status "  No LAPS schema attributes found. Skipping LAPS bypass detection." "Gray"
+}
+
+# ============================================================================
 # GENERATE REPORTS
 # ============================================================================
 Write-Status "Generating reports..."
@@ -1217,6 +1622,28 @@ $reportLines.Add("")
 $reportLines.Add("5. COMPUTER OBJECTS:")
 $reportLines.Add("   - No non-DC computers with unconstrained delegation")
 $reportLines.Add("   - No computers as members of BadderBlood-created security groups")
+$reportLines.Add("   - No unauthorized RBCD entries (msDS-AllowedToActOnBehalfOfOtherIdentity)")
+$reportLines.Add("")
+$reportLines.Add("6. DELEGATION & CREDENTIALS:")
+$reportLines.Add("   - No Shadow Credentials ACLs (WriteProperty on msDS-KeyCredentialLink)")
+$reportLines.Add("   - gMSA PrincipalsAllowedToRetrieveManagedPassword restricted to specific computers")
+$reportLines.Add("   - No broad groups (Domain Computers, IT groups) with gMSA password retrieval")
+$reportLines.Add("")
+$reportLines.Add("7. CERTIFICATE SERVICES (ADCS):")
+$reportLines.Add("   - No templates with ENROLLEE_SUPPLIES_SUBJECT + Client Auth EKU (ESC1)")
+$reportLines.Add("   - No templates with Any Purpose EKU (ESC2)")
+$reportLines.Add("   - No low-privilege write access on certificate templates (ESC4)")
+$reportLines.Add("   - No non-admin write access on PKI containers")
+$reportLines.Add("")
+$reportLines.Add("8. DNS:")
+$reportLines.Add("   - No non-admin write access on AD-integrated DNS zones")
+$reportLines.Add("   - No stale DNS records pointing to decommissioned servers")
+$reportLines.Add("   - DNS scavenging configured to prevent future stale records")
+$reportLines.Add("")
+$reportLines.Add("9. LAPS:")
+$reportLines.Add("   - LAPS password read restricted to designated admin groups only")
+$reportLines.Add("   - No direct ACEs on computer objects granting LAPS read")
+$reportLines.Add("   - No GenericAll on OUs containing computers (implies LAPS read)")
 $reportLines.Add("")
 
 # Save the report
@@ -1316,25 +1743,68 @@ $CategoryExplanations = @{
         "An attacker who compromises a computer account (e.g., via NTLM relay) can inherit"
         "any resource access granted to those groups."
     )
+    "Resource-Based Constrained Delegation" = @(
+        "WHY THIS MATTERS: RBCD (msDS-AllowedToActOnBehalfOfOtherIdentity) allows the"
+        "configured principal to impersonate ANY domain user (including Domain Admins) to"
+        "the target service. Exploitable via Rubeus S4U attacks."
+        "Any principal with write access to a computer's msDS-AllowedToActOnBehalfOfOtherIdentity"
+        "can configure RBCD and then impersonate privileged users to that computer."
+    )
+    "Shadow Credentials" = @(
+        "WHY THIS MATTERS: WriteProperty on msDS-KeyCredentialLink allows adding a"
+        "certificate-based credential to a user or computer account. The attacker can"
+        "then authenticate as that account via PKINIT without knowing the password."
+        "Exploitable via Whisker, pyWhisker, or Certipy."
+    )
+    "ADCS Misconfiguration" = @(
+        "WHY THIS MATTERS: Misconfigured certificate templates (ESC1-ESC8) are the #1"
+        "real-world AD attack path. A vulnerable template can allow any domain user to"
+        "request a certificate as Domain Admin and authenticate with it."
+        "Tools: Certify, Certipy, ForgeCert. Detection: PSPKIAudit, Certutil."
+    )
+    "gMSA Misconfiguration" = @(
+        "WHY THIS MATTERS: Group Managed Service Accounts have 240-character auto-rotated"
+        "passwords, but PrincipalsAllowedToRetrieveManagedPassword controls who can read them."
+        "If overly broad (Domain Computers, large groups), any member can retrieve the password"
+        "and authenticate as the gMSA. Tools: gMSADumper, GMSAPasswordReader."
+    )
+    "ADIDNS Misconfiguration" = @(
+        "WHY THIS MATTERS: AD-integrated DNS zones are stored in Active Directory."
+        "Write access to DNS zones allows creating wildcard records that redirect all"
+        "failed lookups to an attacker IP for credential capture. Stale records for"
+        "decommissioned servers can be hijacked for MITM attacks."
+    )
+    "LAPS Bypass" = @(
+        "WHY THIS MATTERS: LAPS stores unique local admin passwords on each computer's"
+        "AD object. If non-admin groups can read ms-Mcs-AdmPwd or msLAPS-Password,"
+        "they can retrieve every local admin password and pivot to all managed machines."
+        "Tools: LAPSToolkit, crackmapexec, Get-LAPSPasswords."
+    )
 }
 
 # Group findings by category, ordered by importance
 $cheatCategories = $AllFindings | Group-Object Category | Sort-Object {
     switch ($_.Name) {
-        "Privileged Group Membership" { 0 }
-        "Dangerous ACL"               { 1 }
-        "Credential Exposure"         { 2 }
-        "Delegation"                  { 3 }
-        "Kerberos Security"           { 4 }
-        "OU Misplacement"             { 5 }
-        "Nested Group Membership"     { 6 }
-        "Account Settings"            { 7 }
-        "SID History"                 { 8 }
-        "OU Drift"                    { 9 }
-        "GPO Permissions"             { 10 }
-        "GPO Settings"                { 11 }
-        "Computer Group Membership"   { 12 }
-        default                       { 13 }
+        "Privileged Group Membership"                  { 0 }
+        "Dangerous ACL"                                { 1 }
+        "Credential Exposure"                          { 2 }
+        "ADCS Misconfiguration"                        { 3 }
+        "Delegation"                                   { 4 }
+        "Resource-Based Constrained Delegation"        { 5 }
+        "Shadow Credentials"                           { 6 }
+        "Kerberos Security"                            { 7 }
+        "LAPS Bypass"                                  { 8 }
+        "gMSA Misconfiguration"                        { 9 }
+        "OU Misplacement"                              { 10 }
+        "Nested Group Membership"                      { 11 }
+        "Account Settings"                             { 12 }
+        "SID History"                                  { 13 }
+        "ADIDNS Misconfiguration"                      { 14 }
+        "OU Drift"                                     { 15 }
+        "GPO Permissions"                              { 16 }
+        "GPO Settings"                                 { 17 }
+        "Computer Group Membership"                    { 18 }
+        default                                        { 19 }
     }
 }
 
@@ -1485,6 +1955,43 @@ foreach ($comp in $Computers) {
         $remLines.Add("Set-ADComputer -Identity '$($comp.Name)' -TrustedForDelegation `$false -ErrorAction SilentlyContinue")
     }
 }
+
+$remLines.Add("")
+$remLines.Add("# --- REMOVE RBCD MISCONFIGURATIONS ---")
+foreach ($comp in $AllComputers) {
+    if ($comp.'msDS-AllowedToActOnBehalfOfOtherIdentity') {
+        $remLines.Add("# Clear RBCD on $($comp.Name)")
+        $remLines.Add("Set-ADComputer -Identity '$($comp.Name)' -PrincipalsAllowedToDelegateToAccount `$null -ErrorAction SilentlyContinue")
+    }
+}
+
+$remLines.Add("")
+$remLines.Add("# --- REMOVE gMSA MISCONFIGURATIONS ---")
+try {
+    $gmsaRemediate = Get-ADServiceAccount -Filter * -Properties PrincipalsAllowedToRetrieveManagedPassword -ErrorAction SilentlyContinue
+    foreach ($gmsa in $gmsaRemediate) {
+        if ($gmsa.PrincipalsAllowedToRetrieveManagedPassword.Count -gt 0) {
+            $remLines.Add("# Review gMSA $($gmsa.Name) - restrict PrincipalsAllowedToRetrieveManagedPassword to specific computers")
+            $remLines.Add("# Set-ADServiceAccount -Identity '$($gmsa.Name)' -PrincipalsAllowedToRetrieveManagedPassword <specific-computer-accounts>")
+        }
+    }
+} catch {}
+
+$remLines.Add("")
+$remLines.Add("# --- REMOVE STALE DNS RECORDS ---")
+$remLines.Add("# Review and delete stale DNS records for decommissioned servers:")
+$staleNames = @('oldfileserver','legacy-sql01','dev-web03','staging-app','test-dc02','backup-nas01',
+    'print-srv02','decomm-exch01','temp-jump01','poc-server','migration-svc','old-intranet',
+    'retired-vpn','unused-proxy','former-ca01','old-wsus','legacy-sccm','prev-adfs','old-radius','decomm-nps')
+foreach ($sn in $staleNames) {
+    $remLines.Add("# Remove-DnsServerResourceRecord -Name '$sn' -ZoneName '$dnsRoot_AK' -RRType A -Force -ErrorAction SilentlyContinue")
+}
+
+$remLines.Add("")
+$remLines.Add("# --- REMOVE VULNERABLE ADCS TEMPLATES ---")
+$remLines.Add("# Review and remove BadderBlood-created vulnerable templates:")
+$remLines.Add("# Remove-ADObject 'CN=BB-VulnWebServer,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC_AK' -Confirm:`$false -ErrorAction SilentlyContinue")
+$remLines.Add("# Remove-ADObject 'CN=BB-VulnAnyPurpose,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC_AK' -Confirm:`$false -ErrorAction SilentlyContinue")
 
 $remLines.Add("")
 $remLines.Add('Write-Host "`n=== Remediation Complete ===" -ForegroundColor Green')
