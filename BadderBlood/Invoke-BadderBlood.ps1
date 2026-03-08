@@ -183,11 +183,16 @@ if ($badderblood -eq 'badderblood') {
     . ($basescriptPath + '\AD_Users_Create\CreateUsers.ps1')
     $createuserscriptpath = $basescriptPath + '\AD_Users_Create\'
 
+    # Determine adaptive refresh interval based on user count
+    # Larger batches = fewer AD round-trips, but staler manager pool
+    $refreshInterval = if ($UserCount -le 500) { 100 } elseif ($UserCount -le 2000) { 250 } else { 500 }
+    $ExistingUsersPool = $null
+
     $x = 1
     do {
-        # Refresh ExistingUsers every 250 iterations so manager pool stays current
-        if ($x % 250 -eq 0 -or $x -eq 1) {
-            $ExistingUsersPool = Get-ADUser -Filter { Enabled -eq $true } -Properties Title,DistinguishedName,departmentNumber -Server $setDC
+        # Refresh ExistingUsers at adaptive intervals so manager pool stays current
+        if ($x % $refreshInterval -eq 0 -or $x -eq 1) {
+            $ExistingUsersPool = Get-ADUser -Filter { Enabled -eq $true } -Properties Title,DistinguishedName,departmentNumber -Server $setDC -ResultSetSize $null
             Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating users ($x/$UserCount)" -PercentComplete ($x / $UserCount * 100)
         }
         CreateUser -Domain $Domain -OUList $OUsAll -ScriptDir $createuserscriptpath `
@@ -209,7 +214,7 @@ if ($badderblood -eq 'badderblood') {
     # PHASE 5: Group Creation
     # =====================================================================
     $phase++
-    $AllUsers = Get-ADUser -Filter * -Properties Department,departmentNumber -Server $setDC
+    $AllUsers = Get-ADUser -Filter * -Properties Department,departmentNumber -Server $setDC -ResultSetSize $null
     Write-Host ""
         Write-Host "  [$phase/$totalPhases] Creating $GroupCount groups..." -ForegroundColor Green
     . ($basescriptPath + '\AD_Groups_Create\CreateGroup.ps1')

@@ -144,14 +144,18 @@ Function CreateUser {
 
     # =====================================================================
     # REBUILD PER-REFRESH CACHES (when ExistingUsers changes)
-    # The caller refreshes ExistingUsers every 100 iterations.
+    # The caller refreshes ExistingUsers periodically.
     # We detect the change by checking the count.
+    # On subsequent refreshes, we only process NEW users (delta merge)
+    # instead of rebuilding the entire index from scratch.
     # =====================================================================
     $euCount = if ($ExistingUsers) { $ExistingUsers.Count } else { 0 }
-    if ($null -eq $script:_bbUsersByTitle -or $script:_bbLastEUCount -ne $euCount) {
+    if ($null -eq $script:_bbUsersByTitle) {
+        # First-time build: index all existing users
         $script:_bbLastEUCount = $euCount
         $script:_bbUsersByTitle = @{}
         $script:_bbTitleCounts  = @{}
+        $script:_bbIndexedDNs   = [System.Collections.Generic.HashSet[string]]::new()
         if ($ExistingUsers) {
             foreach ($u in $ExistingUsers) {
                 $t = $u.Title
@@ -165,14 +169,38 @@ Function CreateUser {
                 } else {
                     $script:_bbTitleCounts[$t] = 1
                 }
+                [void]$script:_bbIndexedDNs.Add($u.DistinguishedName)
             }
         }
         # Seed local title counts from ExistingUsers (handles partial reruns)
-        # Only seed on first load; after that, local counts are self-maintained
         if ($script:_bbLocalTitleCounts.Count -eq 0 -and $script:_bbTitleCounts.Count -gt 0) {
             foreach ($key in $script:_bbTitleCounts.Keys) {
                 $script:_bbLocalTitleCounts[$key] = $script:_bbTitleCounts[$key]
             }
+        }
+        Write-Host "    [perf] Built user-by-title index ($euCount users)" -ForegroundColor DarkGray
+    } elseif ($script:_bbLastEUCount -ne $euCount -and $ExistingUsers) {
+        # Delta merge: only index users not already in our HashSet
+        $newCount = 0
+        foreach ($u in $ExistingUsers) {
+            if ($script:_bbIndexedDNs.Contains($u.DistinguishedName)) { continue }
+            $t = $u.Title
+            if (-not $t) { continue }
+            if (-not $script:_bbUsersByTitle.ContainsKey($t)) {
+                $script:_bbUsersByTitle[$t] = [System.Collections.Generic.List[object]]::new()
+            }
+            $script:_bbUsersByTitle[$t].Add($u)
+            if ($script:_bbTitleCounts.ContainsKey($t)) {
+                $script:_bbTitleCounts[$t]++
+            } else {
+                $script:_bbTitleCounts[$t] = 1
+            }
+            [void]$script:_bbIndexedDNs.Add($u.DistinguishedName)
+            $newCount++
+        }
+        $script:_bbLastEUCount = $euCount
+        if ($newCount -gt 0) {
+            Write-Host "    [perf] Delta-merged $newCount new users into title index" -ForegroundColor DarkGray
         }
     }
 

@@ -21,30 +21,43 @@ foreach ($file in $files) {
 }
 
 # =========================================================================
-# Setup: Schema maps needed for ACL functions
+# Setup: Schema maps needed for ACL functions (cached across calls)
+# Schema GUIDs and extended rights are static — no need to re-query
 # =========================================================================
 $dom = Get-ADDomain
 $setDC = $dom.pdcemulator
 $dn = $dom.distinguishedname
 Set-Location AD:
 
-$schemaPath = Get-ADRootDSE
-$guidmap = @{}
-Get-ADObject -SearchBase ($schemaPath.SchemaNamingContext) -LDAPFilter "(schemaidguid=*)" -Properties lDAPDisplayName, schemaIDGUID |
-    ForEach-Object { $guidmap[$_.lDAPDisplayName] = [System.GUID]$_.schemaIDGUID }
+# Cache schema GUID maps at script scope — they never change during a run
+if (-not $script:_bbGuidMapCached) {
+    $schemaPath = Get-ADRootDSE
+    $script:_bbGuidMap = @{}
+    Get-ADObject -SearchBase ($schemaPath.SchemaNamingContext) -LDAPFilter "(schemaidguid=*)" -Properties lDAPDisplayName, schemaIDGUID |
+        ForEach-Object { $script:_bbGuidMap[$_.lDAPDisplayName] = [System.GUID]$_.schemaIDGUID }
 
-$extendedrightsmap = @{}
-Get-ADObject -SearchBase ($schemaPath.ConfigurationNamingContext) -LDAPFilter "(&(objectclass=controlAccessRight)(rightsguid=*))" -Properties displayName, rightsGuid |
-    ForEach-Object { $extendedrightsmap[$_.displayName] = [System.GUID]$_.rightsGuid }
+    $script:_bbExtendedRightsMap = @{}
+    Get-ADObject -SearchBase ($schemaPath.ConfigurationNamingContext) -LDAPFilter "(&(objectclass=controlAccessRight)(rightsguid=*))" -Properties displayName, rightsGuid |
+        ForEach-Object { $script:_bbExtendedRightsMap[$_.displayName] = [System.GUID]$_.rightsGuid }
 
-$AllOUs = Get-ADOrganizationalUnit -Filter * -Server $setDC
+    $script:_bbGuidMapCached = $true
+    Write-Host "    [perf] Cached $($script:_bbGuidMap.Count) schema GUIDs and $($script:_bbExtendedRightsMap.Count) extended rights" -ForegroundColor DarkGray
+}
+$guidmap = $script:_bbGuidMap
+$extendedrightsmap = $script:_bbExtendedRightsMap
+
+# Object queries — these change per run so always refresh, but use ResultSetSize for safety
+$AllOUs = Get-ADOrganizationalUnit -Filter * -Server $setDC -ResultSetSize $null
 $allUsers = Get-ADUser -Filter * -ResultSetSize 2500 -Server $setDC
 $allGroups = Get-ADGroup -Filter * -ResultSetSize 2500 -Server $setDC
 $allComputers = Get-ADComputer -Filter * -ResultSetSize 2500 -Server $setDC
 
-# Non-critical groups only
-$nonCritGroups = Get-ADGroup -Filter { GroupCategory -eq "Security" -and GroupScope -eq "Global" } -Properties isCriticalSystemObject -Server $setDC |
-    Where-Object { $_.isCriticalSystemObject -ne $true }
+# Non-critical groups — build in single pass instead of pipeline filter
+$nonCritGroups = [System.Collections.Generic.List[object]]::new()
+$allSecGlobalGroups = Get-ADGroup -Filter { GroupCategory -eq "Security" -and GroupScope -eq "Global" } -Properties isCriticalSystemObject -Server $setDC -ResultSetSize $null
+foreach ($g in $allSecGlobalGroups) {
+    if ($g.isCriticalSystemObject -ne $true) { $nonCritGroups.Add($g) }
+}
 
 # =========================================================================
 # SCENARIO 1: Helpdesk group with password reset on too many OUs

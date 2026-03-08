@@ -30,25 +30,34 @@ Function AddRandomToGroups {
         $dom = Get-ADDomain; $setDC = $dom.pdcemulator; $dn = $dom.distinguishedname
     } else { $setDC = $Domain.pdcemulator; $dn = $Domain.distinguishedname }
 
-    if (!$PSBoundParameters.ContainsKey('UserList')) { $allUsers = Get-ADUser -Filter * -Properties Department,departmentNumber -Server $setDC }
+    if (!$PSBoundParameters.ContainsKey('UserList')) { $allUsers = Get-ADUser -Filter * -Properties Department,departmentNumber -Server $setDC -ResultSetSize $null }
     else { $allUsers = $UserList }
 
     if (!$PSBoundParameters.ContainsKey('GroupList')) {
-        $allGroups = Get-ADGroup -Filter { GroupCategory -eq "Security" -and GroupScope -eq "Global" } -Properties isCriticalSystemObject -Server $setDC
+        $allGroups = Get-ADGroup -Filter { GroupCategory -eq "Security" -and GroupScope -eq "Global" } -Properties isCriticalSystemObject -Server $setDC -ResultSetSize $null
     } else { $allGroups = $GroupList }
 
     if (!$PSBoundParameters.ContainsKey('LocalGroupList')) {
-        $allGroupsLocal = Get-ADGroup -Filter { GroupScope -eq "domainlocal" } -Properties isCriticalSystemObject -Server $setDC
+        $allGroupsLocal = Get-ADGroup -Filter { GroupScope -eq "domainlocal" } -Properties isCriticalSystemObject -Server $setDC -ResultSetSize $null
     } else { $allGroupsLocal = $LocalGroupList }
 
-    if (!$PSBoundParameters.ContainsKey('CompList')) { $allComps = Get-ADComputer -Filter * -Server $setDC }
+    if (!$PSBoundParameters.ContainsKey('CompList')) { $allComps = Get-ADComputer -Filter * -Server $setDC -ResultSetSize $null }
     else { $allComps = $CompList }
 
     Set-Location AD:
 
-    $allGroupsFiltered = @($allGroups | Where-Object { $_.isCriticalSystemObject -ne $true })
-    $allGroupsCrit = @($allGroups | Where-Object { $_.isCriticalSystemObject -eq $true } |
-        Where-Object { $_.Name -ne "Domain Users" -and $_.Name -ne "Domain Guests" })
+    # Pre-split groups into critical/non-critical arrays once (not per-user)
+    $allGroupsFiltered = [System.Collections.Generic.List[object]]::new()
+    $allGroupsCrit = [System.Collections.Generic.List[object]]::new()
+    foreach ($g in $allGroups) {
+        if ($g.isCriticalSystemObject -eq $true) {
+            if ($g.Name -ne "Domain Users" -and $g.Name -ne "Domain Guests") {
+                $allGroupsCrit.Add($g)
+            }
+        } else {
+            $allGroupsFiltered.Add($g)
+        }
+    }
 
     # =========================================================================
     # 1. DEPARTMENT-BASED GROUP MEMBERSHIP
@@ -56,15 +65,25 @@ Function AddRandomToGroups {
     # =========================================================================
     Write-Host "  [*] Adding users to department-matching groups..." -ForegroundColor Cyan
 
-    # Pre-index groups by department code (eliminates per-user Where-Object scan)
+    # Pre-index groups by department code in a SINGLE PASS over all groups
+    # instead of O(groups * deptCodes) nested Where-Object scans
     $deptCodes = @('BDE','HRE','FIN','OGC','FSR','AWS','ESM','SEC','ITS','GOO','AZR','TST')
+    $deptCodesSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($dc in $deptCodes) { [void]$deptCodesSet.Add($dc) }
+
     $groupsByDept = @{}
-    foreach ($dc in $deptCodes) {
-        $groupsByDept[$dc] = @($allGroupsFiltered | Where-Object {
-            $_.Name -like "*$dc*" -or $_.Name -like "DEPT-$dc*" -or $_.Name -like "DL-$dc*"
-        })
+    foreach ($dc in $deptCodes) { $groupsByDept[$dc] = [System.Collections.Generic.List[object]]::new() }
+
+    foreach ($g in $allGroupsFiltered) {
+        $gName = $g.Name
+        foreach ($dc in $deptCodes) {
+            if ($gName -like "*$dc*" -or $gName -like "DEPT-$dc*" -or $gName -like "DL-$dc*") {
+                $groupsByDept[$dc].Add($g)
+                break  # Each group only needs to match one department
+            }
+        }
     }
-    Write-Host "    [perf] Pre-indexed groups by department" -ForegroundColor DarkGray
+    Write-Host "    [perf] Pre-indexed groups by department (single-pass)" -ForegroundColor DarkGray
 
     $userIndex = 0
     foreach ($user in $allUsers) {
