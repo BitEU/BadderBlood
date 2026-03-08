@@ -1062,7 +1062,20 @@ foreach ($comp in $AllComputers) {
     $rbcdRaw = $comp.'msDS-AllowedToActOnBehalfOfOtherIdentity'
     if ($rbcdRaw) {
         # Parse the security descriptor to find allowed principals
-        $rbcdSD = New-Object Security.AccessControl.RawSecurityDescriptor($rbcdRaw, 0)
+        # AD cmdlet may return ActiveDirectorySecurity, RawSecurityDescriptor, or byte[]
+        $rbcdSD = $null
+        if ($rbcdRaw -is [System.DirectoryServices.ActiveDirectorySecurity]) {
+            $sddl = $rbcdRaw.GetSecurityDescriptorSddlForm("All")
+            $rbcdSD = New-Object Security.AccessControl.RawSecurityDescriptor($sddl)
+        } elseif ($rbcdRaw -is [Security.AccessControl.RawSecurityDescriptor]) {
+            $rbcdSD = $rbcdRaw
+        } elseif ($rbcdRaw -is [byte[]]) {
+            $rbcdSD = New-Object Security.AccessControl.RawSecurityDescriptor($rbcdRaw, 0)
+        } else {
+            # Try SDDL string
+            try { $rbcdSD = New-Object Security.AccessControl.RawSecurityDescriptor($rbcdRaw.ToString()) } catch {}
+        }
+        if (-not $rbcdSD) { continue }
         foreach ($ace in $rbcdSD.DiscretionaryAcl) {
             $principalSID = $ace.SecurityIdentifier.ToString()
             $principalName = $principalSID
@@ -1646,6 +1659,9 @@ $reportLines.Add("   - No direct ACEs on computer objects granting LAPS read")
 $reportLines.Add("   - No GenericAll on OUs containing computers (implies LAPS read)")
 $reportLines.Add("")
 
+# Restore filesystem provider before writing files (Set-Location AD: may have been called above)
+Set-Location $env:SystemDrive
+
 # Save the report
 $reportFile = Join-Path $OutputPath "AnswerKey_MasterReport.txt"
 $reportLines | Out-File -FilePath $reportFile -Encoding UTF8
@@ -2000,6 +2016,74 @@ $remLines.Add('Write-Host "Re-run the Answer Key Generator to verify all issues 
 $remLines | Out-File -FilePath $remFile -Encoding UTF8
 Write-Status "Remediation script saved: $remFile" "Green"
 
+# ============================================================================
+# EXPORT SECURITY EXPLANATIONS AND WHYS TO CSV
+# ============================================================================
+Write-Status "Exporting security explanations to CSV..."
+
+$explanationsCSV = Join-Path $OutputPath "Security_Explanations.csv"
+$explanations = [System.Collections.Generic.List[PSObject]]::new()
+
+# 1. PRIVILEGED GROUP EXPLANATIONS
+foreach ($groupName in $GroupRiskExplanations.Keys) {
+    $ri = $GroupRiskExplanations[$groupName]
+    $explanations.Add([PSCustomObject]@{
+        Category           = "Privileged Group Membership"
+        Issue              = $groupName
+        RiskLevel          = $ri.Risk
+        WhyItsBad          = $ri.Why
+        AttackScenario     = $ri.Attack
+        SecurityPrinciple  = $ri.Principle
+        DateGenerated      = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    })
+}
+
+# 2. ACCOUNT SETTINGS EXPLANATIONS
+foreach ($settingName in $SettingRiskExplanations.Keys) {
+    $ri = $SettingRiskExplanations[$settingName]
+    $explanations.Add([PSCustomObject]@{
+        Category           = "Account Settings"
+        Issue              = $settingName
+        RiskLevel          = "ACCOUNT FLAG"
+        WhyItsBad          = $ri.Why
+        AttackScenario     = $ri.Attack
+        SecurityPrinciple  = $ri.Principle
+        DateGenerated      = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    })
+}
+
+# 3. NEW ATTACK VECTOR EXPLANATIONS
+foreach ($vectorName in $NewAttackVectorExplanations.Keys) {
+    $ri = $NewAttackVectorExplanations[$vectorName]
+    $explanations.Add([PSCustomObject]@{
+        Category           = "Attack Vector"
+        Issue              = $vectorName
+        RiskLevel          = $ri.Risk
+        WhyItsBad          = $ri.Why
+        AttackScenario     = $ri.Attack
+        SecurityPrinciple  = $ri.Principle
+        DateGenerated      = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    })
+}
+
+# 4. ACL RISK EXPLANATIONS
+foreach ($aclType in $ACLRiskExplanations.Keys) {
+    $explanation = $ACLRiskExplanations[$aclType]
+    $explanations.Add([PSCustomObject]@{
+        Category           = "ACL / Permissions"
+        Issue              = $aclType
+        RiskLevel          = "PERMISSION TYPE"
+        WhyItsBad          = $explanation
+        AttackScenario     = "Attacker with this permission can escalate privileges or compromise security controls."
+        SecurityPrinciple  = "Restrictive delegation: Grant minimal permissions; audit who has what access regularly."
+        DateGenerated      = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    })
+}
+
+# Export to CSV
+$explanations | Export-Csv -Path $explanationsCSV -NoTypeInformation -Encoding UTF8
+Write-Status "Security explanations exported to CSV: $explanationsCSV" "Green"
+
 # --- GRADING RUBRIC ---
 $rubricFile = Join-Path $OutputPath "GradingRubric.txt"
 $rubricLines = @(
@@ -2082,6 +2166,7 @@ Write-Host "    $findingsFile" -ForegroundColor Gray
 Write-Host "    $cheatSheet" -ForegroundColor Gray
 Write-Host "    $remFile" -ForegroundColor Gray
 Write-Host "    $rubricFile" -ForegroundColor Gray
+Write-Host "    $explanationsCSV" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  TIP: Run the Remediation_Script.ps1 with -WhatIf first!" -ForegroundColor Cyan
 Write-Host "=" * 80 -ForegroundColor Yellow

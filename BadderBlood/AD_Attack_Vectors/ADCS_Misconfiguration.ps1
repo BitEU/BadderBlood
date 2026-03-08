@@ -168,8 +168,13 @@ function Set-ADCSMisconfiguration {
 
                 Set-Location AD:
                 $acl = Get-Acl "AD:\$($targetTemplate.DistinguishedName)"
+                # Use 5-arg constructor to avoid ambiguity: SID, rights, type, objectType (Guid.Empty = all properties), inheritanceType
                 $rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-                    $groupSID, "WriteProperty", "Allow", "All"
+                    $groupSID,
+                    [System.DirectoryServices.ActiveDirectoryRights]::WriteProperty,
+                    [System.Security.AccessControl.AccessControlType]::Allow,
+                    [System.Guid]::Empty,
+                    [System.DirectoryServices.ActiveDirectorySecurityInheritance]::None
                 )
                 $acl.AddAccessRule($rule)
                 Set-Acl -AclObject $acl -Path "AD:\$($targetTemplate.DistinguishedName)"

@@ -118,23 +118,30 @@ function Set-GMSAMisconfiguration {
         } else {
             # Scenario C: Multiple principals can retrieve (group + computers)
             # Realistic: Password retrieval was granted incrementally during troubleshooting
-            $principals = @()
+            # Note: Must pass DN strings to avoid type mismatch between ADGroup and ADComputer objects
+            $principalDNs = @()
+            $principalNames = @()
             if ($nonCritGroups.Count -gt 0) {
-                $principals += ($nonCritGroups | Get-Random)
+                $g = $nonCritGroups | Get-Random
+                $principalDNs += $g.DistinguishedName
+                $principalNames += $g.Name
             }
             if ($allComputers.Count -gt 0) {
-                $principals += ($allComputers | Get-Random -Count ([Math]::Min(2, $allComputers.Count)))
+                $comps = @($allComputers | Get-Random -Count ([Math]::Min(2, $allComputers.Count)))
+                foreach ($c in $comps) {
+                    $principalDNs += $c.DistinguishedName
+                    $principalNames += $c.Name
+                }
             }
 
-            if ($principals.Count -gt 0) {
+            if ($principalDNs.Count -gt 0) {
                 try {
                     New-ADServiceAccount -Name $gmsaName -DNSHostName "$gmsaName.$dnsRoot" `
                         -Description $gmsaTemplate.Desc `
-                        -PrincipalsAllowedToRetrieveManagedPassword $principals `
+                        -PrincipalsAllowedToRetrieveManagedPassword $principalDNs `
                         -Server $setDC -ErrorAction Stop
 
-                    $principalNames = ($principals | ForEach-Object { $_.Name }) -join ', '
-                    Write-Host "    [!] gMSA '$gmsaName': Multiple principals can retrieve password: $principalNames" -ForegroundColor Yellow
+                    Write-Host "    [!] gMSA '$gmsaName': Multiple principals can retrieve password: $($principalNames -join ', ')" -ForegroundColor Yellow
                     $configured++
                 } catch {
                     Write-Host "    [X] Failed to create gMSA '$gmsaName': $_" -ForegroundColor Red
