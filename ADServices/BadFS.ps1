@@ -2408,7 +2408,10 @@ if (Test-Path $netlogonPath) {
 
 Add-Type -AssemblyName System.Drawing
 
-$netlogon  = "\\$env:LOGONSERVER\NETLOGON"
+# prefer LOGONSERVER but fall back to local machine name if unset (e.g. on a DC logon)
+# LOGONSERVER is normally a UNC (\\DCNAME), so strip any leading backslashes
+$logonSrv = if ($env:LOGONSERVER) { $env:LOGONSERVER.TrimStart('\') } else { $env:COMPUTERNAME }
+$netlogon  = "\\$logonSrv\NETLOGON"
 $bgSource  = "$netlogon\Background.png"
 $outDir    = "$env:APPDATA\Microsoft\Wallpaper"
 $outFile   = "$outDir\desktop.bmp"
@@ -2506,8 +2509,15 @@ public class Wallpaper {
     $logonBat = Join-Path $netlogonPath 'logon.bat'
     $logonContent = @'
 @echo off
-net use H: \\%LOGONSERVER%\CorpData\Users\%USERNAME% /persistent:yes >nul 2>&1
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\\%LOGONSERVER%\NETLOGON\Set-Wallpaper.ps1" >nul 2>&1
+:: ensure we have a server name; some sessions (notably local DC logons)
+:: may not set LOGONSERVER, so fall back to COMPUTERNAME.
+set "LOGONSRV=%LOGONSERVER%"
+if "%LOGONSRV%"=="" set "LOGONSRV=%COMPUTERNAME%"
+:: strip leading \\ if present (LOGONSERVER comes in as \\\NAME)
+if "%LOGONSRV:~0,2%"=="\\" set "LOGONSRV=%LOGONSRV:~2%"
+
+net use H: \\\%LOGONSRV%\CorpData\Users\%USERNAME% /persistent:yes >nul 2>&1
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\\%LOGONSRV%\NETLOGON\Set-Wallpaper.ps1" >nul 2>&1
 '@
     Set-Content -Path $logonBat -Value $logonContent -Encoding ASCII
     Write-Host "[+] logon.bat deployed to NETLOGON" -ForegroundColor Green
