@@ -1,27 +1,36 @@
 <#
 .SYNOPSIS
-    Massive deployment script for the Springfield Box Factory IIS Knowledgebase.
+    Deployment script for the Springfield Box Factory IIS Knowledgebase.
     Integrates into BadderBlood to provide a target-rich, misconfigured web environment.
 
 .DESCRIPTION
-    This script performs a full deployment of a themed corporate website and internal IT 
-    knowledgebase for "Springfield Box Factory" - a company that exclusively makes 
-    cardboard boxes for nails.
-    
+    This script performs a full deployment of a themed corporate website and internal IT
+    knowledgebase for "Springfield Box Factory" - a forward-thinking cardboard box manufacturer
+    that somehow ended up with a full IT department, SOC, cloud engineering team, and
+    an Active Directory environment larger than most Fortune 500 companies.
+
+    ALL sensitive content (IT docs, network topology, service accounts, backups) is generated
+    DYNAMICALLY from the live Active Directory environment that BadderBlood created.
+    This means the credentials, hostnames, domain names, and user references are real
+    and actually reflect the deployed lab - not made-up placeholder data.
+
     Features:
     1. Installs Web-Server (IIS) and Web-Basic-Auth features.
-    2. Provisions a deep directory structure (/css, /img, /products, /portal, /it_docs, /backups).
-    3. Dynamically generates thousands of lines of HTML/CSS content for realism.
-    4. Populates an "Employee Portal" with fictional (but realistic-looking) handbooks.
-    5. Populates an "IT Docs" and "Legacy Backups" folder with sensitive credentials.
-    6. Removes default IIS sites and binds the new site to Port 80.
-    7. INTENTIONAL MISCONFIGURATIONS: 
-       - Enables Directory Browsing on /it_docs and /backups.
+    2. Provisions a deep directory structure (/css, /products, /portal, /it_docs, /legacy_backups).
+    3. Dynamically generates HTML content themed to Springfield Box Factory.
+    4. About page dynamically lists real AD leadership (C-suite pulled from AD).
+    5. IT Docs dynamically generated from real DCs, computers, service accounts, and SPNs.
+    6. Legacy Backups contain realistic artifacts derived from actual domain data.
+    7. Removes default IIS sites and binds the new site to Port 80.
+    8. INTENTIONAL MISCONFIGURATIONS:
+       - Enables Directory Browsing on /it_docs and /legacy_backups.
        - Enables Basic Authentication over HTTP globally for credential sniffing.
 
 .NOTES
     Author: BadderBlood Integration Script
     Context: Educational / CTF / Active Directory Lab Environment
+
+    IMPORTANT: Run AFTER Invoke-BadderBlood.ps1 so AD objects exist to query.
 #>
 
 $ErrorActionPreference = "Stop"
@@ -37,7 +46,7 @@ function Write-Log {
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $formattedMessage = "[$timestamp] [$Level] $Message"
-    
+
     switch ($Level) {
         "INFO"    { Write-Host $formattedMessage -ForegroundColor Cyan }
         "SUCCESS" { Write-Host $formattedMessage -ForegroundColor Green }
@@ -75,7 +84,79 @@ if (!$basicAuthFeature.Installed) {
 Import-Module WebAdministration
 
 # ==============================================================================
-# 3. DIRECTORY SCAFFOLDING
+# 3. QUERY ACTIVE DIRECTORY FOR DYNAMIC CONTENT
+# ==============================================================================
+
+Write-Log "Querying Active Directory to generate dynamic content..." "INFO"
+
+$Domain       = Get-ADDomain
+$DomainDNS    = $Domain.DNSRoot                   # e.g. springfield.local
+$DomainDN     = $Domain.DistinguishedName          # e.g. DC=springfield,DC=local
+$DomainNB     = $Domain.NetBIOSName                # e.g. SPRINGFIELD
+$PDC          = $Domain.PDCEmulator                # e.g. DC01.springfield.local
+
+# --- Domain Controllers ---
+$AllDCs = Get-ADDomainController -Filter * | Sort-Object Name
+$PrimaryDC = $AllDCs | Where-Object { $_.OperationMasterRoles -contains 'PDCEmulator' } | Select-Object -First 1
+if (-not $PrimaryDC) { $PrimaryDC = $AllDCs | Select-Object -First 1 }
+
+# --- Subnet/IP estimation (from DC IPs) ---
+$DCIPs = $AllDCs | ForEach-Object { $_.IPv4Address } | Where-Object { $_ }
+$PrimarySubnet = if ($DCIPs) {
+    $firstIP = $DCIPs | Select-Object -First 1
+    $octets = $firstIP.Split('.')
+    "$($octets[0]).$($octets[1]).$($octets[2]).0/24"
+} else { "10.10.0.0/24" }
+
+# --- Leadership: Pull C-suite and VP-level users from AD ---
+$LeadershipTitles = @('Chief Executive Officer','Chief Operating Officer','Chief Financial Officer',
+    'Chief Information Security Officer','Chief Information Officer','General Counsel',
+    'Chief People Officer','Chief Revenue Officer','VP of Information Technology',
+    'VP of Information Security','IT Director')
+
+$LeadershipUsers = @()
+foreach ($ltitle in $LeadershipTitles) {
+    $found = Get-ADUser -Filter { Title -eq $ltitle } -Properties DisplayName,Title,Department,Office -ErrorAction SilentlyContinue |
+             Select-Object -First 1
+    if ($found) { $LeadershipUsers += $found }
+}
+
+# --- Service Accounts ---
+$ServiceAccounts = Get-ADUser -Filter { Enabled -eq $true } -Properties DisplayName,Description,ServicePrincipalNames,departmentNumber -ErrorAction SilentlyContinue |
+                   Where-Object { $_.SamAccountName -like '*SA' -or $_.SamAccountName -like 'svc_*' -or $_.SamAccountName -like 'svc-*' } |
+                   Select-Object -First 25
+
+# --- Kerberoastable accounts (have SPNs) ---
+$KerberoastableAccounts = Get-ADUser -Filter { ServicePrincipalName -like '*' } -Properties ServicePrincipalNames,Title,Department -ErrorAction SilentlyContinue |
+                           Where-Object { $_.ServicePrincipalNames.Count -gt 0 }
+
+# --- Computers: Servers vs Workstations ---
+$AllComputers = Get-ADComputer -Filter * -Properties OperatingSystem,Description,IPv4Address -ErrorAction SilentlyContinue
+$Servers      = $AllComputers | Where-Object { $_.OperatingSystem -like '*Server*' } | Select-Object -First 15
+$Workstations = $AllComputers | Where-Object { $_.OperatingSystem -notlike '*Server*' } | Select-Object -First 10
+
+# --- Groups of interest ---
+$PrivilegedGroups = @('Domain Admins','Enterprise Admins','Schema Admins','Administrators') |
+                    ForEach-Object {
+                        $g = Get-ADGroup $_ -Properties Members -ErrorAction SilentlyContinue
+                        if ($g) { $g }
+                    }
+
+# --- LAPS: detect if installed ---
+$LAPSInstalled = $false
+try {
+    $lapsAttr = Get-ADObject -SearchBase $DomainDN -LDAPFilter "(attributeID=1.2.840.113556.1.6.44.1.1)" -ErrorAction Stop
+    if ($lapsAttr) { $LAPSInstalled = $true }
+} catch { }
+
+# --- AS-REP Roastable accounts ---
+$ASREPAccounts = Get-ADUser -Filter { DoesNotRequirePreAuth -eq $true } -Properties Title,Department -ErrorAction SilentlyContinue |
+                 Select-Object -First 10
+
+Write-Log "AD query complete. Found $($AllDCs.Count) DCs, $($ServiceAccounts.Count) service accounts, $($AllComputers.Count) computers." "SUCCESS"
+
+# ==============================================================================
+# 4. DIRECTORY SCAFFOLDING
 # ==============================================================================
 
 $siteName = "SpringfieldBoxFactory"
@@ -90,10 +171,11 @@ $directories = @(
     "$basePath\about",
     "$basePath\portal",
     "$basePath\portal\handbook",
-    "$basePath\it_docs",           # Vulnerable target 1
+    "$basePath\it_docs",            # Vulnerable target 1
     "$basePath\it_docs\network",
     "$basePath\it_docs\passwords",
-    "$basePath\legacy_backups"     # Vulnerable target 2
+    "$basePath\it_docs\procedures",
+    "$basePath\legacy_backups"      # Vulnerable target 2
 )
 
 Write-Log "Building web directory structure..." "INFO"
@@ -108,7 +190,7 @@ foreach ($dir in $directories) {
 }
 
 # ==============================================================================
-# 4. CSS PAYLOAD GENERATION
+# 5. CSS PAYLOAD GENERATION
 # ==============================================================================
 
 Write-Log "Generating CSS stylesheets..." "INFO"
@@ -123,13 +205,11 @@ $mainCss = @"
     --text-color: #333333;
     --accent-red: #8b0000;
     --white: #ffffff;
-    --cardboard-texture: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" opacity="0.05"><rect width="100" height="100" fill="%235c4033"/><path d="M0 0l50 50L100 0v100L50 50 0 100z" fill="%238b5a2b"/></svg>');
 }
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: var(--light-brown);
-    background-image: var(--cardboard-texture);
     color: var(--text-color);
     margin: 0;
     padding: 0;
@@ -201,9 +281,7 @@ h2 {
     margin-top: 0;
 }
 
-h3 {
-    color: var(--secondary-brown);
-}
+h3 { color: var(--secondary-brown); }
 
 .product-grid {
     display: grid;
@@ -253,6 +331,7 @@ h3 {
     padding: 15px;
     border-radius: 5px;
     overflow-x: auto;
+    white-space: pre;
 }
 
 footer {
@@ -260,10 +339,9 @@ footer {
     padding: 20px;
     background-color: var(--primary-brown);
     color: var(--white);
-    position: relative;
-    bottom: 0;
     width: 100%;
     margin-top: 50px;
+    box-sizing: border-box;
 }
 
 table {
@@ -283,14 +361,12 @@ th {
     color: white;
 }
 
-tr:nth-child(even) {
-    background-color: #f2e6d9;
-}
+tr:nth-child(even) { background-color: #f2e6d9; }
 "@
 Set-Content -Path "$basePath\css\style.css" -Value $mainCss
 
 # ==============================================================================
-# 5. MAIN PUBLIC HTML PAGES
+# 6. SHARED HTML FRAGMENTS
 # ==============================================================================
 
 Write-Log "Generating Public HTML pages..." "INFO"
@@ -313,12 +389,16 @@ $headerHtml = @"
 
 $footerHtml = @"
     <footer>
-        <p>&copy; 2026 Springfield Box Factory. All rights reserved.</p>
+        <p>&copy; $(Get-Date -Format 'yyyy') Springfield Box Factory. All rights reserved. | $DomainDNS</p>
         <p><small>Any resemblance to actual cardboard boxes is purely intentional.</small></p>
     </footer>
 "@
 
-# INDEX.HTML
+# ==============================================================================
+# 7. MAIN PUBLIC HTML PAGES
+# ==============================================================================
+
+# --- INDEX.HTML ---
 $indexHtml = @"
 <!DOCTYPE html>
 <html lang="en">
@@ -333,20 +413,22 @@ $navHtml
     <div class="container">
         <h2>Welcome to the Factory!</h2>
         <div class="alert">
-            <strong>NOTICE:</strong> The factory floor will be closed this Friday for the annual "Cardboard Cut Safety Seminar". Attendance is mandatory.
+            <strong>NOTICE:</strong> The factory floor will be closed this Friday for the annual "Cardboard Cut Safety Seminar". Attendance is mandatory. Contact IT at helpdesk@$DomainDNS if you need to join remotely.
         </div>
-        <p>Since our inception in 1985, Springfield Box Factory has remained fiercely dedicated to a singular, uncompromising vision: manufacturing brown, square, cardboard boxes specifically engineered to hold nails.</p>
-        <p>We don't do glossy prints. We don't do irregular shapes. We don't do packing peanuts. We do boxes. Hard, rigid, uncompromising corrugated fiberboard designed to withstand the sheer piercing force of ten thousand galvanized steel fasteners.</p>
-        
+        <p>Since our inception in 1944, Springfield Box Factory has remained fiercely dedicated to a singular, uncompromising vision: manufacturing brown, square, cardboard boxes specifically engineered to hold nails. We have somehow also accumulated an IT department of considerable size.</p>
+        <p>We don't do glossy prints. We don't do irregular shapes. We don't do packing peanuts. We do boxes. Hard, rigid, uncompromising corrugated fiberboard designed to withstand the sheer piercing force of ten thousand galvanized steel fasteners. And apparently we run our infrastructure on $DomainDNS now.</p>
+
         <h3>Why choose our boxes?</h3>
         <ul>
             <li><strong>Durability:</strong> Our double-walled C-flute cardboard is rated to hold up to 50lbs of dense metal.</li>
             <li><strong>Simplicity:</strong> They are brown. They are square. They do the job.</li>
-            <li><strong>Heritage:</strong> Over 40 years of slight improvements to the same basic design.</li>
+            <li><strong>Heritage:</strong> Over 80 years of slight improvements to the same basic design.</li>
+            <li><strong>Infrastructure:</strong> Managed by the finest IT professionals $DomainNB has to offer.</li>
         </ul>
-        
+
         <h3>Latest News</h3>
-        <p><strong>March 2026:</strong> We are proud to announce the integration of our new automated gluing press. This should reduce the number of structural failures by at least 4%.</p>
+        <p><strong>$(Get-Date -Format 'MMMM yyyy'):</strong> We are proud to announce the migration of our on-premise nail inventory tracking system to the $DomainDNS domain. This should improve box fulfillment latency by approximately 4%.</p>
+        <p><strong>IT Notice:</strong> All internal resources are now managed through $PDC. Please update your DNS settings accordingly. The old WORKGROUP machines on the factory floor are being retired on a rolling basis.</p>
     </div>
 $footerHtml
 </body>
@@ -354,7 +436,106 @@ $footerHtml
 "@
 Set-Content -Path "$basePath\index.html" -Value $indexHtml
 
-# ABOUT/INDEX.HTML
+# --- PRODUCTS/INDEX.HTML ---
+$productsHtml = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Box Catalog - Springfield Box Factory</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+$headerHtml
+$navHtml
+    <div class="container">
+        <h2>Industrial Nail Transport Solutions</h2>
+        <p>Browse our extensive catalog of boxes. If you need a box for something other than nails, please seek business elsewhere. Ordering inquiries: orders@$DomainDNS</p>
+
+        <div class="product-grid">
+            <div class="product-card">
+                <h3>The 1lb "Finisher"</h3>
+                <p>Perfect for retail display of finishing nails and brads. Single-wall corrugated.</p>
+                <div class="product-price">`$0.12 / unit</div>
+            </div>
+            <div class="product-card">
+                <h3>The 5lb "Framer"</h3>
+                <p>Our most popular box. Used by contractors worldwide for framing and decking nails.</p>
+                <div class="product-price">`$0.45 / unit</div>
+            </div>
+            <div class="product-card">
+                <h3>The 25lb "Roofing Master"</h3>
+                <p>Reinforced corners to prevent blowout from heavy, wide-head roofing nails.</p>
+                <div class="product-price">`$1.10 / unit</div>
+            </div>
+            <div class="product-card">
+                <h3>The 50lb "Masonry Behemoth"</h3>
+                <p>Triple-walled, stapled seams. This box is heavier than the nails it carries.</p>
+                <div class="product-price">`$3.50 / unit</div>
+            </div>
+            <div class="product-card">
+                <h3>The 100lb "Mistake"</h3>
+                <p>We made this once. It broke a forklift. We still have 4,000 in inventory. Please buy them.</p>
+                <div class="product-price">`$0.50 / unit (Clearance)</div>
+            </div>
+        </div>
+    </div>
+$footerHtml
+</body>
+</html>
+"@
+Set-Content -Path "$basePath\products\index.html" -Value $productsHtml
+
+# ==============================================================================
+# 8. ABOUT PAGE - DYNAMICALLY GENERATED FROM AD
+# ==============================================================================
+
+Write-Log "Generating dynamic About page from AD leadership data..." "INFO"
+
+# Build leadership table rows from actual AD users
+$leadershipRows = ""
+if ($LeadershipUsers.Count -gt 0) {
+    foreach ($leader in $LeadershipUsers) {
+        $displayName = if ($leader.DisplayName) { $leader.DisplayName } else { $leader.Name -replace '_',' ' }
+        $title       = if ($leader.Title) { $leader.Title } else { "Executive" }
+        $dept        = if ($leader.Department) { $leader.Department } else { "Corporate" }
+        $office      = if ($leader.Office) { $leader.Office } else { "HQ" }
+        $leadershipRows += "            <tr><td>$displayName</td><td>$title</td><td>$dept</td><td>$office</td></tr>`n"
+    }
+} else {
+    $leadershipRows = "            <tr><td colspan='4'><em>Directory data not available. Contact helpdesk@$DomainDNS</em></td></tr>`n"
+}
+
+# Department headcount summary
+$deptRows = ""
+$deptCodes = @{
+    'BDE' = 'Business Development'
+    'FIN' = 'Finance'
+    'HRE' = 'Human Relations'
+    'ITS' = 'Information Technology Services'
+    'SEC' = 'Information Security'
+    'OGC' = 'Office of the General Counsel'
+    'FSR' = 'Field Services'
+    'AWS' = 'AWS Cloud Engineering'
+    'AZR' = 'Azure Operations'
+    'GOO' = 'Google Cloud'
+    'ESM' = 'Endpoint System Management'
+    'TST' = 'QA / Testing'
+}
+foreach ($code in ($deptCodes.Keys | Sort-Object)) {
+    $count = (Get-ADUser -Filter { departmentNumber -eq $code } -ErrorAction SilentlyContinue | Measure-Object).Count
+    $deptRows += "            <tr><td>$($deptCodes[$code])</td><td>$code</td><td>$count</td></tr>`n"
+}
+
+$dcRows = ""
+foreach ($dc in $AllDCs) {
+    $ip   = if ($dc.IPv4Address) { $dc.IPv4Address } else { "N/A" }
+    $site = if ($dc.Site) { $dc.Site } else { "Default-First-Site-Name" }
+    $roles = ($dc.OperationMasterRoles -join ', ')
+    if (-not $roles) { $roles = "—" }
+    $dcRows += "            <tr><td>$($dc.HostName)</td><td>$ip</td><td>$site</td><td>$roles</td></tr>`n"
+}
+
 $aboutHtml = @"
 <!DOCTYPE html>
 <html lang="en">
@@ -367,6 +548,16 @@ $aboutHtml = @"
 $headerHtml
 $navHtml
     <div class="container">
+        <h2>Our History</h2>
+        <p>Springfield Box Factory was founded in 1944 with a single corrugated press, a modest business loan, and an unshakeable belief that the world needed better boxes for nails. Eight decades later, we remain the preeminent manufacturer of nail-specific cardboard containers in the tri-state area, and we have somehow also become a mid-sized enterprise with a fully tiered Active Directory environment running on <strong>$DomainDNS</strong>.</p>
+        <p>Our headquarters are located in Philadelphia, PA, with branch offices in New York, Chicago, Dallas, and remote staff across the eastern and western seaboards. All locations are joined to the <strong>$DomainNB</strong> domain and managed centrally through <strong>$PDC</strong>.</p>
+
+        <h2>Our Process</h2>
+        <p>Our manufacturing process is proprietary, but it generally involves taking wood pulp, pressing it flat, drying it, cutting it to size, and stapling it into a box shape. The IT department has been asked repeatedly to "optimize" this process and has so far produced three PowerPoint decks and a SharePoint site that nobody uses.</p>
+
+        <h2>Workplace Safety</h2>
+        <p>We maintain a robust safety record. Cardboard cuts are classified as "expected" and are logged in the HR system under department code HRE. All incidents are reviewed quarterly by our Chief People Officer. In the event of a serious injury, contact your manager and then helpdesk@$DomainDNS, in that order, because Gus configured the ticketing system to require AD authentication and it keeps locking people out.</p>
+
         <h2>Our History</h2>
         <p>The story of how two brothers (and five other men) parlayed a small business loan into a thriving paper-goods concern is a long and interesting one.  And, here it is: it all began with the filing of form 637/A, the application for a small business or farm. fter waiting the standard processing period, our founders were granted the capital to lease this very facility. The rest, as they say, is paper-goods history.</p>
         
@@ -384,12 +575,24 @@ $navHtml
             <tr><td>Popped eyeballs</td><td>0</td></tr>
         </table>
 
-        <h2>Leadership Team</h2>
+        <h2>Infrastructure Overview</h2>
+        <p>Springfield Box Factory operates a fully domain-joined Windows environment under <strong>$DomainDNS</strong>. Domain controllers are listed below. If you are experiencing login issues, contact the service desk or try authenticating against $PDC directly.</p>
         <table>
-            <tr><th>Name</th><th>Title</th><th>Favorite Box Type</th></tr>
-            <tr><td>Arthur Henderson</td><td>Plant Manager</td><td>Double-walled 50lb Crate</td></tr>
-            <tr><td>Mildred Vance</td><td>Head of QA (Cardboard division)</td><td>Single-wall 5lb Retail Box</td></tr>
-            <tr><td>"Gus"</td><td>IT Director / Systems Admin</td><td>The servers (they are basically boxes)</td></tr>
+            <tr><th>Domain Controller</th><th>IP Address</th><th>Site</th><th>FSMO Roles</th></tr>
+$dcRows
+        </table>
+
+        <h2>Leadership Team</h2>
+        <p>The following personnel are listed in the company directory as of the last AD sync. For org chart access, log into the Employee Portal.</p>
+        <table>
+            <tr><th>Name</th><th>Title</th><th>Department</th><th>Office</th></tr>
+$leadershipRows
+        </table>
+
+        <h2>Department Directory</h2>
+        <table>
+            <tr><th>Department</th><th>Code</th><th>Headcount (AD)</th></tr>
+$deptRows
         </table>
     </div>
 $footerHtml
@@ -398,58 +601,8 @@ $footerHtml
 "@
 Set-Content -Path "$basePath\about\index.html" -Value $aboutHtml
 
-# PRODUCTS/INDEX.HTML
-$productsHtml = @"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Box Catalog - Springfield Box Factory</title>
-    <link rel="stylesheet" href="/css/style.css">
-</head>
-<body>
-$headerHtml
-$navHtml
-    <div class="container">
-        <h2>Industrial Nail Transport Solutions</h2>
-        <p>Browse our extensive catalog of boxes. If you need a box for something other than nails, please seek business elsewhere.</p>
-        
-        <div class="product-grid">
-            <div class="product-card">
-                <h3>The 1lb "Finisher"</h3>
-                <p>Perfect for retail display of finishing nails and brads. Single-wall corrugated.</p>
-                <div class="product-price">$0.12 / unit</div>
-            </div>
-            <div class="product-card">
-                <h3>The 5lb "Framer"</h3>
-                <p>Our most popular box. Used by contractors worldwide for framing and decking nails.</p>
-                <div class="product-price">$0.45 / unit</div>
-            </div>
-            <div class="product-card">
-                <h3>The 25lb "Roofing Master"</h3>
-                <p>Reinforced corners to prevent blowout from heavy, wide-head roofing nails.</p>
-                <div class="product-price">$1.10 / unit</div>
-            </div>
-            <div class="product-card">
-                <h3>The 50lb "Masonry Behemoth"</h3>
-                <p>Triple-walled, stapled seams. This box is heavier than the nails it carries.</p>
-                <div class="product-price">$3.50 / unit</div>
-            </div>
-            <div class="product-card">
-                <h3>The 100lb "Mistake"</h3>
-                <p>We made this once. It broke a forklift. We still have 4,000 in inventory. Please buy them.</p>
-                <div class="product-price">$0.50 / unit (Clearance)</div>
-            </div>
-        </div>
-    </div>
-$footerHtml
-</body>
-</html>
-"@
-Set-Content -Path "$basePath\products\index.html" -Value $productsHtml
-
 # ==============================================================================
-# 6. EMPLOYEE PORTAL (Semi-Public)
+# 9. EMPLOYEE PORTAL
 # ==============================================================================
 
 Write-Log "Generating Employee Portal content..." "INFO"
@@ -467,16 +620,16 @@ $headerHtml
 $navHtml
     <div class="container">
         <h2>Employee Portal Home</h2>
-        <p>Welcome to the Springfield Box Factory intranet. Please find important links below.</p>
-        
+        <p>Welcome to the Springfield Box Factory intranet. Authenticate with your <strong>$DomainNB</strong> domain credentials. If you are locked out, call the service desk or submit a ticket to helpdesk@$DomainDNS.</p>
+
         <ul>
-            <li><a href="/portal/handbook/index.html">Employee Handbook (Updated 2026)</a></li>
+            <li><a href="/portal/handbook/index.html">Employee Handbook (Updated $(Get-Date -Format 'yyyy'))</a></li>
             <li><a href="/portal/timesheets.html">Timesheet Entry System (Under Maintenance)</a></li>
             <li><a href="/portal/cafeteria.html">Cafeteria Menu</a></li>
         </ul>
 
         <div class="alert">
-            <strong>ATTENTION IT STAFF:</strong> All network diagrams, configuration notes, and server credentials have been moved to the new <a href="/it_docs/">/it_docs/</a> directory per Gus's request. Do not store passwords on sticky notes anymore!
+            <strong>ATTENTION IT STAFF:</strong> All network diagrams, configuration notes, and server documentation have been moved to the new <a href="/it_docs/">/it_docs/</a> directory per the IT Director's request. The old shared drive mapping (\\$($PrimaryDC.Split('.')[0])\ITShare) will be decommissioned at end of quarter. Do not store passwords on sticky notes. This means you, Gus.
         </div>
     </div>
 $footerHtml
@@ -498,8 +651,8 @@ $headerHtml
 $navHtml
     <div class="container">
         <h2>Springfield Box Factory - Employee Handbook</h2>
-        <p><em>Version 14.2 - Last revised by HR</em></p>
-        
+        <p><em>Version 14.2 - Last revised by HR. Domain: $DomainDNS</em></p>
+
         <h3>Section 1: Workplace Safety</h3>
         <p>1.1 Cardboard cuts are a reality of our industry. If you sustain a cardboard cut, report to the nurse station for an alcohol swab. Do NOT bleed on the inventory.</p>
         <p>1.2 The forklift is not a toy. Bob.</p>
@@ -510,8 +663,13 @@ $navHtml
         <p>2.2 No loose clothing near the corrugated press.</p>
 
         <h3>Section 3: IT Acceptable Use</h3>
-        <p>3.1 The company computers are for business use only. Gus monitors the network logs.</p>
-        <p>3.2 Passwords must be at least 8 characters long and contain one number. (e.g., Boxmaker1)</p>
+        <p>3.1 The company computers are for business use only. All network activity on the $DomainNB domain is logged and monitored by the Security Operations team (SEC department).</p>
+        <p>3.2 Passwords must comply with the $DomainNB domain password policy. Your account is $DomainNB\[username]. If you have forgotten your password, contact the service desk at helpdesk@$DomainDNS or call x4357 (HELP).</p>
+        <p>3.3 All workstations must be domain-joined. Personal devices are not permitted on the corporate network. BYOD requests must be submitted to the ESM team.</p>
+
+        <h3>Section 4: Remote Work</h3>
+        <p>4.1 Remote employees must connect via the corporate VPN before accessing any internal resources. VPN authentication uses your $DomainNB domain credentials.</p>
+        <p>4.2 RDP access to factory floor systems requires Tier 2 approval from your manager and an ITS ticket.</p>
     </div>
 $footerHtml
 </body>
@@ -520,84 +678,376 @@ $footerHtml
 Set-Content -Path "$basePath\portal\handbook\index.html" -Value $handbookHtml
 
 # ==============================================================================
-# 7. THE GOLDMINE: VULNERABLE IT DOCS & BACKUPS (Directory Browsing Targets)
+# 10. THE GOLDMINE: VULNERABLE IT DOCS - DYNAMICALLY GENERATED FROM AD
 # ==============================================================================
 # We INTENTIONALLY DO NOT place an index.html in /it_docs/ or /legacy_backups/.
-# This ensures that when Directory Browsing is enabled, the web server lists these files.
+# Directory Browsing is enabled on these paths so IIS lists all files.
 
-Write-Log "Generating sensitive IT documents for misconfiguration targets..." "WARNING"
+Write-Log "Generating dynamic IT documentation from live AD data..." "WARNING"
 
-# /it_docs/network/topology.txt
-$topologyTxt = @"
-SPRINGFIELD BOX FACTORY - INTERNAL NETWORK TOPOLOGY
-===================================================
-Last Updated: 10/12/2025 by Gus
+# --- /it_docs/network/topology.txt ---
+# Build a real ASCII topology from actual DCs and computers
 
-       [INTERNET]
-           |
-      [FIREWALL] (pfSense - admin:admin123)
-           |
-      [CORE SWITCH] 10.10.0.1
-       /       |       \
-[DC01]     [FILESRV]   [WEB IIS (You are here)]
-10.10.0.5  10.10.0.10  10.10.0.80
-(AD/DNS)   (SMB/NFS)   (Port 80/443)
+$topologyLines = @()
+$topologyLines += "SPRINGFIELD BOX FACTORY - INTERNAL NETWORK TOPOLOGY"
+$topologyLines += "====================================================="
+$topologyLines += "Domain:       $DomainDNS"
+$topologyLines += "NetBIOS:      $DomainNB"
+$topologyLines += "Forest Root:  $($Domain.Forest)"
+$topologyLines += "Last Updated: $(Get-Date -Format 'MM/dd/yyyy') by IT"
+$topologyLines += ""
+$topologyLines += "       [INTERNET]"
+$topologyLines += "           |"
+$topologyLines += "      [FIREWALL / EDGE]"
+$topologyLines += "           |"
+$topologyLines += "      [CORE SWITCH / $PrimarySubnet]"
+$topologyLines += "           |"
+$topologyLines += "    +------+------+"
 
-Notes:
-- Need to patch DC01 for PrintNightmare. Keep forgetting.
-- The packing machines are still on Windows XP. Do not scan them or they crash.
-"@
-Set-Content -Path "$basePath\it_docs\network\topology.txt" -Value $topologyTxt
+# DC column
+$dcList = $AllDCs | Select-Object -First 3
+$dcLabels = $dcList | ForEach-Object {
+    $ip = if ($_.IPv4Address) { $_.IPv4Address } else { "?.?.?.?" }
+    "[$($_.Name) / $ip]"
+}
+$topologyLines += "    $($dcLabels -join '    ')"
+$topologyLines += "    (AD/DNS/LDAP)"
+$topologyLines += ""
 
-# /it_docs/passwords/service_accounts.csv
-$svcAccountsCsv = @"
-System,Username,Password,Notes
-ActiveDirectory,svc_join,BoxMakerDomainJoin!2025,Used for automated AD joins
-BackupServer,svc_veeam,B@ckupS0lid!,Full admin rights on hypervisor
-IIS_AppPool,svc_webadmin,IISRulesTheWorld_99,Runs the legacy timesheet app
-SQL_Prod,sa,SuperSecretP@ssw0rd1,DO NOT CHANGE. Will break the inventory system.
-"@
-Set-Content -Path "$basePath\it_docs\passwords\service_accounts.csv" -Value $svcAccountsCsv
+# Servers
+if ($Servers.Count -gt 0) {
+    $topologyLines += "SERVERS:"
+    foreach ($srv in ($Servers | Select-Object -First 8)) {
+        $ip  = if ($srv.IPv4Address) { $srv.IPv4Address } else { "?.?.?.?" }
+        $os  = if ($srv.OperatingSystem) { $srv.OperatingSystem } else { "Windows Server" }
+        $dsc = if ($srv.Description) { " - $($srv.Description)" } else { "" }
+        $topologyLines += "  $($srv.Name.PadRight(20)) $($ip.PadRight(18)) $os$dsc"
+    }
+}
+$topologyLines += ""
 
-# /it_docs/server_build_guide.html (Just a file to be listed)
+# Workstations
+if ($Workstations.Count -gt 0) {
+    $topologyLines += "WORKSTATIONS (sample):"
+    foreach ($ws in ($Workstations | Select-Object -First 6)) {
+        $ip  = if ($ws.IPv4Address) { $ws.IPv4Address } else { "DHCP" }
+        $os  = if ($ws.OperatingSystem) { $ws.OperatingSystem } else { "Windows" }
+        $topologyLines += "  $($ws.Name.PadRight(20)) $($ip.PadRight(18)) $os"
+    }
+}
+$topologyLines += ""
+$topologyLines += "NOTES:"
+$topologyLines += "- PDC Emulator: $PDC"
+$topologyLines += "- Primary subnet: $PrimarySubnet"
+$topologyLines += "- LAPS deployed: $(if ($LAPSInstalled) { 'YES' } else { 'NO - PENDING' })"
+$topologyLines += "- Legacy packing machines still on Windows XP. Do NOT scan - they will crash."
+$topologyLines += "- PrintNightmare patch is STILL pending on some machines. Gus is aware."
+$topologyLines += "- The corrugated press controller (192.168.10.5) is air-gapped. Do not touch."
+
+Set-Content -Path "$basePath\it_docs\network\topology.txt" -Value ($topologyLines -join "`n")
+
+# --- /it_docs/network/domain_info.txt ---
+$domainInfoLines = @()
+$domainInfoLines += "SPRINGFIELD BOX FACTORY - DOMAIN CONFIGURATION REFERENCE"
+$domainInfoLines += "========================================================="
+$domainInfoLines += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+$domainInfoLines += ""
+$domainInfoLines += "DOMAIN INFORMATION"
+$domainInfoLines += "------------------"
+$domainInfoLines += "DNS Root:              $DomainDNS"
+$domainInfoLines += "NetBIOS Name:          $DomainNB"
+$domainInfoLines += "Distinguished Name:    $DomainDN"
+$domainInfoLines += "Forest:                $($Domain.Forest)"
+$domainInfoLines += "Domain Mode:           $($Domain.DomainMode)"
+$domainInfoLines += "PDC Emulator:          $PDC"
+$domainInfoLines += "RID Master:            $($Domain.RIDMaster)"
+$domainInfoLines += "Infrastructure Master: $($Domain.InfrastructureMaster)"
+$domainInfoLines += ""
+$domainInfoLines += "DOMAIN CONTROLLERS"
+$domainInfoLines += "------------------"
+foreach ($dc in $AllDCs) {
+    $ip    = if ($dc.IPv4Address) { $dc.IPv4Address } else { "N/A" }
+    $roles = if ($dc.OperationMasterRoles) { $dc.OperationMasterRoles -join ', ' } else { "None" }
+    $domainInfoLines += "$($dc.HostName)"
+    $domainInfoLines += "  IP:         $ip"
+    $domainInfoLines += "  Site:       $($dc.Site)"
+    $domainInfoLines += "  FSMO:       $roles"
+    $domainInfoLines += "  OS:         $($dc.OperatingSystemVersion)"
+    $domainInfoLines += ""
+}
+$domainInfoLines += "PRIVILEGED GROUPS"
+$domainInfoLines += "-----------------"
+foreach ($grp in $PrivilegedGroups) {
+    $memberCount = ($grp.Members | Measure-Object).Count
+    $domainInfoLines += "$($grp.Name): $memberCount members"
+}
+
+Set-Content -Path "$basePath\it_docs\network\domain_info.txt" -Value ($domainInfoLines -join "`n")
+
+# --- /it_docs/passwords/service_accounts.csv ---
+# Built entirely from real AD service accounts
+
+Write-Log "Generating service account credential file from AD data..." "WARNING"
+
+$svcCsvLines = @()
+$svcCsvLines += "SAMAccountName,DisplayName,Department,Description,HasSPN,Notes"
+
+foreach ($svc in $ServiceAccounts) {
+    $hasSPN  = if ($svc.ServicePrincipalNames -and $svc.ServicePrincipalNames.Count -gt 0) { "YES - KERBEROASTABLE" } else { "No" }
+    $desc    = if ($svc.Description) { $svc.Description -replace ',',';' } else { "Service account" }
+    $dept    = if ($svc.departmentNumber) { $svc.departmentNumber } else { "ITS" }
+    $display = if ($svc.DisplayName) { $svc.DisplayName } else { $svc.SamAccountName }
+    $svcCsvLines += "$($svc.SamAccountName),$display,$dept,$desc,$hasSPN,Review before decommission"
+}
+
+# Inject a few plausible-looking hardcoded service entries that match the real domain
+$svcCsvLines += "svc_webadmin,$DomainNB Web Admin,ITS,IIS AppPool identity for legacy timesheet app,No,Password last set $(Get-Date -Format 'yyyy') - DO NOT CHANGE breaks inventory"
+$svcCsvLines += "svc_backup,$DomainNB Backup Service,ITS,Veeam backup service account - full admin on hypervisor,No,See legacy_backups README"
+$svcCsvLines += "svc_sql,$DomainNB SQL Service,FIN,SQL Server service account for NailInventoryDB,YES - KERBEROASTABLE,MSSQLSvc/$PDC`:1433"
+
+Set-Content -Path "$basePath\it_docs\passwords\service_accounts.csv" -Value ($svcCsvLines -join "`n")
+
+# --- /it_docs/passwords/kerberoastable_accounts.txt ---
+if ($KerberoastableAccounts -and $KerberoastableAccounts.Count -gt 0) {
+    $kerbLines = @()
+    $kerbLines += "SPRINGFIELD BOX FACTORY - KERBEROASTABLE SERVICE ACCOUNTS"
+    $kerbLines += "==========================================================="
+    $kerbLines += "Exported: $(Get-Date -Format 'yyyy-MM-dd') | Domain: $DomainDNS"
+    $kerbLines += "WARNING: These accounts have Service Principal Names set and can be Kerberoasted."
+    $kerbLines += "Remediation: Use strong (25+ char) random passwords for all service accounts."
+    $kerbLines += ""
+    $kerbLines += "Account                  SPNs"
+    $kerbLines += "-------                  ----"
+    foreach ($ka in $KerberoastableAccounts) {
+        $kerbLines += "$($ka.SamAccountName.PadRight(25)) $($ka.ServicePrincipalNames -join ' | ')"
+    }
+    Set-Content -Path "$basePath\it_docs\passwords\kerberoastable_accounts.txt" -Value ($kerbLines -join "`n")
+}
+
+# --- /it_docs/passwords/asrep_accounts.txt ---
+if ($ASREPAccounts -and $ASREPAccounts.Count -gt 0) {
+    $asrepLines = @()
+    $asrepLines += "SPRINGFIELD BOX FACTORY - AS-REP ROASTABLE ACCOUNTS"
+    $asrepLines += "====================================================="
+    $asrepLines += "Exported: $(Get-Date -Format 'yyyy-MM-dd') | Domain: $DomainDNS"
+    $asrepLines += "These accounts have 'Do not require Kerberos preauthentication' set."
+    $asrepLines += "This allows offline password cracking without authenticating first."
+    $asrepLines += "STATUS: Remediation ticket open - assigned to IT Manager"
+    $asrepLines += ""
+    foreach ($ar in $ASREPAccounts) {
+        $asrepLines += "  $($ar.SamAccountName)  (Title: $($ar.Title)  Dept: $($ar.Department))"
+    }
+    Set-Content -Path "$basePath\it_docs\passwords\asrep_accounts.txt" -Value ($asrepLines -join "`n")
+}
+
+# --- /it_docs/procedures/server_build_guide.html ---
 $buildGuideHtml = @"
 <div class='it-article'>
-    <h3>Server Build Guide - Windows Server 2022</h3>
-    <p>Always disable Windows Firewall immediately after install. It breaks the old Java apps.</p>
-    <div class='code-block'>
-        Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-    </div>
-    <p>Local admin password for all newly built servers should be set to: <strong>P@ssw0rd_Admin</strong> until joined to domain.</p>
+    <h3>Springfield Box Factory - Server Build SOP v3.1</h3>
+    <p><em>Author: IT Infrastructure Team | Domain: $DomainDNS | Last revised: $(Get-Date -Format 'MM/dd/yyyy')</em></p>
+
+    <h4>Step 1: OS Installation</h4>
+    <p>Install Windows Server from the approved ISO. All new servers must be named using the convention: <strong>[DEPT]-[TYPE]-[NUMBER]</strong> (e.g., ITS-SRV-04, SEC-MON-01).</p>
+
+    <h4>Step 2: Network Configuration</h4>
+    <p>Set static IP in the $PrimarySubnet range (coordinate with helpdesk for assignment). Set DNS to $($DCIPs -join ' and ').</p>
+
+    <h4>Step 3: Domain Join</h4>
+    <div class='code-block'>Add-Computer -DomainName $DomainDNS -Credential $DomainNB\svc_join -Restart</div>
+    <p>The domain join service account is <strong>$DomainNB\svc_join</strong>. Password is in the IT password vault (ask Gus). Alternatively it's probably in the service_accounts.csv in this folder.</p>
+
+    <h4>Step 4: Firewall (Important)</h4>
+    <p>Always disable Windows Firewall immediately after joining the domain. It breaks the legacy Java timesheet application and several of the older corrugated press monitoring tools.</p>
+    <div class='code-block'>Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False</div>
+
+    <h4>Step 5: Local Admin</h4>
+    <p>Set the local Administrator password to the standard build password: <strong>P@ssw0rd_SBF_$(Get-Date -Format 'yyyy')!</strong> until the machine is handed off to the requesting team. Change it after handoff. (Nobody ever does. This is a known issue.)</p>
+
+    <h4>Step 6: LAPS</h4>
+    <p>LAPS deployment status: <strong>$(if ($LAPSInstalled) { 'INSTALLED - enroll machine in LAPS GPO after domain join' } else { 'NOT DEPLOYED - pending IT ticket #4471. Use manual password rotation in the meantime.' })</strong></p>
 </div>
 "@
-Set-Content -Path "$basePath\it_docs\server_build_guide.html" -Value $buildGuideHtml
+Set-Content -Path "$basePath\it_docs\procedures\server_build_guide.html" -Value $buildGuideHtml
 
-# /legacy_backups/web_config_backup_2024.xml
-$legacyConfig = @"
+# --- /it_docs/procedures/onboarding_checklist.txt ---
+$onboardingLines = @()
+$onboardingLines += "SPRINGFIELD BOX FACTORY - NEW EMPLOYEE IT ONBOARDING CHECKLIST"
+$onboardingLines += "================================================================"
+$onboardingLines += "Domain: $DomainDNS | Prepared by: ITS Helpdesk"
+$onboardingLines += ""
+$onboardingLines += "[ ] Create AD account in OU=People,$DomainDN"
+$onboardingLines += "    - Username format: Firstname_Lastname"
+$onboardingLines += "    - UPN: username@$DomainDNS"
+$onboardingLines += "    - Add to department group (BDE, FIN, ITS, SEC, etc.)"
+$onboardingLines += "[ ] Set temporary password - call user to set on first login"
+$onboardingLines += "[ ] Add to email distribution list: all-staff@$DomainDNS"
+$onboardingLines += "[ ] Provision workstation and domain-join (use svc_join account)"
+$onboardingLines += "[ ] Install VPN client - authenticate with $DomainNB credentials"
+$onboardingLines += "[ ] If SEC or ITS: add to privileged access tier (requires manager approval)"
+$onboardingLines += "[ ] Send welcome email from helpdesk@$DomainDNS"
+$onboardingLines += ""
+$onboardingLines += "OFFBOARDING:"
+$onboardingLines += "[ ] Disable AD account immediately"
+$onboardingLines += "[ ] Move to OU=Deprovisioned,OU=People,$DomainDN"
+$onboardingLines += "[ ] Revoke VPN certificates"
+$onboardingLines += "[ ] Remove from all groups"
+$onboardingLines += "[ ] Archive mailbox"
+$onboardingLines += ""
+$onboardingLines += "NOTE: Do not delete accounts - move to Deprovisioned OU per policy."
+$onboardingLines += "IT contact: helpdesk@$DomainDNS | PDC: $PDC"
+
+Set-Content -Path "$basePath\it_docs\procedures\onboarding_checklist.txt" -Value ($onboardingLines -join "`n")
+
+# ==============================================================================
+# 11. LEGACY BACKUPS - DYNAMICALLY GENERATED FROM REAL DOMAIN DATA
+# ==============================================================================
+
+Write-Log "Generating legacy backup artifacts from live AD environment..." "WARNING"
+
+# --- /legacy_backups/README_DO_NOT_DELETE.txt ---
+$backupReadme = @"
+DO NOT DELETE THIS FOLDER.
+========================================================================================
+These are backup artifacts retained after the IT migration to $DomainDNS in Q3 of last year.
+
+We still need these connection strings and config exports to access the legacy archive
+databases and pre-migration application configurations. The NailInventoryDB migration
+is NOT complete and we are still querying the old SQL instance for the factory floor
+reporting system.
+
+If you are looking for the Veeam job configs, they are in the veeam_jobs subfolder.
+The web.config backups contain connection strings for the old apps - do not purge.
+
+Contact: helpdesk@$DomainDNS | IT Director: see AD group "IT Directors"
+- Gus
+========================================================================================
+"@
+Set-Content -Path "$basePath\legacy_backups\README_DO_NOT_DELETE.txt" -Value $backupReadme
+
+# --- /legacy_backups/web_config_backup.xml ---
+# Uses the real domain name and a plausible SQL server (first non-DC server or the PDC)
+$sqlServer = if ($Servers.Count -gt 0) { $Servers[0].DNSHostName } else { $PDC }
+if (-not $sqlServer) { $sqlServer = $PDC }
+
+$webConfigBackup = @"
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Springfield Box Factory - Legacy Web Application Config Backup -->
+<!-- Exported: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') from $PDC -->
+<!-- DO NOT COMMIT TO SOURCE CONTROL -->
 <configuration>
   <connectionStrings>
-    <add name="InventoryDB" connectionString="Server=10.10.0.50;Database=BoxInventory;User Id=db_admin;Password=DatabaseMasterPassword!2024;" providerName="System.Data.SqlClient" />
+    <add name="NailInventoryDB"
+         connectionString="Server=$sqlServer;Database=NailInventoryDB;User Id=svc_sql;Password=Sp1ngf!eld_SQL_$(Get-Date -Format 'yyyy')#;"
+         providerName="System.Data.SqlClient" />
+    <add name="ArchiveDB"
+         connectionString="Server=$sqlServer;Database=BoxArchive2019;User Id=db_readonly;Password=R3adOnly_Archive!;"
+         providerName="System.Data.SqlClient" />
+    <add name="TimesheetDB"
+         connectionString="Server=$sqlServer;Database=TimesheetLegacy;User Id=svc_webadmin;Password=W3bAdm1n_$DomainNB!;"
+         providerName="System.Data.SqlClient" />
   </connectionStrings>
   <appSettings>
-    <add key="AdminAPIKey" value="8f9a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p" />
+    <add key="DomainController" value="$PDC" />
+    <add key="LDAPBaseDN" value="$DomainDN" />
+    <add key="LDAPBindUser" value="$DomainNB\svc_webadmin" />
+    <add key="AdminAPIKey" value="$(([System.Guid]::NewGuid().ToString('N')))" />
     <add key="DebugMode" value="true" />
+    <add key="SMTPServer" value="mail.$DomainDNS" />
+    <add key="SMTPFrom" value="noreply@$DomainDNS" />
   </appSettings>
 </configuration>
 "@
-Set-Content -Path "$basePath\legacy_backups\web_config_backup_2024.xml" -Value $legacyConfig
+Set-Content -Path "$basePath\legacy_backups\web_config_backup.xml" -Value $webConfigBackup
 
-$legacyReadme = @"
-DO NOT DELETE THIS FOLDER.
-These are the backups from before the ransomware incident in 2024. 
-We still need these connection strings to access the old archive databases.
-- Gus
-"@
-Set-Content -Path "$basePath\legacy_backups\README_DO_NOT_DELETE.txt" -Value $legacyReadme
+# --- /legacy_backups/ad_export_users_sample.csv ---
+# Pull a real slice of users from AD (non-sensitive fields + simulated passwords for realism)
+$weakPasswords = @('Password1','Welcome1','Summer2024!','Spring2024!','January2025!',
+    'Company1!','Changeme1','Factory1!','Nails2024!','BoxMaker1',
+    'Springfield1','Cardboard!1','Welcome$(Get-Date -Format ''yyyy'')!')
 
+$adExportLines = @()
+$adExportLines += "SamAccountName,DisplayName,Department,Title,Office,EmailAddress,Notes"
+
+$exportUsers = Get-ADUser -Filter { Enabled -eq $true } -Properties DisplayName,Department,Title,Office,EmailAddress,departmentNumber -ResultSetSize 50 -ErrorAction SilentlyContinue
+foreach ($eu in $exportUsers) {
+    $display = if ($eu.DisplayName) { $eu.DisplayName -replace ',','' } else { $eu.SamAccountName }
+    $dept    = if ($eu.Department) { $eu.Department -replace ',','' } else { "" }
+    $title   = if ($eu.Title) { $eu.Title -replace ',','' } else { "" }
+    $office  = if ($eu.Office) { $eu.Office } else { "HQ" }
+    $email   = if ($eu.EmailAddress) { $eu.EmailAddress } else { "$($eu.SamAccountName)@$DomainDNS" }
+    # 10% chance: annotate with a "temp password" note (simulating a real-world mistake)
+    $roll = Get-Random -Minimum 1 -Maximum 11
+    $note = if ($roll -eq 1) { "Temp pwd: $($weakPasswords | Get-Random) - user to change on login" } else { "" }
+    $adExportLines += "$($eu.SamAccountName),$display,$dept,$title,$office,$email,$note"
+}
+
+Set-Content -Path "$basePath\legacy_backups\ad_export_users_sample.csv" -Value ($adExportLines -join "`n")
+
+# --- /legacy_backups/veeam_job_config.txt ---
+$veeamLines = @()
+$veeamLines += "SPRINGFIELD BOX FACTORY - VEEAM BACKUP JOB CONFIGURATION"
+$veeamLines += "=========================================================="
+$veeamLines += "Exported from Veeam Backup & Replication Console"
+$veeamLines += "Date: $(Get-Date -Format 'yyyy-MM-dd')"
+$veeamLines += ""
+$veeamLines += "BACKUP REPOSITORY"
+$veeamLines += "  Name:        SBF-BackupRepo-Primary"
+$veeamLines += "  Path:        \\$($PrimaryDC.Name)\Backups\Veeam"
+$veeamLines += "  Credentials: $DomainNB\svc_backup"
+$veeamLines += "  Retention:   14 restore points"
+$veeamLines += ""
+$veeamLines += "JOBS:"
+foreach ($dc in $AllDCs) {
+    $veeamLines += "  Job: Backup-$($dc.Name)"
+    $veeamLines += "    Target:    $($dc.HostName)"
+    $veeamLines += "    Schedule:  Daily 02:00"
+    $veeamLines += "    Mode:      Incremental"
+    $veeamLines += "    Last run:  $(Get-Date (Get-Date).AddDays(-(Get-Random -Min 1 -Max 7)) -Format 'yyyy-MM-dd 02:00') - SUCCESS"
+    $veeamLines += ""
+}
+foreach ($srv in ($Servers | Select-Object -First 4)) {
+    $veeamLines += "  Job: Backup-$($srv.Name)"
+    $veeamLines += "    Target:    $($srv.DNSHostName)"
+    $veeamLines += "    Schedule:  Daily 03:00"
+    $veeamLines += "    Mode:      Incremental"
+    $veeamLines += "    Last run:  $(Get-Date (Get-Date).AddDays(-(Get-Random -Min 1 -Max 14)) -Format 'yyyy-MM-dd 03:00') - SUCCESS"
+    $veeamLines += ""
+}
+$veeamLines += "NOTE: svc_backup has local admin on all backup targets (required by Veeam)."
+$veeamLines += "Password rotation is OVERDUE. Submit request to helpdesk@$DomainDNS"
+
+Set-Content -Path "$basePath\legacy_backups\veeam_job_config.txt" -Value ($veeamLines -join "`n")
+
+# --- /legacy_backups/gpo_export_notes.txt ---
+$gpoNotes = @()
+$gpoNotes += "SPRINGFIELD BOX FACTORY - GPO EXPORT NOTES"
+$gpoNotes += "==========================================="
+$gpoNotes += "Domain: $DomainDNS  |  Exported: $(Get-Date -Format 'yyyy-MM-dd')"
+$gpoNotes += "These notes were created during the GPO audit for the annual security review."
+$gpoNotes += "Full GPO backups are stored on \\$($PrimaryDC.Name)\SYSVOL\$DomainDNS\Policies"
+$gpoNotes += ""
+$allGPOs = Get-GPO -All -ErrorAction SilentlyContinue | Select-Object -First 20
+if ($allGPOs) {
+    $gpoNotes += "GPO NAME                                    STATUS"
+    $gpoNotes += "--------                                    ------"
+    foreach ($gpo in $allGPOs) {
+        $status = "$($gpo.GpoStatus)"
+        $gpoNotes += "$($gpo.DisplayName.PadRight(44)) $status"
+    }
+} else {
+    $gpoNotes += "(GPO list unavailable - run with domain admin privileges)"
+}
+$gpoNotes += ""
+$gpoNotes += "FINDINGS FROM LAST AUDIT:"
+$gpoNotes += "- Several GPOs have 'Authenticated Users' with excessive rights - ticket pending"
+$gpoNotes += "- Default Domain Policy modified directly - against best practice"
+$gpoNotes += "- Local admin password GPO references plaintext cred in comment (see ticket #3892)"
+$gpoNotes += "- PrintNightmare remediation GPO linked but not enforced on legacy OUs"
+
+Set-Content -Path "$basePath\legacy_backups\gpo_export_notes.txt" -Value ($gpoNotes -join "`n")
 
 # ==============================================================================
-# 8. IIS CONFIGURATION & BINDINGS
+# 12. IIS CONFIGURATION & BINDINGS
 # ==============================================================================
 
 Write-Log "Configuring IIS Sites and Bindings..." "INFO"
@@ -616,15 +1066,13 @@ New-WebSite -Name $siteName -Port 80 -PhysicalPath $basePath -ApplicationPool De
 Start-WebAppPool -Name "DefaultAppPool" -ErrorAction SilentlyContinue
 
 # ==============================================================================
-# 9. APPLYING INTENTIONAL SECURITY MISCONFIGURATIONS
+# 13. APPLYING INTENTIONAL SECURITY MISCONFIGURATIONS
 # ==============================================================================
 
 Write-Log "Applying Educational Security Misconfigurations..." "WARNING"
 
 # --- MISCONFIG 1: DIRECTORY BROWSING ---
-# We enable this specifically on the /it_docs and /legacy_backups folders.
-# Because these folders lack an index.html, IIS will render a file listing,
-# exposing the sensitive CSV, XML, and TXT files created above.
+# Enabled on /it_docs and /legacy_backups — no index.html = IIS renders a file listing.
 Write-Log "Applying Misconfig: Enabling Directory Browsing on /it_docs" "VULN"
 $itDocsIisPath = "IIS:\Sites\$siteName\it_docs"
 Set-WebConfigurationProperty -Filter /system.webServer/directoryBrowse -Name enabled -Value True -PSPath $itDocsIisPath
@@ -634,23 +1082,20 @@ $backupsIisPath = "IIS:\Sites\$siteName\legacy_backups"
 Set-WebConfigurationProperty -Filter /system.webServer/directoryBrowse -Name enabled -Value True -PSPath $backupsIisPath
 
 # --- MISCONFIG 2: BASIC AUTHENTICATION OVER HTTP ---
-# We enable Basic Authentication globally. Because the site is running on Port 80 (HTTP),
-# credentials sent by the user will be Base64 encoded, NOT encrypted. 
-# This makes them trivial to capture via packet sniffing (Wireshark) or MITM attacks.
+# Credentials sent over Port 80 are Base64 encoded, not encrypted.
+# Trivially captured via Wireshark or any MITM tool.
 Write-Log "Applying Misconfig: Enabling Basic Authentication globally over HTTP" "VULN"
-# Unlock the section so it can be modified at the site level. Without this the
-# Set-WebConfigurationProperty call will fail because the section is locked by default.
 Unlock-WebConfiguration -Filter "system.webServer/security/authentication/basicAuthentication" -PSPath "MACHINE/WEBROOT/APPHOST" | Out-Null
 Set-WebConfigurationProperty -Filter /system.webServer/security/authentication/basicAuthentication -Name enabled -Value True -PSPath "IIS:\Sites\$siteName"
 
-# Optional: Disable Anonymous Auth to force a login prompt for the entire site
-# Uncomment the line below if you want the lab to REQUIRE sniffing immediately.
-# Otherwise, leave it so attackers can browse the public site, but trigger auth on specific protected actions.
+# Optional: Uncomment to force Basic Auth everywhere (no anonymous browsing at all)
 # Set-WebConfigurationProperty -Filter /system.webServer/security/authentication/anonymousAuthentication -Name enabled -Value False -PSPath "IIS:\Sites\$siteName"
 
 Write-Log "=================================================================" "SUCCESS"
 Write-Log "Springfield Box Factory Knowledgebase Deployment Complete." "SUCCESS"
+Write-Log "Domain integrated: $DomainDNS ($DomainNB)" "INFO"
 Write-Log "Target URL: http://localhost (or via server IP)" "INFO"
-Write-Log "Directory Browsing Vectors: http://<IP>/it_docs/ and http://<IP>/legacy_backups/" "VULN"
-Write-Log "Basic Auth Vector: Enabled globally on Port 80." "VULN"
+Write-Log "Directory Browsing: http://<IP>/it_docs/ and http://<IP>/legacy_backups/" "VULN"
+Write-Log "Basic Auth Vector: Enabled globally on Port 80 (no TLS)." "VULN"
+Write-Log "Dynamic content sourced from: $PDC" "INFO"
 Write-Log "=================================================================" "SUCCESS"
