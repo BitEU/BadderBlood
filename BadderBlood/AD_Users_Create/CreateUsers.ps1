@@ -209,8 +209,8 @@ Function CreateUser {
         [CmdletBinding(DefaultParameterSetName='FixedLength')]
         [OutputType([String])]
         Param(
-            [Parameter(ParameterSetName='RandomLength')][Alias('Min')][int]$MinPasswordLength = 12,
-            [Parameter(ParameterSetName='RandomLength')][Alias('Max')][int]$MaxPasswordLength = 20,
+            [Parameter(ParameterSetName='RandomLength')][Alias('Min')][int]$MinPasswordLength = 8,
+            [Parameter(ParameterSetName='RandomLength')][Alias('Max')][int]$MaxPasswordLength = 12,
             [Parameter(ParameterSetName='FixedLength')][int]$PasswordLength = 8,
             [String[]]$InputStrings = @('abcdefghijkmnpqrstuvwxyz','ABCEFGHJKLMNPQRSTUVWXYZ','23456789','!#%&'),
             [String]$FirstChar,
