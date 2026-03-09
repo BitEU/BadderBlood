@@ -526,10 +526,10 @@ if ($LeadershipUsers.Count -gt 0) {
         $title       = if ($leader.Title) { $leader.Title } else { "Executive" }
         $dept        = if ($leader.Department) { $leader.Department } else { "Corporate" }
         $office      = if ($leader.Office) { $leader.Office } else { "HQ" }
-        $leadershipRows += "            <tr><td>$displayName</td><td>$title</td><td>$dept</td><td>$office</td></tr>`n"
+        $leadershipRows += ('            <tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>' -f $displayName,$title,$dept,$office) + "`n"
     }
 } else {
-    $leadershipRows = "            <tr><td colspan='4'><em>Directory data not available. Contact helpdesk@$DomainDNS</em></td></tr>`n"
+    $leadershipRows = ('            <tr><td colspan="4"><em>Directory data not available. Contact helpdesk@{0}</em></td></tr>' -f $DomainDNS) + "`n"
 }
 
 # Department headcount summary
@@ -550,16 +550,15 @@ $deptCodes = @{
 }
 foreach ($code in ($deptCodes.Keys | Sort-Object)) {
     $count = (Get-ADUser -Filter { departmentNumber -eq $code } -ErrorAction SilentlyContinue | Measure-Object).Count
-    $deptRows += "            <tr><td>$($deptCodes[$code])</td><td>$code</td><td>$count</td></tr>`n"
+    $deptRows += ('            <tr><td>{0}</td><td>{1}</td><td>{2}</td></tr>' -f $deptCodes[$code],$code,$count) + "`n"
 }
 
 $dcRows = ""
 foreach ($dc in $AllDCs) {
-    $ip   = if ($dc.IPv4Address) { $dc.IPv4Address } else { "N/A" }
-    $site = if ($dc.Site) { $dc.Site } else { "Default-First-Site-Name" }
-    $roles = ($dc.OperationMasterRoles -join ', ')
-    if (-not $roles) { $roles = "—" }
-    $dcRows += "            <tr><td>$($dc.HostName)</td><td>$ip</td><td>$site</td><td>$roles</td></tr>`n"
+    $ip    = if ($dc.IPv4Address) { $dc.IPv4Address } else { "N/A" }
+    $site  = if ($dc.Site) { $dc.Site } else { "Default-First-Site-Name" }
+    $roles = if ($dc.OperationMasterRoles) { $dc.OperationMasterRoles -join ', ' } else { "—" }
+    $dcRows += ('            <tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>' -f $dc.HostName,$ip,$site,$roles) + "`n"
 }
 
 $aboutHtml = @'
