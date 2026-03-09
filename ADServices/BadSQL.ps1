@@ -38,12 +38,12 @@
     IMPORTANT: Run BadIIS.ps1 first (or after) - BadSQL integrates with IIS content.
 
     Attack paths created:
-    - xp_cmdshell → OS command execution as SQL service account
-    - Linked server → lateral movement to additional SQL instances
-    - TRUSTWORTHY + db_owner → privilege escalation to sysadmin
-    - Weak sa password → direct sysadmin access
-    - Kerberoastable svc_sql SPN → offline hash cracking → sysadmin
-    - PUBLIC grants → unauthorized data access (HRConfidential tables)
+    - xp_cmdshell -> OS command execution as SQL service account
+    - Linked server -> lateral movement to additional SQL instances
+    - TRUSTWORTHY + db_owner -> privilege escalation to sysadmin
+    - Weak sa password -> direct sysadmin access
+    - Kerberoastable svc_sql SPN -> offline hash cracking -> sysadmin
+    - PUBLIC grants -> unauthorized data access (HRConfidential tables)
 #>
 
 #Requires -RunAsAdministrator
@@ -566,7 +566,7 @@ foreach ($db in $databases) {
     Invoke-Sql "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = '$db') CREATE DATABASE [$db]"
 }
 
-# --- MISCONFIG 6: TRUSTWORTHY = ON (privilege escalation via EXECUTE AS + db_owner → sysadmin) ---
+# --- MISCONFIG 6: TRUSTWORTHY = ON (privilege escalation via EXECUTE AS + db_owner -> sysadmin) ---
 Write-Log "Applying Misconfig: Setting TRUSTWORTHY ON for NailInventoryDB and HRConfidential" "VULN"
 Invoke-Sql "ALTER DATABASE [NailInventoryDB] SET TRUSTWORTHY ON"
 Invoke-Sql "ALTER DATABASE [HRConfidential] SET TRUSTWORTHY ON"
@@ -577,7 +577,7 @@ Invoke-Sql "ALTER DATABASE [HRConfidential] SET TRUSTWORTHY ON"
 
 Write-Log "Creating database users and applying intentionally permissive grants..." "INFO"
 
-# svc_sql → db_owner on all databases (excessive privilege)
+# svc_sql -> db_owner on all databases (excessive privilege)
 Write-Log "Applying Misconfig: Granting db_owner to svc_sql on all databases" "VULN"
 foreach ($db in $databases) {
     Invoke-Sql @"
@@ -1231,7 +1231,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE name = 'SBFARCHIVE')
 BEGIN
     EXEC sp_addlinkedserver
         @server     = N'SBFARCHIVE',
-        @srvproduct = N'SQL Server',
+        @srvproduct = N'',
         @provider   = N'SQLNCLI',
         @datasrc    = N'$SqlServer\ARCHIVE'
 
