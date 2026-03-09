@@ -33,12 +33,18 @@ Write-Verbose "Starting Advanced Corporate File Share Generation..."
 # Fetch real users early so all generators (PII, CSVs, Resumes) use actual entities
 # ==============================================================================
 $global:AllADUsers = @()
+$global:AllADGroups = @()
 if (-not $ForceLocalMode) {
     try {
         # Note: Grabbing the Manager property to build realistic Performance Reviews based on the Org Chart
         $global:AllADUsers = Get-ADUser -Filter * -Properties Title, Department, EmailAddress, Manager, DistinguishedName -ErrorAction Stop | 
             Where-Object { $_.SamAccountName -notmatch "Administrator|Guest|krbtgt" }
         Write-Verbose "Successfully fetched $($global:AllADUsers.Count) real users from Active Directory."
+        
+        # Fetch AD Groups for Project Folder Generation
+        $global:AllADGroups = Get-ADGroup -Filter * -Properties Description, ManagedBy, Members -ErrorAction Stop | 
+            Where-Object { $_.Name -notmatch "^(Domain|Enterprise|Schema|Administrators|Users|Guests|Computers|Controllers)" }
+        Write-Verbose "Successfully fetched $($global:AllADGroups.Count) real groups from Active Directory."
     } catch {
         Write-Warning "Active Directory not reachable during initialization. Will fallback to list generation."
     }
@@ -70,6 +76,7 @@ $JobTitlesCSVPath = Join-Path $PSScriptRoot "..\AD_Data\jobtitles.csv"
 $OfficesCSVPath = Join-Path $PSScriptRoot "..\AD_Data\offices.csv"
 $OrgHierarchyCSVPath = Join-Path $PSScriptRoot "..\AD_Data\org_hierarchy.csv"
 
+# Try to load CSVs if available (fallback method)
 $csvDepts = @()
 if (Test-Path $DeptsCSVPath) { $csvDepts = Import-Csv $DeptsCSVPath }
 
@@ -77,12 +84,23 @@ $csvJobs = @()
 if (Test-Path $JobTitlesCSVPath) { $csvJobs = Import-Csv $JobTitlesCSVPath }
 
 $global:Offices = @()
-if (Test-Path $OfficesCSVPath) { $global:Offices = Import-Csv $OfficesCSVPath }
+if (Test-Path $OfficesCSVPath) { 
+    $global:Offices = Import-Csv $OfficesCSVPath 
+} else {
+    # Fallback office data if CSV not available
+    $global:Offices = @(
+        @{Office="HQ"; City="New York"; State="NY"}
+        @{Office="West Coast"; City="San Francisco"; State="CA"}
+        @{Office="Midwest Regional"; City="Chicago"; State="IL"}
+        @{Office="South Regional"; City="Austin"; State="TX"}
+        @{Office="East Coast"; City="Boston"; State="MA"}
+    )
+}
 
 $global:OrgHierarchy = @()
 if (Test-Path $OrgHierarchyCSVPath) { $global:OrgHierarchy = Import-Csv $OrgHierarchyCSVPath }
 
-# 1C. Build Dynamic Department Contexts using REAL Job Titles & Roles
+# 1C. Build Dynamic Department Contexts - PREFER AD DATA OVER CSVs
 $global:DepartmentContexts = @{}
 
 # Mapping baseline jargon flavors for the standard BadderBlood departments
@@ -101,34 +119,88 @@ $AcronymJargonMap = @{
     "CORP" = @("Synergy", "Market Share", "Shareholder Value", "C-Suite", "Board of Directors")
 }
 
-foreach ($dept in $csvDepts) {
-    $acronym = $dept.Acronym
-    $fullName = $dept.'Department Name'
-    $role = $dept.'Department Role'
+# BUILD FROM AD FIRST - Extract unique departments and titles from real AD users
+if ($global:AllADUsers.Count -gt 0) {
+    Write-Verbose "Building department contexts from Active Directory data..."
     
-    $themes = @("$fullName Strategy Review", "Q3 $fullName Objectives", "Strategic Execution: $role")
-    $jargon = @()
+    # Get unique departments from AD
+    $adDepartments = $global:AllADUsers | Where-Object { $_.Department } | 
+        Select-Object -ExpandProperty Department -Unique | Sort-Object
     
-    if ($AcronymJargonMap.ContainsKey($acronym)) {
-        $jargon += $AcronymJargonMap[$acronym]
-        $themes += $AcronymJargonMap[$acronym] | ForEach-Object { "$_ Optimization" }
-    } else {
-        $jargon += @("Deliverables", "Optimization", "Workflow")
+    foreach ($deptName in $adDepartments) {
+        # Use department name as both acronym and full name (we'll clean it up)
+        $acronym = $deptName
+        $fullName = $deptName
+        
+        # Get all users in this department
+        $deptUsers = $global:AllADUsers | Where-Object { $_.Department -eq $deptName }
+        
+        # Extract unique job titles for this department
+        $deptTitles = $deptUsers | Where-Object { $_.Title } | 
+            Select-Object -ExpandProperty Title -Unique
+        
+        $themes = @("$fullName Strategy Review", "Q3 $fullName Objectives", "Strategic Planning")
+        $jargon = @()
+        
+        # Use predefined jargon if the acronym matches
+        if ($AcronymJargonMap.ContainsKey($acronym)) {
+            $jargon += $AcronymJargonMap[$acronym]
+            $themes += $AcronymJargonMap[$acronym] | ForEach-Object { "$_ Optimization" }
+        } else {
+            $jargon += @("Deliverables", "Optimization", "Workflow", "Cross-functional Collaboration")
+        }
+        
+        # Add job titles to jargon and themes
+        foreach ($title in $deptTitles) {
+            $jargon += $title
+            $themes += "Hiring: $title"
+            $themes += "$title Sync/Standup"
+        }
+        
+        $global:DepartmentContexts[$acronym] = @{
+            FullName = $fullName
+            Role = "Department Operations"
+            Themes = $themes | Select-Object -Unique
+            Jargon = $jargon | Select-Object -Unique
+        }
     }
+    
+    Write-Verbose "Built $($global:DepartmentContexts.Count) department contexts from AD."
+}
 
-    # Inject actual BadderBlood job titles into the jargon and themes
-    $deptJobs = $csvJobs | Where-Object { $_.Acronym -eq $acronym }
-    foreach ($job in $deptJobs) {
-        $jargon += $job.Title
-        $themes += "Hiring: $($job.Title)"
-        $themes += "$($job.Title) Sync/Standup"
-    }
+# FALLBACK: If no AD data, use CSVs if available
+if ($global:DepartmentContexts.Count -eq 0 -and $csvDepts.Count -gt 0) {
+    Write-Verbose "No AD departments found, falling back to CSV data..."
     
-    $global:DepartmentContexts[$acronym] = @{
-        FullName = $fullName
-        Role = $role
-        Themes = $themes | Select-Object -Unique
-        Jargon = $jargon | Select-Object -Unique
+    foreach ($dept in $csvDepts) {
+        $acronym = $dept.Acronym
+        $fullName = $dept.'Department Name'
+        $role = $dept.'Department Role'
+        
+        $themes = @("$fullName Strategy Review", "Q3 $fullName Objectives", "Strategic Execution: $role")
+        $jargon = @()
+        
+        if ($AcronymJargonMap.ContainsKey($acronym)) {
+            $jargon += $AcronymJargonMap[$acronym]
+            $themes += $AcronymJargonMap[$acronym] | ForEach-Object { "$_ Optimization" }
+        } else {
+            $jargon += @("Deliverables", "Optimization", "Workflow")
+        }
+
+        # Inject actual BadderBlood job titles into the jargon and themes
+        $deptJobs = $csvJobs | Where-Object { $_.Acronym -eq $acronym }
+        foreach ($job in $deptJobs) {
+            $jargon += $job.Title
+            $themes += "Hiring: $($job.Title)"
+            $themes += "$($job.Title) Sync/Standup"
+        }
+        
+        $global:DepartmentContexts[$acronym] = @{
+            FullName = $fullName
+            Role = $role
+            Themes = $themes | Select-Object -Unique
+            Jargon = $jargon | Select-Object -Unique
+        }
     }
 }
 
@@ -578,9 +650,9 @@ Title: Chief Executive Officer
 }
 
 function New-ProjectSpecContent {
-    param($DeptFullName, $DeptAcronym)
+    param($DeptFullName, $DeptAcronym, $ProjectName = $null)
     
-    $projName = "$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)"
+    $projName = if ($ProjectName) { $ProjectName } else { "$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)" }
     $deptData = $global:DepartmentContexts[$DeptAcronym]
     $jargonList = if ($deptData) { $deptData.Jargon } else { @("Enterprise Solutions") }
 
@@ -629,9 +701,1052 @@ Prepared by the Project Management Office (PMO).
     return $content
 }
 
+function New-SprintRetrospectiveContent {
+    param($ProjectName, $DeptAcronym, $TeamMembers = @())
+    
+    $deptData = $global:DepartmentContexts[$DeptAcronym]
+    $jargonList = if ($deptData) { $deptData.Jargon } else { @("deliverables") }
+    
+    $sprintNum = Get-Random -Min 1 -Max 25
+    
+    $WentWell = @(
+        "Team velocity increased by 15% this sprint.",
+        "Successfully deployed the hotfix with zero rollback incidents.",
+        "Daily standups were concise and actionable.",
+        "Cross-functional collaboration with $(($global:DepartmentContexts.Keys | Get-Random)) team was excellent.",
+        "Automated testing coverage reached 87%.",
+        "The new CI/CD pipeline reduced deployment time by 40%."
+    )
+    
+    $NeedsImprovement = @(
+        "Too many unplanned tasks disrupted the sprint goal.",
+        "Technical debt tickets keep getting pushed to next sprint.",
+        "Product Owner was unavailable during critical decision points.",
+        "Code review turnaround time averaged 36 hours (target: 24h).",
+        "Insufficient test environment led to last-minute blockers.",
+        "Estimation accuracy was off; we over-committed by 30%."
+    )
+    
+    $ActionItems = @(
+        "Refactor the authentication module to reduce cyclomatic complexity.",
+        "Schedule a deep-dive session on architectural patterns with the team.",
+        "Implement feature flags for gradual rollout of experimental features.",
+        "Update runbook documentation for on-call engineers.",
+        "Migrate remaining services to container orchestration platform.",
+        "Conduct load testing before next production deployment."
+    )
+    
+    $participants = if ($TeamMembers.Count -gt 0) {
+        $TeamMembers | ForEach-Object { "- $_" }
+    } else {
+        1..(Get-Random -Min 4 -Max 8) | ForEach-Object {
+            $u = Get-FakeUser
+            "- $($u.Name)"
+        }
+    }
+    
+    $content = @"
+==============================================================================
+SPRINT $sprintNum RETROSPECTIVE
+==============================================================================
+Project: $ProjectName
+Date: $(Get-RandomDate -DaysBack 14)
+Facilitator: $(if ($TeamMembers.Count -gt 0) { $TeamMembers[0] } else { (Get-FakeUser).Name })
+
+PARTICIPANTS:
+$($participants -join "`n")
+
+------------------------------------------------------------------------------
+1. WHAT WENT WELL
+------------------------------------------------------------------------------
+✓ $($WentWell | Get-Random)
+✓ $($WentWell | Get-Random)
+✓ $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
+
+------------------------------------------------------------------------------
+2. WHAT NEEDS IMPROVEMENT
+------------------------------------------------------------------------------
+✗ $($NeedsImprovement | Get-Random)
+✗ $($NeedsImprovement | Get-Random)
+✗ The team expressed concerns about $(($jargonList | Get-Random)) impacting delivery timelines.
+
+------------------------------------------------------------------------------
+3. ACTION ITEMS FOR NEXT SPRINT
+------------------------------------------------------------------------------
+→ $($ActionItems | Get-Random) [Owner: $(if ($TeamMembers.Count -gt 1) { $TeamMembers[1] } else { (Get-FakeUser).Name })]
+→ $($ActionItems | Get-Random) [Owner: $(if ($TeamMembers.Count -gt 2) { $TeamMembers[2] } else { (Get-FakeUser).Name })]
+→ Review and prioritize technical debt during next grooming session. [Owner: Tech Lead]
+
+------------------------------------------------------------------------------
+4. SPRINT METRICS
+------------------------------------------------------------------------------
+Planned Story Points: $(Get-Random -Min 30 -Max 60)
+Completed Story Points: $(Get-Random -Min 25 -Max 55)
+Velocity Trend: $(if ((Get-Random -Min 0 -Max 1) -eq 0) { "`u{2191} Improving" } else { "`u{2193} Declining" })
+Bugs Found in Production: $(Get-Random -Min 0 -Max 5)
+Code Review Cycle Time: $(Get-Random -Min 18 -Max 48) hours
+
+Next retrospective scheduled for Sprint $($sprintNum + 1).
+==============================================================================
+"@
+    return $content
+}
+
+function New-StandupNotesContent {
+    param($ProjectName, $DeptAcronym, $TeamMembers = @())
+    
+    $deptData = $global:DepartmentContexts[$DeptAcronym]
+    $jargonList = if ($deptData) { $deptData.Jargon } else { @("tasks") }
+    
+    $Yesterday = @(
+        "Completed unit tests for the payment processing module.",
+        "Fixed critical P0 bug in production (Ticket #$(Get-Random -Min 1000 -Max 9999)).",
+        "Conducted knowledge transfer session with offshore team.",
+        "Reviewed and approved 3 pull requests.",
+        "Refactored database migration scripts.",
+        "Updated API documentation in Confluence."
+    )
+    
+    $Today = @(
+        "Working on $(($jargonList | Get-Random)) integration with external vendor API.",
+        "Deploying hotfix to staging environment for QA validation.",
+        "Attending architecture review board meeting at 2 PM.",
+        "Optimizing SQL queries that are causing performance bottlenecks.",
+        "Updating Terraform scripts for infrastructure as code.",
+        "Pairing with junior dev on TDD best practices."
+    )
+    
+    $Blockers = @(
+        "Waiting on security team approval for VPN access.",
+        "Third-party API documentation is incomplete.",
+        "Test environment is down due to database corruption.",
+        "Blocked on design mockups from UX team.",
+        "Need clarification from Product Owner on acceptance criteria.",
+        "No blockers."
+    )
+    
+    $members = if ($TeamMembers.Count -gt 0) { $TeamMembers } else {
+        1..(Get-Random -Min 3 -Max 6) | ForEach-Object { (Get-FakeUser).Name }
+    }
+    
+    $updates = $members | ForEach-Object {
+        $memberName = $_
+        @"
+
+${memberName}:
+  Yesterday: $($Yesterday | Get-Random)
+  Today: $($Today | Get-Random)
+  Blockers: $($Blockers | Get-Random)
+"@
+    }
+    
+    $content = @"
+DAILY STANDUP NOTES
+Project: $ProjectName
+Date: $(Get-RandomDate -DaysBack 3)
+Scrum Master: $(if ($TeamMembers.Count -gt 0) { $TeamMembers[0] } else { (Get-FakeUser).Name })
+
+==============================================================================
+TEAM UPDATES
+==============================================================================
+$($updates -join "`n")
+
+==============================================================================
+PARKING LOT (For Follow-up)
+==============================================================================
+- Discuss $(($jargonList | Get-Random)) architecture patterns in next tech sync
+- Schedule incident post-mortem for last week's outage
+- Review capacity planning for Q$(Get-Random -Min 2 -Max 4)
+
+Next standup: Tomorrow, $(Get-Random -Min 9 -Max 10):$(if ((Get-Random -Min 0 -Max 1) -eq 0) { "00" } else { "30" }) AM
+"@
+    return $content
+}
+
+function New-BugReportContent {
+    param($ProjectName, $DeptAcronym)
+    
+    $deptData = $global:DepartmentContexts[$DeptAcronym]
+    $jargonList = if ($deptData) { $deptData.Jargon } else { @("system") }
+    
+    $Severities = @("P0 - Critical", "P1 - High", "P2 - Medium", "P3 - Low")
+    $Statuses = @("Open", "In Progress", "Code Review", "QA Testing", "Resolved", "Closed", "Won't Fix")
+    $Components = @("Authentication", "Database", "API Gateway", "Frontend UI", "Background Jobs", "Notification Service", "Payment Processing", "User Management")
+    
+    $ErrorMessages = @(
+        "NullPointerException in SessionManager.validateToken()",
+        "Database connection pool exhausted after 300 concurrent requests",
+        "CORS policy blocking requests from app.corp.local",
+        "Memory leak in background worker process consuming 8GB+ RAM",
+        "Race condition in distributed cache causing stale data reads",
+        "SQL injection vulnerability in search parameter (SQLMap detected)",
+        "Unhandled promise rejection in async payment processor"
+    )
+    
+    $ReproSteps = @(
+        "1. Navigate to the dashboard as an authenticated user",
+        "2. Click on the 'Export Data' button in the upper right",
+        "3. Select CSV format and date range of last 90 days",
+        "4. Observe that the download fails with 500 Internal Server Error",
+        "5. Check browser console for stack trace"
+    )
+    
+    $ticketId = "BUG-$(Get-Random -Min 1000 -Max 9999)"
+    $severity = $Severities | Get-Random
+    
+    $content = @"
+==============================================================================
+BUG REPORT: $ticketId
+==============================================================================
+Project: $ProjectName
+Reported By: $(Get-FakeUser | ForEach-Object { $_.Name })
+Assigned To: $(Get-FakeUser | ForEach-Object { $_.Name })
+Date Reported: $(Get-RandomDate -DaysBack 7)
+Severity: $severity
+Status: $($Statuses | Get-Random)
+Component: $($Components | Get-Random)
+
+------------------------------------------------------------------------------
+SUMMARY
+------------------------------------------------------------------------------
+$($ErrorMessages | Get-Random)
+
+------------------------------------------------------------------------------
+DESCRIPTION
+------------------------------------------------------------------------------
+The $(($jargonList | Get-Random)) is failing intermittently under high load conditions.
+$(Get-CorporateIpsum -Sentences 2 -JargonPool $jargonList)
+
+Users are reporting degraded performance and frequent timeout errors during peak hours
+(9-11 AM EST). This is impacting approximately $(Get-Random -Min 50 -Max 500) concurrent users.
+
+------------------------------------------------------------------------------
+STEPS TO REPRODUCE
+------------------------------------------------------------------------------
+$($ReproSteps | Get-Random)
+
+Expected Result: Operation completes successfully within 2 seconds
+Actual Result: Request times out after 30 seconds, returns error code 500
+
+------------------------------------------------------------------------------
+ENVIRONMENT
+------------------------------------------------------------------------------
+OS: Windows Server 2019 / Linux Ubuntu 22.04
+Browser: Chrome 110.0.5481.77 (if applicable)
+Database: PostgreSQL 14.5 / MS SQL Server 2019
+Environment: $(if ((Get-Random -Min 0 -Max 1) -eq 0) { "Production" } else { "Staging" })
+
+------------------------------------------------------------------------------
+ROOT CAUSE ANALYSIS (if resolved)
+------------------------------------------------------------------------------
+$(if (($Statuses | Get-Random) -match "Resolved|Closed") {
+    "The issue was caused by missing index on the UserActivity table. Query was performing
+table scan on $(Get-Random -Min 5 -Max 50)M+ rows. Added composite index on (userId, timestamp)
+columns which reduced query time from 28s to 340ms."
+} else {
+    "Investigation in progress. Initial analysis suggests $(($jargonList | Get-Random)) may be
+misconfigured. Will update after reproducing in dev environment."
+})
+
+------------------------------------------------------------------------------
+WORKAROUND
+------------------------------------------------------------------------------
+$(if ((Get-Random -Min 0 -Max 1) -eq 0) {
+    "Temporarily increased connection pool size to 200 and reduced timeout to 15s."
+} else {
+    "None available. Recommend disabling feature until fix is deployed."
+})
+
+Related Tickets: BUG-$(Get-Random -Min 1000 -Max 9999), TASK-$(Get-Random -Min 1000 -Max 9999)
+"@
+    return $content
+}
+
+function New-TechnicalDesignDocContent {
+    param($ProjectName, $DeptAcronym)
+    
+    $deptData = $global:DepartmentContexts[$DeptAcronym]
+    $jargonList = if ($deptData) { $deptData.Jargon } else { @("system", "platform") }
+    
+    $Patterns = @("Microservices", "Event-Driven Architecture", "CQRS with Event Sourcing", "Serverless", "Monolithic (with modular design)", "Layered Architecture")
+    $Databases = @("PostgreSQL with read replicas", "MongoDB sharded cluster", "Amazon DynamoDB", "Redis for caching + MySQL for persistence", "Elasticsearch for search + SQL for OLTP")
+    $AuthMethods = @("OAuth 2.0 with JWT tokens", "SAML 2.0 federated SSO", "API keys with rate limiting", "mTLS certificate-based authentication", "OpenID Connect (OIDC)")
+    
+    $content = @"
+==============================================================================
+TECHNICAL DESIGN DOCUMENT
+==============================================================================
+Project: $ProjectName
+Document Version: $(Get-Random -Min 1 -Max 5).$(Get-Random -Min 0 -Max 9)
+Author: $(Get-FakeUser | ForEach-Object { "$($_.Name) ($($_.Title))" })
+Last Updated: $(Get-RandomDate -DaysBack 10)
+Status: $(if ((Get-Random -Min 0 -Max 1) -eq 0) { "Draft" } else { "Approved" })
+
+==============================================================================
+1. OVERVIEW
+==============================================================================
+This document outlines the technical architecture for $ProjectName. The goal is to
+$(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList) while maintaining scalability,
+security, and operational excellence.
+
+Key Objectives:
+- Process $(Get-Random -Min 10 -Max 500)K transactions per day with 99.9% uptime
+- Reduce latency from current $(Get-Random -Min 500 -Max 2000)ms to under 200ms (p95)
+- Support horizontal scaling to handle $(Get-Random -Min 2 -Max 10)x traffic growth
+- Implement comprehensive observability and alerting
+
+==============================================================================
+2. ARCHITECTURAL APPROACH
+==============================================================================
+We will adopt a $($Patterns | Get-Random) approach to ensure $(($jargonList | Get-Random)).
+
+High-Level Components:
+┌─────────────────────────────────────────────────────────────────┐
+│ Load Balancer (AWS ALB / NGINX)                                 │
+└──────────────────┬──────────────────────────────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+  ┌─────▼─────┐         ┌─────▼─────┐
+  │  API       │         │  Web      │
+  │  Gateway   │         │  Frontend │
+  └─────┬──────┘         └───────────┘
+        │
+  ┌─────▼────────────────────┐
+  │  Core Business Logic     │
+  └─────┬────────────────────┘
+        │
+  ┌─────▼─────┐    ┌──────────┐    ┌─────────────┐
+  │ Database  │    │ Cache    │    │ Message     │
+  │ Cluster   │    │ (Redis)  │    │ Queue       │
+  └───────────┘    └──────────┘    └─────────────┘
+
+==============================================================================
+3. DATA ARCHITECTURE
+==============================================================================
+Primary Database: $($Databases | Get-Random)
+
+Schema Design Highlights:
+- Normalized to 3NF for transactional tables
+- Denormalized read models for analytics workloads
+- Partitioning strategy: Range-based on timestamp (monthly partitions)
+- Retention policy: 7 years for compliance (GDPR, SOX)
+
+Backup & DR:
+- Automated daily backups with 7-day retention
+- Point-in-time recovery (PITR) enabled
+- Cross-region replication for disaster recovery (RTO: 4 hours, RPO: 15 minutes)
+
+==============================================================================
+4. SECURITY ARCHITECTURE
+==============================================================================
+Authentication: $($AuthMethods | Get-Random)
+
+Authorization: Role-Based Access Control (RBAC) with fine-grained permissions
+
+Data Protection:
+- Encryption at rest: AES-256
+- Encryption in transit: TLS 1.3
+- Secrets management: HashiCorp Vault / AWS Secrets Manager
+- PII fields encrypted with application-level encryption (field-level)
+
+Compliance: SOC 2 Type II, ISO 27001, HIPAA-ready architecture
+
+==============================================================================
+5. SCALABILITY & PERFORMANCE
+==============================================================================
+- Auto-scaling policies based on CPU (>70%) and request count metrics
+- CDN for static assets (CloudFront / Cloudflare)
+- Database connection pooling (pgBouncer / HikariCP)
+- Asynchronous processing for non-critical workflows
+- Circuit breakers to prevent cascade failures
+
+Performance Targets:
+- API response time: p50 < 100ms, p95 < 200ms, p99 < 500ms
+- Database query time: p95 < 50ms
+- Page load time: < 2 seconds (Lighthouse score > 90)
+
+==============================================================================
+6. MONITORING & OBSERVABILITY
+==============================================================================
+- Logging: Centralized logging with ELK stack (Elasticsearch, Logstash, Kibana)
+- Metrics: Prometheus + Grafana dashboards
+- Tracing: Distributed tracing with Jaeger / OpenTelemetry
+- Alerting: PagerDuty integration for critical incidents
+- SLIs/SLOs defined for availability, latency, and error rate
+
+==============================================================================
+7. DEPLOYMENT STRATEGY
+==============================================================================
+CI/CD Pipeline:
+  GitHub → Jenkins/GitLab CI → Docker Build → Push to ECR → 
+  Deploy to Kubernetes (EKS) → Automated Smoke Tests → Gradual Rollout
+
+Deployment Model: Blue-Green deployment with automated rollback on failure
+
+Infrastructure as Code: Terraform for all cloud resources
+
+==============================================================================
+8. OPEN QUESTIONS & RISKS
+==============================================================================
+- Q: Should we cache at CDN level or application level? A: Both (layered caching)
+  
+- Risk: Third-party payment gateway has 99.5% SLA (lower than our target)
+  Mitigation: Implement fallback to secondary provider
+
+- Risk: $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
+  Mitigation: $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
+
+==============================================================================
+9. DECISION LOG
+==============================================================================
+[$(Get-RandomDate -DaysBack 20)] DECIDED: Use PostgreSQL over MongoDB for stronger 
+consistency guarantees. Team voted 5-2 in favor.
+
+[$(Get-RandomDate -DaysBack 15)] DECIDED: Adopt Kubernetes for container orchestration.
+Evaluated ECS vs EKS; chose EKS for better ecosystem support.
+
+[$(Get-RandomDate -DaysBack 5)] DECIDED: Defer GraphQL adoption to Phase 2. REST API
+sufficient for current requirements.
+
+==============================================================================
+APPROVAL SIGNATURES
+==============================================================================
+Tech Lead: ________________________  Date: $(Get-RandomDate -DaysBack 3)
+Engineering Manager: ______________  Date: $(Get-RandomDate -DaysBack 3)
+Security Architect: _______________  Date: $(Get-RandomDate -DaysBack 2)
+"@
+    return $content
+}
+
+function New-DeploymentPlanContent {
+    param($ProjectName)
+    
+    $Environments = @("Development", "Staging", "Production")
+    $RollbackTriggers = @(
+        "Error rate exceeds 1% for 5 consecutive minutes",
+        "API response time p95 > 2 seconds",
+        "More than 10 user-reported critical bugs within 1 hour",
+        "Database connection pool saturation (>95%)",
+        "Memory usage exceeds 90% on any instance"
+    )
+    
+    $content = @"
+==============================================================================
+DEPLOYMENT PLAN & RUNBOOK
+==============================================================================
+Project: $ProjectName
+Release Version: v$(Get-Random -Min 1 -Max 5).$(Get-Random -Min 0 -Max 20).$(Get-Random -Min 0 -Max 100)
+Deployment Date: $(Get-RandomDate -DaysBack 2)
+Deployment Window: $(Get-Random -Min 1 -Max 3):00 AM - $(Get-Random -Min 4 -Max 6):00 AM EST (Low Traffic Period)
+Deployment Lead: $(Get-FakeUser | ForEach-Object { $_.Name })
+
+==============================================================================
+PRE-DEPLOYMENT CHECKLIST
+==============================================================================
+[✓] Code freeze initiated 48 hours before deployment
+[✓] All automated tests passing (unit, integration, E2E)
+[✓] Security scan completed (no critical vulnerabilities)
+[✓] Database migration scripts reviewed and tested in staging
+[✓] Rollback plan documented and tested
+[✓] Stakeholder notification sent (Slack #deployments channel)
+[✓] On-call engineer confirmed availability
+[✓] Feature flags configured for gradual rollout
+[✓] Backup of production database completed
+[ ] Final go/no-go decision from Engineering Manager
+
+==============================================================================
+DEPLOYMENT STEPS
+==============================================================================
+
+STEP 1: STAGING DEPLOYMENT (T-24 hours)
+1.1. Deploy build to staging environment
+     Command: kubectl apply -f k8s/staging/deployment.yaml
+     
+1.2. Run smoke tests and integration test suite
+     Expected Duration: 30 minutes
+     
+1.3. QA team performs manual regression testing
+     Test Cases: 47 critical user flows
+     
+1.4. Performance testing with load simulator (500 concurrent users)
+     Target: No degradation compared to previous release
+
+STEP 2: PRODUCTION DEPLOYMENT (T=0)
+2.1. Enable maintenance mode (optional, for breaking changes)
+     Command: kubectl annotate deployment app maintenance=true
+     
+2.2. Run database migrations
+     Command: flyway migrate -url=jdbc:postgresql://prod-db.corp.local/appdb
+     Expected Duration: 5-15 minutes
+     ⚠ Migration is reversible via: flyway undo
+     
+2.3. Deploy application (Blue-Green strategy)
+     2.3.1. Deploy to Green environment (inactive)
+     2.3.2. Validate health checks on Green pods
+     2.3.3. Switch traffic from Blue to Green (50% initially)
+     2.3.4. Monitor error rates for 10 minutes
+     2.3.5. Gradually increase to 100% traffic on Green
+     2.3.6. Keep Blue environment running for 24h (quick rollback)
+     
+2.4. Disable maintenance mode
+     Command: kubectl annotate deployment app maintenance-
+
+2.5. Verify critical workflows
+     - User login/logout
+     - Payment processing (test transaction)
+     - Report generation
+     - API health endpoint returns 200 OK
+
+STEP 3: POST-DEPLOYMENT MONITORING (T+1 hour to T+24 hours)
+3.1. Monitor Grafana dashboards for anomalies
+     - Application metrics: /d/application-overview
+     - Database metrics: /d/database-performance
+     - Business metrics: /d/revenue-transactions
+     
+3.2. Review logs for errors in Kibana
+     Query: level:ERROR AND timestamp:[now-1h TO now]
+     
+3.3. Verify PagerDuty is not triggering alerts
+     
+3.4. Confirm with Product Owner that key features are functional
+
+==============================================================================
+ROLLBACK PROCEDURE
+==============================================================================
+Automatically trigger rollback if any of the following occurs:
+- $($RollbackTriggers | Get-Random)
+- $($RollbackTriggers | Get-Random)
+
+Manual Rollback Steps:
+1. Switch traffic back to Blue environment
+   Command: kubectl patch service app -p '{"spec":{"selector":{"version":"blue"}}}'
+   
+2. Revert database migration (if applicable)
+   Command: flyway undo -url=jdbc:postgresql://prod-db.corp.local/appdb
+   
+3. Notify stakeholders in #incidents Slack channel
+   
+4. Schedule post-mortem within 48 hours
+
+Expected Rollback Time: < 5 minutes
+
+==============================================================================
+COMMUNICATION PLAN
+==============================================================================
+T-48h: Email to all stakeholders with deployment details
+T-24h: Reminder in #engineering Slack channel
+T-2h: Final reminder + standby alert for on-call team
+T=0: "Deployment in progress" message in #general
+T+30m: "Deployment complete, monitoring" update
+T+24h: "Deployment successful, Blue environment decommissioned" closure
+
+==============================================================================
+CONTACTS
+==============================================================================
+Deployment Lead: [Name]        Phone: (555) $(Get-Random -Min 100 -Max 999)-$(Get-Random -Min 1000 -Max 9999)
+Engineering Manager: [Name]    Phone: (555) $(Get-Random -Min 100 -Max 999)-$(Get-Random -Min 1000 -Max 9999)
+Database Admin: [Name]         Phone: (555) $(Get-Random -Min 100 -Max 999)-$(Get-Random -Min 1000 -Max 9999)
+Product Owner: [Name]          Phone: (555) $(Get-Random -Min 100 -Max 999)-$(Get-Random -Min 1000 -Max 9999)
+
+War Room (if needed): Zoom link - https://corp.zoom.us/j/$(Get-Random -Min 100000000 -Max 999999999)
+
+==============================================================================
+POST-DEPLOYMENT REPORT (To be filled after deployment)
+==============================================================================
+Actual Deployment Start Time: __________
+Actual Deployment End Time: __________
+Issues Encountered: __________
+Rollback Triggered: Yes / No
+Lessons Learned: __________
+
+"@
+    return $content
+}
+
+function New-IncidentReportContent {
+    param($ProjectName, $DeptAcronym)
+    
+    $deptData = $global:DepartmentContexts[$DeptAcronym]
+    $jargonList = if ($deptData) { $deptData.Jargon } else { @("infrastructure") }
+    
+    $IncidentTypes = @("Service Outage", "Data Breach", "Performance Degradation", "Security Vulnerability", "Data Loss", "Configuration Error")
+    $Severities = @("SEV-1 (Critical)", "SEV-2 (High)", "SEV-3 (Medium)")
+    
+    $RootCauses = @(
+        "Misconfigured load balancer caused traffic to route to dead instances",
+        "Database ran out of disk space due to uncontrolled log growth",
+        "Memory leak in background worker process after 72 hours of uptime",
+        "DDoS attack from botnet targeting public API endpoints",
+        "Expired SSL certificate not renewed by automated system",
+        "Kubernetes pod crashed due to out-of-memory (OOMKilled)",
+        "Network partition between availability zones causing split-brain",
+        "Third-party API dependency failure (cascading failure)"
+    )
+    
+    $content = @"
+==============================================================================
+INCIDENT REPORT - POST-MORTEM
+==============================================================================
+Incident ID: INC-$(Get-Random -Min 10000 -Max 99999)
+Project: $ProjectName
+Severity: $($Severities | Get-Random)
+Type: $($IncidentTypes | Get-Random)
+
+==============================================================================
+TIMELINE (All times in EST)
+==============================================================================
+$(Get-RandomDate -DaysBack 5) 14:23 - First alert triggered in PagerDuty (API error rate spike)
+$(Get-RandomDate -DaysBack 5) 14:25 - On-call engineer acknowledges incident
+$(Get-RandomDate -DaysBack 5) 14:27 - War room initiated, Zoom bridge opened
+$(Get-RandomDate -DaysBack 5) 14:35 - Root cause identified: $($RootCauses | Get-Random)
+$(Get-RandomDate -DaysBack 5) 14:42 - Mitigation deployed (restarted affected pods)
+$(Get-RandomDate -DaysBack 5) 14:50 - Service recovery confirmed, error rate normalized
+$(Get-RandomDate -DaysBack 5) 15:10 - Incident declared resolved, monitoring continues
+$(Get-RandomDate -DaysBack 5) 16:00 - Post-mortem scheduled for $(Get-RandomDate -DaysBack 3)
+
+Total Duration: $(Get-Random -Min 27 -Max 180) minutes
+Time to Detect (TTD): $(Get-Random -Min 3 -Max 15) minutes
+Time to Mitigate (TTM): $(Get-Random -Min 15 -Max 60) minutes
+
+==============================================================================
+IMPACT ASSESSMENT
+==============================================================================
+Users Affected: Approximately $(Get-Random -Min 500 -Max 50000) active users
+
+Business Impact:
+- $(Get-Random -Min 100 -Max 5000) failed transactions (estimated revenue loss: $(Get-RandomCurrency -Min 5000 -Max 500000))
+- Customer support received $(Get-Random -Min 20 -Max 200) complaint tickets
+- SLA breach: Availability dropped to $(Get-Random -Min 85 -Max 99).$(Get-Random -Min 0 -Max 9)% (target: 99.9%)
+
+Affected Services:
+- Primary API Gateway (100% unavailable)
+- Web Frontend (degraded performance)
+- $(($jargonList | Get-Random)) (partial functionality)
+
+==============================================================================
+ROOT CAUSE ANALYSIS
+==============================================================================
+Primary Root Cause:
+$($RootCauses | Get-Random)
+
+Contributing Factors:
+- Insufficient monitoring on $(($jargonList | Get-Random)) metrics
+- Missing alerting threshold for disk space utilization
+- Runbook was outdated (last updated $(Get-Random -Min 6 -Max 24) months ago)
+- No automated circuit breaker to prevent cascade failure
+
+Why Did This Happen?
+The recent deployment introduced a change to $(($jargonList | Get-Random)) which increased
+memory consumption by approximately $(Get-Random -Min 30 -Max 200)%. This was not caught during
+load testing because test duration was only 15 minutes (insufficient to trigger the leak).
+
+==============================================================================
+RESOLUTION & RECOVERY
+==============================================================================
+Immediate Mitigation:
+1. Restarted all affected application pods via kubectl rollout restart
+2. Increased memory limits from $(Get-Random -Min 1 -Max 4)GB to $(Get-Random -Min 2 -Max 8)GB per pod
+3. Manually scaled replica count from $(Get-Random -Min 3 -Max 6) to $(Get-Random -Min 10 -Max 20) for redundancy
+
+Long-Term Fix:
+1. Fixed memory leak in code (merged PR #$(Get-Random -Min 1000 -Max 9999))
+2. Deployed patch to production on $(Get-RandomDate -DaysBack 2)
+3. Enhanced monitoring with new alert: "Memory usage trend increasing >10% per hour"
+
+==============================================================================
+ACTION ITEMS (Preventive Measures)
+==============================================================================
+[ASSIGNED: Engineering] Implement automated canary deployments with traffic-based rollback
+   Due: $(Get-RandomDate -DaysBack -30)
+   
+[ASSIGNED: DevOps] Add memory profiling to CI/CD pipeline (heap dump analysis)
+   Due: $(Get-RandomDate -DaysBack -20)
+   
+[ASSIGNED: SRE Team] Update runbooks with incident response procedures
+   Due: $(Get-RandomDate -DaysBack -14)
+   
+[ASSIGNED: Product] Review monitoring coverage gaps and add 10 new critical alerts
+   Due: $(Get-RandomDate -DaysBack -21)
+   
+[ASSIGNED: Engineering Manager] Conduct Game Day exercise simulating similar failure
+   Due: $(Get-RandomDate -DaysBack -45)
+
+==============================================================================
+LESSONS LEARNED
+==============================================================================
+What Went Well:
+✓ Detection was fast (3 minutes from first symptom to alert)
+✓ War room convened quickly with clear communication
+✓ Rollback procedure was well-documented and executed successfully
+
+What Went Poorly:
+✗ Load testing duration was insufficient to catch memory leak
+✗ $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
+✗ Post-deployment monitoring was passive; should have been proactive
+
+Where We Got Lucky:
+~ Incident occurred during low-traffic period (2 PM, not peak hours)
+~ Database remained healthy; otherwise recovery would have taken hours
+
+==============================================================================
+APPROVALS
+==============================================================================
+Incident Commander: ____________________  Date: $(Get-RandomDate -DaysBack 1)
+Engineering Manager: ___________________  Date: $(Get-RandomDate -DaysBack 1)
+VP Engineering: ________________________  Date: $(Get-RandomDate -DaysBack 1)
+
+Distribution: Engineering, Product, Customer Support, Executive Leadership
+"@
+    return $content
+}
+
+function New-APIDocumentationContent {
+    param($ProjectName, $DeptAcronym)
+    
+    $Methods = @("GET", "POST", "PUT", "DELETE", "PATCH")
+    $StatusCodes = @(
+        "200 OK - Request successful",
+        "201 Created - Resource created successfully",
+        "400 Bad Request - Invalid input parameters",
+        "401 Unauthorized - Authentication required",
+        "403 Forbidden - Insufficient permissions",
+        "404 Not Found - Resource does not exist",
+        "429 Too Many Requests - Rate limit exceeded",
+        "500 Internal Server Error - Server-side failure"
+    )
+    
+    $content = @"
+==============================================================================
+API DOCUMENTATION
+==============================================================================
+Project: $ProjectName
+API Version: v$(Get-Random -Min 1 -Max 3)
+Base URL: https://api.corp.local/v$(Get-Random -Min 1 -Max 3)
+Last Updated: $(Get-RandomDate -DaysBack 5)
+
+==============================================================================
+AUTHENTICATION
+==============================================================================
+All API requests require authentication via Bearer token in the Authorization header.
+
+Example:
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+To obtain a token, POST credentials to /auth/login endpoint.
+
+Rate Limiting: 1000 requests per hour per API key
+Exceeding limit returns 429 status code with Retry-After header.
+
+==============================================================================
+ENDPOINTS
+==============================================================================
+
+───────────────────────────────────────────────────────────────────────────
+$($Methods | Get-Random) /users
+───────────────────────────────────────────────────────────────────────────
+Description: Retrieve list of users with pagination support
+
+Query Parameters:
+  - page (integer, optional): Page number (default: 1)
+  - limit (integer, optional): Results per page (default: 20, max: 100)
+  - sort (string, optional): Sort field (default: "createdAt")
+  - order (string, optional): Sort order "asc" or "desc" (default: "desc")
+
+Request Example:
+  GET /users?page=2&limit=50&sort=lastName&order=asc
+
+Response (200 OK):
+  {
+    "data": [
+      {
+        "id": "usr_$(Get-RandomString -Length 16)",
+        "email": "john.doe@corp.local",
+        "firstName": "John",
+        "lastName": "Doe",
+        "role": "admin",
+        "createdAt": "$(Get-RandomDate -DaysBack 100)T10:30:00Z"
+      },
+      ...
+    ],
+    "pagination": {
+      "currentPage": 2,
+      "totalPages": 15,
+      "totalRecords": 742,
+      "hasNext": true,
+      "hasPrev": true
+    }
+  }
+
+Error Responses:
+  - $($StatusCodes | Get-Random)
+  - $($StatusCodes | Get-Random)
+
+───────────────────────────────────────────────────────────────────────────
+$($Methods | Get-Random) /users/{userId}
+───────────────────────────────────────────────────────────────────────────
+Description: Retrieve specific user by ID
+
+Path Parameters:
+  - userId (string, required): Unique user identifier
+
+Response (200 OK):
+  {
+    "id": "usr_$(Get-RandomString -Length 16)",
+    "email": "jane.smith@corp.local",
+    "firstName": "Jane",
+    "lastName": "Smith",
+    "role": "user",
+    "department": "Engineering",
+    "createdAt": "$(Get-RandomDate -DaysBack 200)T14:22:00Z",
+    "lastLogin": "$(Get-RandomDate -DaysBack 1)T09:15:00Z"
+  }
+
+───────────────────────────────────────────────────────────────────────────
+POST /users
+───────────────────────────────────────────────────────────────────────────
+Description: Create a new user
+
+Request Body:
+  {
+    "email": "newuser@corp.local",
+    "firstName": "New",
+    "lastName": "User",
+    "password": "SecureP@ssw0rd!",
+    "role": "user",
+    "department": "Marketing"
+  }
+
+Validation Rules:
+  - email: Must be valid email format, unique in system
+  - password: Minimum 12 characters, must include upper, lower, number, special char
+  - role: Must be one of: ["user", "admin", "superadmin"]
+
+Response (201 Created):
+  {
+    "id": "usr_$(Get-RandomString -Length 16)",
+    "email": "newuser@corp.local",
+    "firstName": "New",
+    "lastName": "User",
+    "role": "user",
+    "createdAt": "$(Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")"
+  }
+
+───────────────────────────────────────────────────────────────────────────
+$($Methods | Get-Random) /projects/{projectId}/tasks
+───────────────────────────────────────────────────────────────────────────
+Description: Retrieve tasks associated with a project
+
+Path Parameters:
+  - projectId (string, required): Project identifier
+
+Query Parameters:
+  - status (string, optional): Filter by status ["open", "in_progress", "completed"]
+  - assignee (string, optional): Filter by assigned user ID
+
+Response (200 OK):
+  {
+    "projectId": "prj_$(Get-RandomString -Length 16)",
+    "tasks": [
+      {
+        "id": "tsk_$(Get-RandomString -Length 16)",
+        "title": "Implement user authentication",
+        "description": "Add JWT-based authentication to API",
+        "status": "in_progress",
+        "priority": "high",
+        "assignee": {
+          "id": "usr_$(Get-RandomString -Length 16)",
+          "name": "John Doe"
+        },
+        "dueDate": "$(Get-RandomDate -DaysBack -7)",
+        "createdAt": "$(Get-RandomDate -DaysBack 30)T10:00:00Z"
+      }
+    ]
+  }
+
+==============================================================================
+WEBHOOKS
+==============================================================================
+The API supports webhooks for real-time event notifications.
+
+Available Events:
+  - user.created
+  - user.updated
+  - user.deleted
+  - project.status_changed
+  - task.completed
+
+Webhook Payload Example:
+  POST to your configured endpoint:
+  {
+    "event": "user.created",
+    "timestamp": "$(Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")",
+    "data": {
+      "userId": "usr_$(Get-RandomString -Length 16)",
+      "email": "newuser@corp.local"
+    }
+  }
+
+==============================================================================
+ERROR HANDLING
+==============================================================================
+All error responses follow this format:
+  {
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "Email address is already in use",
+      "field": "email",
+      "timestamp": "$(Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")"
+    }
+  }
+
+Common Error Codes:
+  - VALIDATION_ERROR: Input validation failed
+  - AUTHENTICATION_ERROR: Invalid or expired token
+  - AUTHORIZATION_ERROR: Insufficient permissions
+  - NOT_FOUND: Requested resource does not exist
+  - RATE_LIMIT_EXCEEDED: Too many requests
+  - INTERNAL_ERROR: Server-side failure
+
+==============================================================================
+CODE EXAMPLES
+==============================================================================
+
+Python:
+  import requests
+  
+  headers = {"Authorization": "Bearer YOUR_API_KEY"}
+  response = requests.get("https://api.corp.local/v1/users", headers=headers)
+  users = response.json()
+
+JavaScript (Node.js):
+  const axios = require('axios');
+  
+  const response = await axios.get('https://api.corp.local/v1/users', {
+    headers: { 'Authorization': 'Bearer YOUR_API_KEY' }
+  });
+  console.log(response.data);
+
+cURL:
+  curl -X GET https://api.corp.local/v1/users \\
+    -H "Authorization: Bearer YOUR_API_KEY"
+
+==============================================================================
+SUPPORT
+==============================================================================
+For API support, contact: api-support@corp.local
+Swagger/OpenAPI spec: https://api.corp.local/v1/swagger.json
+Status page: https://status.corp.local
+"@
+    return $content
+}
+
 # ==============================================================================
 # SECTION 4: FILE WRITING LOGIC
 # ==============================================================================
+
+function New-ProjectFile {
+    param(
+        [string]$FolderPath,
+        [string]$ProjectName,
+        [string]$DepartmentAcronym = "General",
+        [array]$TeamMembers = @()
+    )
+    
+    $FileTypeRoll = Get-Random -Minimum 1 -Maximum 100
+    
+    $DeptFull = $DepartmentAcronym
+    if ($global:DepartmentContexts.ContainsKey($DepartmentAcronym)) {
+        $DeptFull = $global:DepartmentContexts[$DepartmentAcronym].FullName
+    }
+    
+    $FileName = ""
+    $Ext = ""
+    $Content = ""
+    $UseFsutil = $false
+    
+    # Project-specific file types with higher variety
+    if ($FileTypeRoll -le 15) {
+        # Sprint Retrospective
+        $Ext = ".txt"
+        $sprintNum = Get-Random -Min 1 -Max 30
+        $FileName = "Sprint_${sprintNum}_Retrospective_$(Get-RandomDate -DaysBack 14)"
+        $Content = New-SprintRetrospectiveContent -ProjectName $ProjectName -DeptAcronym $DepartmentAcronym -TeamMembers $TeamMembers
+    }
+    elseif ($FileTypeRoll -le 30) {
+        # Daily Standup Notes
+        $Ext = ".txt"
+        $FileName = "Standup_Notes_$(Get-RandomDate -DaysBack 5)"
+        $Content = New-StandupNotesContent -ProjectName $ProjectName -DeptAcronym $DepartmentAcronym -TeamMembers $TeamMembers
+    }
+    elseif ($FileTypeRoll -le 40) {
+        # Bug Report / Issue
+        $Ext = ".md"
+        $FileName = "BUG-$(Get-Random -Min 1000 -Max 9999)_$(Get-RandomDate -DaysBack 10)"
+        $Content = New-BugReportContent -ProjectName $ProjectName -DeptAcronym $DepartmentAcronym
+    }
+    elseif ($FileTypeRoll -le 50) {
+        # Technical Design Document
+        $Ext = ".md"
+        $FileName = "Technical_Design_${ProjectName}_v$(Get-Random -Min 1 -Max 5)"
+        $Content = New-TechnicalDesignDocContent -ProjectName $ProjectName -DeptAcronym $DepartmentAcronym
+    }
+    elseif ($FileTypeRoll -le 60) {
+        # Deployment Plan
+        $Ext = ".txt"
+        $FileName = "Deployment_Runbook_v$(Get-Random -Min 1 -Max 20)"
+        $Content = New-DeploymentPlanContent -ProjectName $ProjectName
+    }
+    elseif ($FileTypeRoll -le 68) {
+        # Incident Report 
+        $Ext = ".md"
+        $FileName = "INCIDENT_INC-$(Get-Random -Min 10000 -Max 99999)_PostMortem"
+        $Content = New-IncidentReportContent -ProjectName $ProjectName -DeptAcronym $DepartmentAcronym
+    }
+    elseif ($FileTypeRoll -le 75) {
+        # API Documentation
+        $Ext = ".md"
+        $FileName = "API_Documentation_${ProjectName}"
+        $Content = New-APIDocumentationContent -ProjectName $ProjectName -DeptAcronym $DepartmentAcronym
+    }
+    elseif ($FileTypeRoll -le 82) {
+        # Project Spec (now pass ProjectName)
+        $Ext = ".docx.md"
+        $FileName = "Project_Charter_${ProjectName}"
+        $Content = New-ProjectSpecContent -DeptFullName $DeptFull -DeptAcronym $DepartmentAcronym -ProjectName $ProjectName
+    }
+    elseif ($FileTypeRoll -le 88) {
+        # Meeting Minutes (project-specific)
+        $Ext = ".txt"
+        $FileName = "${ProjectName}_Meeting_Minutes_$(Get-RandomDate -DaysBack 20)"
+        $Content = New-MeetingMinutesContent -DeptFullName $DeptFull -DeptAcronym $DepartmentAcronym
+    }
+    elseif ($FileTypeRoll -le 93) {
+        # Financial / Budget tracking
+        $Ext = ".csv"
+        $FileName = "${ProjectName}_Budget_Tracking_Q$(Get-Random -Min 1 -Max 4)"
+        $Content = New-FinancialReportCSV
+    }
+    else {
+        # Binary project artifacts (builds, diagrams, etc.)
+        $UseFsutil = $true
+        $Ext = @('.pdf', '.pptx', '.xlsx', '.zip', '.png', '.vsdx') | Get-Random
+        $FileName = "${ProjectName}_Artifact_$(Get-RandomString -Length 8)"
+    }
+    
+    $FullPath = Join-Path $FolderPath ($FileName + $Ext)
+    
+    if ($UseFsutil) {
+        $SizeInBytes = Get-Random -Minimum 524288 -Maximum 10485760 # 512KB to 10MB
+        try {
+            $null = Invoke-Expression "fsutil file createnew `"$FullPath`" $SizeInBytes"
+        } catch {
+            "binary project artifact" | Out-File -Path $FullPath
+        }
+    } else {
+        Set-Content -Path $FullPath -Value $Content -Encoding UTF8
+    }
+}
 
 function New-DynamicFile {
     param(
@@ -769,9 +1884,117 @@ foreach ($DeptAcronym in $Departments) {
     $DeptPath = Join-Path $DepartmentsPath $FolderName
     New-Item -Path $DeptPath -ItemType Directory -Force | Out-Null
     
+    # Generate files directly in the department root
     $NumFiles = Get-Random -Minimum ($MaxFilesPerFolder/2) -Maximum $MaxFilesPerFolder
     for ($i=0; $i -lt $NumFiles; $i++) {
         New-DynamicFile -FolderPath $DeptPath -DepartmentAcronym $DeptAcronym
+    }
+    
+    # --- POPULATE PROJECT FOLDERS BASED ON AD GROUPS ---
+    Write-Host "[*] Creating Project Folders for Department: $FolderName" -ForegroundColor Cyan
+    
+    # Find groups that match this department (by name or description)
+    $DeptGroups = @()
+    if ($global:AllADGroups.Count -gt 0) {
+        $DeptGroups = $global:AllADGroups | Where-Object { 
+            $_.Name -match $DeptAcronym -or 
+            $_.Description -match $DeptAcronym -or
+            $_.Description -match $FolderName
+        }
+    }
+    
+    # If no groups match, create some synthetic project folders
+    if ($DeptGroups.Count -eq 0) {
+        Write-Verbose "No AD groups found for $DeptAcronym, creating synthetic project folders"
+        $ProjectNames = @(
+            "$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)",
+            "$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)",
+            "$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)"
+        )
+        foreach ($ProjName in $ProjectNames) {
+            $SafeProjName = $ProjName -replace '[<>:"/\\|?*]', '_'
+            $ProjectPath = Join-Path $DeptPath $SafeProjName
+            New-Item -Path $ProjectPath -ItemType Directory -Force | Out-Null
+            
+            # Generate synthetic team members for the project
+            $SyntheticTeam = @()
+            for ($t=0; $t -lt (Get-Random -Min 3 -Max 7); $t++) {
+                $SyntheticTeam += (Get-FakeUser).Name
+            }
+            
+            $NumProjFiles = Get-Random -Minimum 8 -Maximum $MaxFilesPerFolder
+            for ($j=0; $j -lt $NumProjFiles; $j++) {
+                New-ProjectFile -FolderPath $ProjectPath -ProjectName $SafeProjName -DepartmentAcronym $DeptAcronym -TeamMembers $SyntheticTeam
+            }
+        }
+    } else {
+        # Create project folders based on actual AD groups
+        foreach ($Group in $DeptGroups) {
+            $SafeGroupName = $Group.Name -replace '[<>:"/\\|?*]', '_'
+            $ProjectPath = Join-Path $DeptPath $SafeGroupName
+            New-Item -Path $ProjectPath -ItemType Directory -Force | Out-Null
+            Write-Verbose "Created project folder: $SafeGroupName"
+            
+            # Get actual team members from the group
+            $TeamMemberNames = @()
+            try {
+                $GroupMembers = Get-ADGroupMember -Identity $Group.SamAccountName -ErrorAction SilentlyContinue
+                if ($GroupMembers) {
+                    $TeamMemberNames = $GroupMembers | ForEach-Object { $_.Name }
+                    
+                    # Create a detailed group roster/membership file
+                    $RosterContent = @("=" * 78)
+                    $RosterContent += "PROJECT TEAM ROSTER"
+                    $RosterContent += "=" * 78
+                    $RosterContent += "Group: $($Group.Name)"
+                    $RosterContent += "Description: $($Group.Description)"
+                    $RosterContent += "Created: $(Get-RandomDate -DaysBack 365)"
+                    $RosterContent += "Manager: $(if ($Group.ManagedBy) { (Get-ADUser -Identity $Group.ManagedBy -ErrorAction SilentlyContinue).Name } else { "Not Assigned" })"
+                    $RosterContent += ""
+                    $RosterContent += "TEAM MEMBERS (Total: $($GroupMembers.Count))"
+                    $RosterContent += "-" * 78
+                    
+                    foreach ($Member in $GroupMembers) {
+                        try {
+                            $UserDetails = Get-ADUser -Identity $Member.SamAccountName -Properties Title, Department, EmailAddress -ErrorAction SilentlyContinue
+                            if ($UserDetails) {
+                                $RosterContent += "Name: $($UserDetails.Name)"
+                                $RosterContent += "  Title: $($UserDetails.Title)"
+                                $RosterContent += "  Department: $($UserDetails.Department)"
+                                $RosterContent += "  Email: $($UserDetails.EmailAddress)"
+                                $RosterContent += "  Username: $($UserDetails.SamAccountName)"
+                                $RosterContent += ""
+                            } else {
+                                $RosterContent += "- $($Member.Name) ($($Member.SamAccountName))"
+                            }
+                        } catch {
+                            $RosterContent += "- $($Member.Name) ($($Member.SamAccountName))"
+                        }
+                    }
+                    
+                    $RosterContent += "=" * 78
+                    $RosterContent += "RESPONSIBILITIES & ROLES"
+                    $RosterContent += "=" * 78
+                    $RosterContent += "This project team is responsible for $(Get-CorporateIpsum -Sentences 2)"
+                    $RosterContent += ""
+                    $RosterContent += "Key Deliverables:"
+                    $RosterContent += "- $($global:ProjectSuffixes | Get-Random) for $DeptFull"
+                    $RosterContent += "- $($global:ProjectSuffixes | Get-Random) as part of Q$(Get-Random -Min 1 -Max 4) roadmap"
+                    $RosterContent += "- Regular stakeholder updates and progress reports"
+                    
+                    $RosterPath = Join-Path $ProjectPath "Team_Roster_$SafeGroupName.txt"
+                    Set-Content -Path $RosterPath -Value ($RosterContent -join "`n") -Encoding UTF8
+                }
+            } catch {
+                Write-Verbose "Could not fetch members for group $($Group.Name)"
+            }
+            
+            # Generate project-specific files using the new function
+            $NumProjFiles = Get-Random -Minimum 8 -Maximum ($MaxFilesPerFolder + 5)
+            for ($j=0; $j -lt $NumProjFiles; $j++) {
+                New-ProjectFile -FolderPath $ProjectPath -ProjectName $SafeGroupName -DepartmentAcronym $DeptAcronym -TeamMembers $TeamMemberNames
+            }
+        }
     }
 }
 

@@ -6,3 +6,4 @@
 - Integrate the IIS site with real data, sign in with real users, not just the garbage network topology and passwards and config.xmls and stuff. If it's not really how the domain is it shouldnt be here
 - BadderBloodAnswerKey should be modularized (and combined with BadderBloodGPOAnswerKey and Remediate-BadderBloodGPO)
 - Invoke-BadderBlood should run Generate-OrgChart and the modularized answer key script all in one go
+- Enable Anonymous Access for SMB
