@@ -1,7 +1,14 @@
 #Requires -Modules ActiveDirectory, GroupPolicy
 <#
 .SYNOPSIS
-    BadderBlood GPO Answer Key - Audits GPO misconfigurations deployed by Invoke-BadderBloodGPO.ps1
+    [DEPRECATED] BadderBlood GPO Answer Key - Audits GPO misconfigurations deployed by Invoke-BadderBloodGPO.ps1
+
+    THIS SCRIPT IS DEPRECATED. Its functionality has been merged into BadderBloodAnswerKey.ps1.
+    Use: .\BadderBloodAnswerKey.ps1 -IncludeGPOAnalysis
+
+    This standalone script is kept for backwards compatibility but will not receive updates.
+    The modular version in AnswerKey_Sections\AK_GPOAnalysis.ps1 is the maintained version.
+
 .DESCRIPTION
     Scans all domain GPOs for common security misconfigurations and generates a detailed
     answer key matching the format of BadderBloodAnswerKey.ps1. Reports include:

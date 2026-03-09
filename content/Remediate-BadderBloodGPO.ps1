@@ -1,7 +1,14 @@
 #Requires -Modules ActiveDirectory, GroupPolicy
 <#
 .SYNOPSIS
-    BadderBlood GPO Remediation - Fixes all insecure GPO configurations
+    [DEPRECATED] BadderBlood GPO Remediation - Fixes all insecure GPO configurations
+
+    THIS SCRIPT IS DEPRECATED. Its functionality has been merged into BadderBloodAnswerKey.ps1.
+    Use: .\BadderBloodAnswerKey.ps1 -IncludeGPOAnalysis -IncludeGPORemediation [-ApplyGPORemediation] [-BackupGPOs]
+
+    This standalone script is kept for backwards compatibility but will not receive updates.
+    The modular version in AnswerKey_Sections\AK_GPORemediation.ps1 is the maintained version.
+
 .DESCRIPTION
     Remediates GPO misconfigurations deployed by Invoke-BadderBloodGPO.ps1. Can operate in
     two modes:
