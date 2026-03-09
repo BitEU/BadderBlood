@@ -7,3 +7,4 @@
 - BadderBloodAnswerKey should be modularized (and combined with BadderBloodGPOAnswerKey and Remediate-BadderBloodGPO)
 - Invoke-BadderBlood should run Generate-OrgChart and the modularized answer key script all in one go
 - Enable Anonymous Access for SMB
+- Randomly generate SQL table data rather than hardcoded

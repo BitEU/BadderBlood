@@ -2466,6 +2466,17 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\\%LOGO
     Set-Content -Path $logonBat -Value $logonContent -Encoding ASCII
     Write-Host "[+] logon.bat deployed to NETLOGON" -ForegroundColor Green
 
+    # Set ScriptPath on built-in accounts excluded from the user loop (Administrator, etc.)
+    # so they also get the personalised wallpaper on logon.
+    foreach ($builtIn in @('Administrator')) {
+        try {
+            Set-ADUser -Identity $builtIn -ScriptPath 'logon.bat' -ErrorAction Stop
+            Write-Host "[+] ScriptPath set on $builtIn" -ForegroundColor Green
+        } catch {
+            Write-Verbose "Could not set ScriptPath on ${builtIn}: $_"
+        }
+    }
+
 } else {
     Write-Warning "NETLOGON scripts path not found at '$netlogonPath' - logon scripts not deployed"
 }
