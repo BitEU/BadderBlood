@@ -62,3 +62,17 @@ Please note: all tools/ scripts in this repo are released for use "AS IS" withou
 Any use of these scripts and tools is at your own risk. There is no guarantee that they have been through thorough testing in a comparable environment and we are not responsible for any damage or data loss or time loss incurred with their use.
 
 You are responsible for reviewing and testing any scripts you run thoroughly before use in any non-testing environment.  This tool is not designed for a production environment.
+
+
+
+Prevent no missing managers (I suggest 1500):
+
+
+percentile	accounts required
+50 % (median)	787
+75 %	912
+90 %	1 056
+95 %	1 163
+99 %	1 401
+maximum seen (50 000 trials)	2 575
+(mean ≈ 818)
