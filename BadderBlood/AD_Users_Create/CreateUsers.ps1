@@ -299,7 +299,7 @@ Function CreateUser {
         catch { $targetOU = "OU=$tier,$dn" }
 
         $description = "Service Account - $dept - Created by BadderBlood"
-        $pwd = New-SWRandomPassword -MinPasswordLength 22 -MaxPasswordLength 25
+        $pwd = New-SWRandomPassword -MinPasswordLength 8 -MaxPasswordLength 12
 
         $pwdLeak = Get-Random -Minimum 1 -Maximum 101
         if ($pwdLeak -le 5) {
@@ -439,7 +439,7 @@ Function CreateUser {
         }
 
         # ---- PASSWORD ----
-        $pwd = New-SWRandomPassword -MinPasswordLength 22 -MaxPasswordLength 25
+        $pwd = New-SWRandomPassword -MinPasswordLength 8 -MaxPasswordLength 12
         $description = "Created with BadderBlood"
 
         $pwdLeak = Get-Random -Minimum 1 -Maximum 1001

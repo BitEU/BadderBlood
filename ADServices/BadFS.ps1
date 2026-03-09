@@ -2430,11 +2430,21 @@ try {
                    Select-Object -ExpandProperty IPAddress) -join ', '
     if (-not $ipAddrs) { $ipAddrs = (ipconfig | Select-String 'IPv4' | ForEach-Object { ($_ -split ':')[1].Trim() }) -join ', ' }
 
-    $adUser = $null
-    try { $adUser = Get-ADUser $username -Properties DisplayName,Title,Department -ErrorAction Stop } catch {}
-    $displayName = if ($adUser.DisplayName) { $adUser.DisplayName } else { $username }
-    $title       = if ($adUser.Title)       { $adUser.Title }       else { '' }
-    $dept        = if ($adUser.Department)  { $adUser.Department }  else { '' }
+    $displayName = $username
+    $title       = ''
+    $dept        = ''
+    try {
+        $searcher = New-Object DirectoryServices.DirectorySearcher
+        $searcher.Filter = "(&(objectClass=user)(sAMAccountName=$username))"
+        $searcher.PropertiesToLoad.AddRange(@('displayName','title','department'))
+        $result = $searcher.FindOne()
+        if ($result) {
+            $p = $result.Properties
+            if ($p['displayName'])  { $displayName = $p['displayName'][0] }
+            if ($p['title'])        { $title       = $p['title'][0] }
+            if ($p['department'])   { $dept        = $p['department'][0] }
+        }
+    } catch {}
 
     $lines = @(
         "User:        $displayName ($username)"
