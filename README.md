@@ -36,6 +36,13 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 ```.\qemu-system-x86_64.exe -m 16G -smp 8,sockets=1,cores=8,threads=1 -cpu Haswell-v4,vendor=GenuineIntel,+hypervisor,+kvm_pv_unhalt -machine q35 -accel whpx -drive file="C:\Users\wcdaht-srs\Downloads\ws2022.qcow2",format=qcow2,if=virtio -vga std -net nic,model=e1000 -net user,hostfwd=tcp::3390-:3389```
 7. Now you can rdp into it via localhost:3390
 
+
+## Math
+
+~35sec per dept folder (~6-7.5min with CORP folder)
+~20sec per 10 user folders ()
+
+
 ## Nuking your AD (Just use snapshots instead, really dont do this)
 
 If you want to nuke AD:
