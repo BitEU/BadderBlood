@@ -30,12 +30,16 @@ function Invoke-AKReportGeneration {
     #>
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [array]$AllFindings,
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [array]$PrivGroupReport,
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [array]$BadderBloodUsers,
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [array]$BadderBloodGroups,
         [array]$Computers = @(),
         [array]$AllComputers = @(),
