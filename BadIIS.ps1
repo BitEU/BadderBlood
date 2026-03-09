@@ -638,6 +638,9 @@ Set-WebConfigurationProperty -Filter /system.webServer/directoryBrowse -Name ena
 # credentials sent by the user will be Base64 encoded, NOT encrypted. 
 # This makes them trivial to capture via packet sniffing (Wireshark) or MITM attacks.
 Write-Log "Applying Misconfig: Enabling Basic Authentication globally over HTTP" "VULN"
+# Unlock the section so it can be modified at the site level. Without this the
+# Set-WebConfigurationProperty call will fail because the section is locked by default.
+Unlock-WebConfiguration -Filter "system.webServer/security/authentication/basicAuthentication" -PSPath "MACHINE/WEBROOT/APPHOST" | Out-Null
 Set-WebConfigurationProperty -Filter /system.webServer/security/authentication/basicAuthentication -Name enabled -Value True -PSPath "IIS:\Sites\$siteName"
 
 # Optional: Disable Anonymous Auth to force a login prompt for the entire site
