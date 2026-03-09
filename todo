@@ -6,5 +6,6 @@
 - Integrate the IIS site with real data, sign in with real users, not just the garbage network topology and passwards and config.xmls and stuff. If it's not really how the domain is it shouldnt be here
 - Invoke-BadderBlood should run Generate-OrgChart and the modularized answer key script all in one go
 - Enable Anonymous Access for SMB
-- Randomly generate SQL table data rather than hardcoded
-- People's compensation for the Corp CSV and SQL system should probably be based on a range based on their 1-8 corporate level
+- (DONE) Randomly generate SQL table data rather than hardcoded
+- (DONE) People's compensation for the Corp CSV and SQL system should probably be based on a range based on their 1-8 corporate level
+- (DONE) Merged jobtitles.csv and org_hierarchy.csv into single file (jobtitles.csv now has ReportsTo column)

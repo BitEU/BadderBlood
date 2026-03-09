@@ -1,148 +1,148 @@
-Acronym,Title,Level,MaxCount
-CORP,Chief Executive Officer,1,1
-CORP,Chief Operating Officer,2,1
-FIN,Chief Financial Officer,2,1
-SEC,Chief Information Security Officer,2,1
-ITS,Chief Information Officer,2,1
-OGC,General Counsel,2,1
-HRE,Chief People Officer,2,1
-BDE,Chief Revenue Officer,2,1
-BDE,VP of Business Development,3,2
-BDE,Regional Sales Director,4,4
-BDE,Director of Sales,4,4
-BDE,Sales Manager,5,12
-BDE,Senior Account Executive,6,0
-BDE,Senior Sales Engineer,6,0
-BDE,Sales Team Lead,7,0
-BDE,Sales Engineering Lead,7,0
-BDE,Account Executive,8,0
-BDE,Business Development Representative,8,0
-BDE,Sales Engineer,8,0
-BDE,Channel Partner Manager,8,0
-HRE,VP of Human Resources,3,1
-HRE,Director of Human Resources,4,2
-HRE,HR Business Partner,5,6
-HRE,HR Manager,5,6
-HRE,Senior HR Business Partner,6,0
-HRE,Senior HR Manager,6,0
-HRE,HR Team Lead,7,0
-HRE,HR Operations Lead,7,0
-HRE,Recruiter,8,0
-HRE,Talent Acquisition Specialist,8,0
-HRE,HR Coordinator,8,0
-HRE,Benefits Administrator,8,0
-HRE,Compensation Analyst,8,0
-HRE,HR Generalist,8,0
-FIN,VP of Finance,3,1
-FIN,Director of Finance,4,2
-FIN,Controller,5,5
-FIN,Finance Manager,5,5
-FIN,Senior Controller,6,0
-FIN,Senior Finance Manager,6,0
-FIN,Accounting Team Lead,7,0
-FIN,Finance Team Lead,7,0
-FIN,Financial Analyst,8,0
-FIN,Staff Accountant,8,0
-FIN,Payroll Specialist,8,0
-FIN,Accounts Payable Clerk,8,0
-FIN,Budget Analyst,8,0
-OGC,Deputy General Counsel,3,1
-OGC,Senior Counsel,4,3
-OGC,Associate Counsel,5,6
-OGC,Compliance Officer,5,5
-OGC,Senior Associate Counsel,6,0
-OGC,Senior Compliance Officer,6,0
-OGC,Legal Team Lead,7,0
-OGC,Compliance Team Lead,7,0
-OGC,Contract Administrator,8,0
-OGC,Legal Aide,8,0
-OGC,Paralegal,8,0
-FSR,VP of Field Operations,3,1
-FSR,Director of Field Services,4,2
-FSR,Field Operations Supervisor,5,6
-FSR,Service Delivery Manager,5,6
-FSR,Senior Field Supervisor,6,0
-FSR,Senior Service Delivery Coordinator,6,0
-FSR,Field Team Lead,7,0
-FSR,Service Delivery Lead,7,0
-FSR,Senior Field Engineer,8,0
-FSR,Field Service Technician,8,0
-FSR,Remote Support Specialist,8,0
-FSR,Installation Technician,8,0
-FSR,Dispatch Coordinator,8,0
-AWS,VP of Cloud Engineering,3,1
-AWS,Director of Cloud Infrastructure,4,2
-AWS,AWS Engineering Manager,5,5
-AWS,Senior AWS Engineer,6,0
-AWS,AWS Team Lead,7,0
-AWS,AWS Cloud Engineer,8,0
-AWS,AWS Solutions Architect,8,0
-AWS,AWS DevOps Engineer,8,0
-AWS,AWS Cloud Security Engineer,8,0
-AWS,AWS Site Reliability Engineer,8,0
-AWS,AWS Platform Engineer,8,0
-ESM,Director of Endpoint Management,4,1
-ESM,Endpoint Management Manager,5,4
-ESM,Senior Endpoint Manager,6,0
-ESM,Endpoint Team Lead,7,0
-ESM,Senior Endpoint Administrator,8,0
-ESM,Endpoint Administrator,8,0
-ESM,Desktop Support Technician,8,0
-ESM,SCCM Administrator,8,0
-ESM,Intune Administrator,8,0
-ESM,Patch Management Specialist,8,0
-ESM,Imaging Technician,8,0
-SEC,VP of Information Security,3,1
-SEC,Director of Security Operations,4,2
-SEC,Security Manager,5,5
-SEC,Security Architect,5,5
-SEC,Senior Security Manager,6,0
-SEC,Senior Security Architect,6,0
-SEC,SOC Team Lead,7,0
-SEC,Security Engineering Lead,7,0
-SEC,SOC Analyst,8,0
-SEC,Security Engineer,8,0
-SEC,Threat Hunter,8,0
-SEC,Incident Responder,8,0
-SEC,Penetration Tester,8,0
-SEC,GRC Analyst,8,0
-ITS,VP of Information Technology,3,1
-ITS,IT Director,4,2
-ITS,IT Manager,5,6
-ITS,Service Desk Lead,5,6
-ITS,Senior IT Manager,6,0
-ITS,Senior Service Desk Lead,6,0
-ITS,IT Team Lead,7,0
-ITS,Service Desk Team Lead,7,0
-ITS,Systems Administrator,8,0
-ITS,Network Engineer,8,0
-ITS,Helpdesk Analyst,8,0
-ITS,Database Administrator,8,0
-ITS,Infrastructure Engineer,8,0
-GOO,Director of Google Cloud,4,1
-GOO,GCP Engineering Manager,5,4
-GOO,Senior GCP Engineer,6,0
-GOO,GCP Team Lead,7,0
-GOO,GCP Cloud Engineer,8,0
-GOO,GCP Solutions Architect,8,0
-GOO,GCP DevOps Engineer,8,0
-GOO,GCP Cloud Security Engineer,8,0
-GOO,GCP Site Reliability Engineer,8,0
-GOO,GCP Platform Engineer,8,0
-AZR,Director of Azure Operations,4,1
-AZR,Azure Engineering Manager,5,4
-AZR,Senior Azure Engineer,6,0
-AZR,Azure Team Lead,7,0
-AZR,Azure Cloud Engineer,8,0
-AZR,Azure Solutions Architect,8,0
-AZR,Azure DevOps Engineer,8,0
-AZR,Azure Cloud Security Engineer,8,0
-AZR,Azure Site Reliability Engineer,8,0
-AZR,Azure Platform Engineer,8,0
-TST,QA Lead,5,4
-TST,Senior QA Lead,6,0
-TST,QA Team Lead,7,0
-TST,Automation Engineer,8,0
-TST,QA Analyst,8,0
-TST,Test Engineer,8,0
-TST,Performance Tester,8,0
+Acronym,Title,Level,MaxCount,ReportsTo
+CORP,Chief Executive Officer,1,1,
+CORP,Chief Operating Officer,2,1,Chief Executive Officer
+FIN,Chief Financial Officer,2,1,Chief Executive Officer
+SEC,Chief Information Security Officer,2,1,Chief Executive Officer
+ITS,Chief Information Officer,2,1,Chief Executive Officer
+OGC,General Counsel,2,1,Chief Executive Officer
+HRE,Chief People Officer,2,1,Chief Executive Officer
+BDE,Chief Revenue Officer,2,1,Chief Executive Officer
+BDE,VP of Business Development,3,2,Chief Revenue Officer
+BDE,Regional Sales Director,4,4,VP of Business Development
+BDE,Director of Sales,4,4,VP of Business Development
+BDE,Sales Manager,5,12,Director of Sales
+BDE,Senior Account Executive,6,0,Sales Manager
+BDE,Senior Sales Engineer,6,0,Sales Manager
+BDE,Sales Team Lead,7,0,Senior Account Executive
+BDE,Sales Engineering Lead,7,0,Senior Sales Engineer
+BDE,Account Executive,8,0,Sales Team Lead
+BDE,Business Development Representative,8,0,Sales Team Lead
+BDE,Sales Engineer,8,0,Sales Engineering Lead
+BDE,Channel Partner Manager,8,0,Sales Team Lead
+HRE,VP of Human Resources,3,1,Chief People Officer
+HRE,Director of Human Resources,4,2,VP of Human Resources
+HRE,HR Business Partner,5,6,Director of Human Resources
+HRE,HR Manager,5,6,Director of Human Resources
+HRE,Senior HR Business Partner,6,0,HR Business Partner
+HRE,Senior HR Manager,6,0,HR Manager
+HRE,HR Team Lead,7,0,Senior HR Business Partner
+HRE,HR Operations Lead,7,0,Senior HR Manager
+HRE,Recruiter,8,0,HR Team Lead
+HRE,Talent Acquisition Specialist,8,0,HR Team Lead
+HRE,HR Coordinator,8,0,HR Operations Lead
+HRE,Benefits Administrator,8,0,HR Operations Lead
+HRE,Compensation Analyst,8,0,HR Operations Lead
+HRE,HR Generalist,8,0,HR Team Lead
+FIN,VP of Finance,3,1,Chief Financial Officer
+FIN,Director of Finance,4,2,VP of Finance
+FIN,Controller,5,5,Director of Finance
+FIN,Finance Manager,5,5,Director of Finance
+FIN,Senior Controller,6,0,Controller
+FIN,Senior Finance Manager,6,0,Finance Manager
+FIN,Accounting Team Lead,7,0,Senior Controller
+FIN,Finance Team Lead,7,0,Senior Finance Manager
+FIN,Financial Analyst,8,0,Finance Team Lead
+FIN,Staff Accountant,8,0,Accounting Team Lead
+FIN,Payroll Specialist,8,0,Accounting Team Lead
+FIN,Accounts Payable Clerk,8,0,Accounting Team Lead
+FIN,Budget Analyst,8,0,Finance Team Lead
+OGC,Deputy General Counsel,3,1,General Counsel
+OGC,Senior Counsel,4,3,Deputy General Counsel
+OGC,Associate Counsel,5,6,Senior Counsel
+OGC,Compliance Officer,5,5,Senior Counsel
+OGC,Senior Associate Counsel,6,0,Associate Counsel
+OGC,Senior Compliance Officer,6,0,Compliance Officer
+OGC,Legal Team Lead,7,0,Senior Associate Counsel
+OGC,Compliance Team Lead,7,0,Senior Compliance Officer
+OGC,Contract Administrator,8,0,Legal Team Lead
+OGC,Legal Aide,8,0,Legal Team Lead
+OGC,Paralegal,8,0,Legal Team Lead
+FSR,VP of Field Operations,3,1,Chief Operating Officer
+FSR,Director of Field Services,4,2,VP of Field Operations
+FSR,Field Operations Supervisor,5,6,Director of Field Services
+FSR,Service Delivery Manager,5,6,Director of Field Services
+FSR,Senior Field Supervisor,6,0,Field Operations Supervisor
+FSR,Senior Service Delivery Coordinator,6,0,Service Delivery Manager
+FSR,Field Team Lead,7,0,Senior Field Supervisor
+FSR,Service Delivery Lead,7,0,Senior Service Delivery Coordinator
+FSR,Senior Field Engineer,8,0,Field Team Lead
+FSR,Field Service Technician,8,0,Field Team Lead
+FSR,Remote Support Specialist,8,0,Service Delivery Lead
+FSR,Installation Technician,8,0,Field Team Lead
+FSR,Dispatch Coordinator,8,0,Service Delivery Lead
+AWS,VP of Cloud Engineering,3,1,Chief Information Officer
+AWS,Director of Cloud Infrastructure,4,2,VP of Cloud Engineering
+AWS,AWS Engineering Manager,5,5,Director of Cloud Infrastructure
+AWS,Senior AWS Engineer,6,0,AWS Engineering Manager
+AWS,AWS Team Lead,7,0,Senior AWS Engineer
+AWS,AWS Cloud Engineer,8,0,AWS Team Lead
+AWS,AWS Solutions Architect,8,0,AWS Team Lead
+AWS,AWS DevOps Engineer,8,0,AWS Team Lead
+AWS,AWS Cloud Security Engineer,8,0,AWS Team Lead
+AWS,AWS Site Reliability Engineer,8,0,AWS Team Lead
+AWS,AWS Platform Engineer,8,0,AWS Team Lead
+ESM,Director of Endpoint Management,4,1,VP of Information Technology
+ESM,Endpoint Management Manager,5,4,Director of Endpoint Management
+ESM,Senior Endpoint Manager,6,0,Endpoint Management Manager
+ESM,Endpoint Team Lead,7,0,Senior Endpoint Manager
+ESM,Senior Endpoint Administrator,8,0,Endpoint Team Lead
+ESM,Endpoint Administrator,8,0,Endpoint Team Lead
+ESM,Desktop Support Technician,8,0,Endpoint Team Lead
+ESM,SCCM Administrator,8,0,Endpoint Team Lead
+ESM,Intune Administrator,8,0,Endpoint Team Lead
+ESM,Patch Management Specialist,8,0,Endpoint Team Lead
+ESM,Imaging Technician,8,0,Endpoint Team Lead
+SEC,VP of Information Security,3,1,Chief Information Security Officer
+SEC,Director of Security Operations,4,2,VP of Information Security
+SEC,Security Manager,5,5,Director of Security Operations
+SEC,Security Architect,5,5,Director of Security Operations
+SEC,Senior Security Manager,6,0,Security Manager
+SEC,Senior Security Architect,6,0,Security Architect
+SEC,SOC Team Lead,7,0,Senior Security Manager
+SEC,Security Engineering Lead,7,0,Senior Security Architect
+SEC,SOC Analyst,8,0,SOC Team Lead
+SEC,Security Engineer,8,0,Security Engineering Lead
+SEC,Threat Hunter,8,0,SOC Team Lead
+SEC,Incident Responder,8,0,SOC Team Lead
+SEC,Penetration Tester,8,0,Security Engineering Lead
+SEC,GRC Analyst,8,0,Security Engineering Lead
+ITS,VP of Information Technology,3,1,Chief Information Officer
+ITS,IT Director,4,2,VP of Information Technology
+ITS,IT Manager,5,6,IT Director
+ITS,Service Desk Lead,5,6,IT Director
+ITS,Senior IT Manager,6,0,IT Manager
+ITS,Senior Service Desk Lead,6,0,Service Desk Lead
+ITS,IT Team Lead,7,0,Senior IT Manager
+ITS,Service Desk Team Lead,7,0,Senior Service Desk Lead
+ITS,Systems Administrator,8,0,IT Team Lead
+ITS,Network Engineer,8,0,IT Team Lead
+ITS,Helpdesk Analyst,8,0,Service Desk Team Lead
+ITS,Database Administrator,8,0,IT Team Lead
+ITS,Infrastructure Engineer,8,0,IT Team Lead
+GOO,Director of Google Cloud,4,1,VP of Cloud Engineering
+GOO,GCP Engineering Manager,5,4,Director of Google Cloud
+GOO,Senior GCP Engineer,6,0,GCP Engineering Manager
+GOO,GCP Team Lead,7,0,Senior GCP Engineer
+GOO,GCP Cloud Engineer,8,0,GCP Team Lead
+GOO,GCP Solutions Architect,8,0,GCP Team Lead
+GOO,GCP DevOps Engineer,8,0,GCP Team Lead
+GOO,GCP Cloud Security Engineer,8,0,GCP Team Lead
+GOO,GCP Site Reliability Engineer,8,0,GCP Team Lead
+GOO,GCP Platform Engineer,8,0,GCP Team Lead
+AZR,Director of Azure Operations,4,1,VP of Cloud Engineering
+AZR,Azure Engineering Manager,5,4,Director of Azure Operations
+AZR,Senior Azure Engineer,6,0,Azure Engineering Manager
+AZR,Azure Team Lead,7,0,Senior Azure Engineer
+AZR,Azure Cloud Engineer,8,0,Azure Team Lead
+AZR,Azure Solutions Architect,8,0,Azure Team Lead
+AZR,Azure DevOps Engineer,8,0,Azure Team Lead
+AZR,Azure Cloud Security Engineer,8,0,Azure Team Lead
+AZR,Azure Site Reliability Engineer,8,0,Azure Team Lead
+AZR,Azure Platform Engineer,8,0,Azure Team Lead
+TST,QA Lead,5,4,IT Director
+TST,Senior QA Lead,6,0,QA Lead
+TST,QA Team Lead,7,0,Senior QA Lead
+TST,Automation Engineer,8,0,QA Team Lead
+TST,QA Analyst,8,0,QA Team Lead
+TST,Test Engineer,8,0,QA Team Lead
+TST,Performance Tester,8,0,QA Team Lead

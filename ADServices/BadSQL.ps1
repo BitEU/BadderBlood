@@ -160,6 +160,48 @@ $WeakPasswords = @(
 )
 
 # ==============================================================================
+# 3A2. LEVEL-BASED SALARY RANGES (from jobtitles.csv)
+# ==============================================================================
+# Load jobtitles.csv so we can derive compensation from corporate level (1-8)
+$JobTitlesCSVPath = Join-Path $PSScriptRoot "..\AD_Data\jobtitles.csv"
+$TitleLevelMap = @{}
+if (Test-Path $JobTitlesCSVPath) {
+    $csvJobs = Import-Csv $JobTitlesCSVPath
+    foreach ($j in $csvJobs) { $TitleLevelMap[$j.Title] = [int]$j.Level }
+    Write-Log "Loaded $($TitleLevelMap.Count) title-to-level mappings from jobtitles.csv" "INFO"
+}
+
+function Get-TitleLevel {
+    param([string]$Title)
+    if ($TitleLevelMap.ContainsKey($Title)) { return $TitleLevelMap[$Title] }
+    if ($Title -match '^Chief ')       { return 2 }
+    if ($Title -match '^VP ')          { return 3 }
+    if ($Title -match '^Director ')    { return 4 }
+    if ($Title -match '^Manager |Manager$') { return 5 }
+    if ($Title -match '^Senior ')      { return 6 }
+    if ($Title -match 'Lead')          { return 7 }
+    return 8
+}
+
+function Get-LevelSalary {
+    param([int]$Level)
+    $bands = @{
+        1 = @{ Min = 350000; Max = 500000; BonusMin = 25; BonusMax = 50 }
+        2 = @{ Min = 250000; Max = 400000; BonusMin = 20; BonusMax = 40 }
+        3 = @{ Min = 190000; Max = 300000; BonusMin = 15; BonusMax = 30 }
+        4 = @{ Min = 150000; Max = 230000; BonusMin = 12; BonusMax = 25 }
+        5 = @{ Min = 115000; Max = 175000; BonusMin = 8;  BonusMax = 20 }
+        6 = @{ Min = 90000;  Max = 140000; BonusMin = 5;  BonusMax = 15 }
+        7 = @{ Min = 72000;  Max = 110000; BonusMin = 3;  BonusMax = 10 }
+        8 = @{ Min = 50000;  Max = 80000;  BonusMin = 0;  BonusMax = 8  }
+    }
+    $band = if ($bands.ContainsKey($Level)) { $bands[$Level] } else { $bands[8] }
+    $salary = Get-Random -Minimum $band.Min -Maximum ($band.Max + 1)
+    $bonus  = Get-Random -Minimum $band.BonusMin -Maximum ($band.BonusMax + 1)
+    return @{ Salary = $salary; BonusPct = $bonus }
+}
+
+# ==============================================================================
 # 3B. CROSS-REFERENCE BADFS CORPSHARES DATA
 # ==============================================================================
 # BadFS generates a compensation CSV at C:\CorpShares\Public_Company_Data\ and
@@ -698,8 +740,17 @@ Invoke-Sql -Database "NailInventoryDB" @"
 IF NOT EXISTS (SELECT 1 FROM Inventory)
 INSERT INTO Inventory (NailTypeID, SupplierID, QuantityOnHand, ReorderPoint, WarehouseZone, LastAuditDate, LastAuditBy)
 SELECT nt.NailTypeID, s.SupplierID,
-       ABS(CHECKSUM(NEWID())) % 9000 + 500,
-       500, 'ZONE-' + CHAR(65 + (nt.NailTypeID % 4)),
+       -- Quantity scales with unit cost: cheaper bulk nails have higher stock
+       CASE WHEN nt.UnitCostUSD < 0.005 THEN ABS(CHECKSUM(NEWID())) % 8000 + 3000
+            WHEN nt.UnitCostUSD < 0.008 THEN ABS(CHECKSUM(NEWID())) % 5000 + 1500
+            ELSE ABS(CHECKSUM(NEWID())) % 3000 + 500 END,
+       -- Reorder point scales similarly
+       CASE WHEN nt.UnitCostUSD < 0.005 THEN 1000 + (ABS(CHECKSUM(NEWID())) % 500)
+            WHEN nt.UnitCostUSD < 0.008 THEN 500  + (ABS(CHECKSUM(NEWID())) % 300)
+            ELSE 200 + (ABS(CHECKSUM(NEWID())) % 200) END,
+       -- Zone based on material type for realistic warehouse layout
+       CASE nt.Material WHEN 'Bright Steel' THEN 'ZONE-A' WHEN 'Galvanized' THEN 'ZONE-B'
+            WHEN 'Collated' THEN 'ZONE-C' ELSE 'ZONE-D' END,
        DATEADD(day, -(ABS(CHECKSUM(NEWID())) % 90), GETDATE()),
        'svc_sql'
 FROM NailTypes nt CROSS JOIN Suppliers s
@@ -864,7 +915,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Employees'
             if ($perfMatch -and $perfMatch.Salary -and $perfMatch.Salary -gt 0) {
                 $rate = [math]::Round($perfMatch.Salary / 2080, 2)
             } else {
-                $rate = [math]::Round((Get-Random -Minimum 35000 -Maximum 145000) / 2080, 2)
+                $lvl = Get-TitleLevel -Title $title
+                $rate = [math]::Round((Get-LevelSalary -Level $lvl).Salary / 2080, 2)
             }
         }
 
@@ -1017,10 +1069,12 @@ if ($ADMode -and $ADUsers.Count -gt 0) {
             $bonus  = $fsCompLookup[$lookupKey].Bonus
         } elseif ($perfMatch -and $perfMatch.Salary) {
             $salary = $perfMatch.Salary
-            $bonus  = [math]::Round((Get-Random -Minimum 3 -Maximum 20), 2)
+            $lvlComp = Get-LevelSalary -Level (Get-TitleLevel -Title $title)
+            $bonus  = $lvlComp.BonusPct
         } else {
-            $salary = Get-Random -Minimum 45000 -Maximum 185000
-            $bonus  = [math]::Round((Get-Random -Minimum 3 -Maximum 20), 2)
+            $lvlComp = Get-LevelSalary -Level (Get-TitleLevel -Title $title)
+            $salary = $lvlComp.Salary
+            $bonus  = $lvlComp.BonusPct
         }
 
         # Add note cross-referencing the BadFS file share and perf review if they exist

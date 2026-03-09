@@ -50,8 +50,6 @@ Function CreateUser {
         [Parameter(Mandatory = $false)]
         [Object[]]$OfficeList,
         [Parameter(Mandatory = $false)]
-        [Object[]]$OrgHierarchy,
-        [Parameter(Mandatory = $false)]
         [Object[]]$ExistingUsers,
         [Parameter(Mandatory = $false)]
         [ValidateRange(0,100)]
@@ -85,10 +83,6 @@ Function CreateUser {
     if (!$PSBoundParameters.ContainsKey('OfficeList')) {
         $OfficeList = Import-Csv ($scriptparent + "\AD_Data\Offices.csv")
     }
-    if (!$PSBoundParameters.ContainsKey('OrgHierarchy')) {
-        $OrgHierarchy = Import-Csv ($scriptparent + "\AD_Data\org_hierarchy.csv")
-    }
-
     # =====================================================================
     # INITIALIZE ONE-TIME CACHES (first call only)
     # =====================================================================
@@ -110,15 +104,11 @@ Function CreateUser {
         }
         $script:_bbWeightedDepts = $wd.ToArray()
 
-        # Build hierarchy hashtable: Title -> ReportsTo (eliminates Where-Object per lookup)
+        # Build hierarchy + level hashtables from unified JobTitleList (has ReportsTo column)
         $script:_bbHierarchyMap = @{}
-        foreach ($entry in $OrgHierarchy) {
-            $script:_bbHierarchyMap[$entry.Title] = $entry.ReportsTo
-        }
-
-        # Build title -> level hashtable
         $script:_bbTitleLevelMap = @{}
         foreach ($t in $JobTitleList) {
+            $script:_bbHierarchyMap[$t.Title] = $t.ReportsTo
             $script:_bbTitleLevelMap[$t.Title] = [int]$t.Level
         }
 

@@ -201,8 +201,7 @@ if ($badderblood -eq 'badderblood') {
     $DepartmentList = Import-Csv ($basescriptPath + "\AD_Data\AD_Departments.csv")
     $JobTitleList = Import-Csv ($basescriptPath + "\AD_Data\JobTitles.csv")
     $OfficeList = Import-Csv ($basescriptPath + "\AD_Data\Offices.csv")
-    $OrgHierarchy = Import-Csv ($basescriptPath + "\AD_Data\org_hierarchy.csv")
-    Write-Host "    Loaded $($DepartmentList.Count) departments, $($JobTitleList.Count) titles, $($OfficeList.Count) offices, $($OrgHierarchy.Count) hierarchy entries" -ForegroundColor Gray
+    Write-Host "    Loaded $($DepartmentList.Count) departments, $($JobTitleList.Count) titles (with hierarchy), $($OfficeList.Count) offices" -ForegroundColor Gray
 
     # =====================================================================
     # PHASE 4: User Creation
@@ -227,7 +226,7 @@ if ($badderblood -eq 'badderblood') {
         }
         CreateUser -Domain $Domain -OUList $OUsAll -ScriptDir $createuserscriptpath `
             -DepartmentList $DepartmentList -JobTitleList $JobTitleList -OfficeList $OfficeList `
-            -OrgHierarchy $OrgHierarchy -ExistingUsers $ExistingUsersPool `
+            -ExistingUsers $ExistingUsersPool `
             -DriftPercent $DriftPercent
         $x++
     } while ($x -le $UserCount)
