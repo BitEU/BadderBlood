@@ -196,19 +196,65 @@ function Get-RandomSSN {
 function Get-CorporateIpsum {
     param(
         [int]$Sentences = 5,
-        [array]$JargonPool = @("leverage our synergies", "paradigm shift", "think outside the box", "move the needle", "scalable architecture", "proactive measures")
+        [array]$JargonPool = @()
     )
+    
+    # --- MASSIVE JARGON EXPANSION ---
+    $verbs = @(
+        "leverage", "synergize", "actualize", "incentivize", "streamline", "optimize", 
+        "pivot", "align", "orchestrate", "architect", "benchmark", "conceptualize", 
+        "deploy", "empower", "facilitate", "incubate", "innovate", "integrate", 
+        "maximize", "monetize", "network", "scale", "transition", "transform", 
+        "operationalize", "whiteboard", "fast-track", "double-down on", "drill down into",
+        "future-proof", "gamify", "growth-hack", "flesh out", "circle back to"
+    )
+    
+    $adjectives = @(
+        "seamless", "value-added", "cross-platform", "robust", "scalable", "granular", 
+        "mission-critical", "frictionless", "bleeding-edge", "next-generation", 
+        "client-centric", "core", "out-of-the-box", "plug-and-play", "best-of-breed", 
+        "end-to-end", "synergistic", "proactive", "dynamic", "agile", "lean", 
+        "holistic", "disruptive", "turnkey", "enterprise-grade", "data-driven"
+    )
+    
+    $nouns = @(
+        "synergies", "paradigms", "action items", "deliverables", "moving parts", 
+        "bandwidth", "alignment", "core competencies", "low-hanging fruit", 
+        "pain points", "deep dives", "touchpoints", "mindshare", "wheelhouses", 
+        "value propositions", "bottlenecks", "ecosystems", "methodologies", 
+        "optics", "metrics", "milestones", "swimlanes", "key performance indicators",
+        "market trends", "change management protocols"
+    )
+
+    # Blend department-specific jargon dynamically so the text remains highly contextual
+    if ($JargonPool.Count -gt 0) {
+        $nouns += $JargonPool
+        # Add a bit of randomness to ensure the custom jargon also gets used as verbs where appropriate
+        $verbs += $JargonPool 
+    }
+
     $paragraph = @()
     for ($i = 0; $i -lt $Sentences; $i++) {
-        $verb = $JargonPool | Get-Random
-        $adj = $JargonPool | Get-Random
-        $noun = $JargonPool | Get-Random
+        $v = $verbs | Get-Random
+        $a = $adjectives | Get-Random
+        $n = $nouns | Get-Random
+        $n2 = $nouns | Get-Random # Second noun for complex sentences
         
+        # Expanded sentence structures to prevent repetitive cadence
         $templates = @(
-            "We need to effectively implement $verb to ensure a $adj across the $noun.",
-            "By focusing on $noun, we can execute $verb and drive $adj.",
-            "Our primary objective is $verb, leveraging $adj to maximize $noun.",
-            "To maintain our $adj, we must aggressively target the $noun via $verb."
+            "We need to effectively $v our $n to ensure a $a approach across the board.",
+            "By focusing on $a $n, we can execute and $v the upcoming $n2.",
+            "Our primary objective is to $v, leveraging $a $n to maximize $n2.",
+            "To maintain our $a edge, we must aggressively target the $n via a new strategy.",
+            "Let's take a deep dive into $n and see how we can $v our $n2.",
+            "Going forward, we need more $n to adequately $v our $a $n2.",
+            "The optics on our $n aren't great, so let's $v and re-align our $n2.",
+            "If we $v the $n, we can clear the $n2 and achieve a $a state.",
+            "Please ensure that the $a $n are ready before we $v the next phase.",
+            "We are currently lacking the bandwidth to $v, so let's shift our focus to $a $n2.",
+            "To move the needle on $n, leadership wants us to $v and adopt $a $n2.",
+            "Let's circle back on the $n and make sure we $v before Q4.",
+            "This is highly $a; we must $v our $n to prevent further issues with the $n2."
         )
         $paragraph += $templates | Get-Random
     }
