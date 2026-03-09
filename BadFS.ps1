@@ -209,34 +209,151 @@ $global:Universities = @(
     "Massachusetts Institute of Technology (MIT)", "Stanford University", "Harvard University", 
     "California Institute of Technology (Caltech)", "University of Chicago", "Princeton University", 
     "Cornell University", "Yale University", "Columbia University", "University of Pennsylvania",
-    "University of Michigan", "Johns Hopkins University", "Northwestern University", "Brown University"
+    "University of Michigan", "Johns Hopkins University", "Northwestern University", "Brown University",
+    "Duke University", "Dartmouth College", "Vanderbilt University", "Rice University", 
+    "Washington University in St. Louis", "University of Notre Dame", "University of California Berkeley", 
+    "University of California Los Angeles", "Emory University", "Georgetown University", 
+    "Carnegie Mellon University", "University of Virginia", "University of Southern California", 
+    "New York University", "Tufts University", "University of North Carolina at Chapel Hill", 
+    "Wake Forest University", "University of Florida", "University of Texas at Austin", 
+    "Georgia Institute of Technology", "University of Rochester", "Boston College", "Boston University", 
+    "College of William & Mary", "Brandeis University", "Case Western Reserve University", 
+    "University of Wisconsin-Madison", "Pace University", "University of Illinois Urbana-Champaign"
 )
-$global:Degrees = @("Bachelor of Science in Computer Science", "Bachelor of Arts in Business Administration", "Master of Business Administration (MBA)", "Master of Science in Cybersecurity")
-$global:Companies = @("Acme Corp", "Globex Corporation", "Soylent Corp", "Initech", "Umbrella Corporation", "Wayne Enterprises", "Pied Piper", "Massive Dynamic")
-$global:SoftSkills = @("Leadership", "Communication", "Problem Solving", "Teamwork", "Time Management", "Adaptability", "Critical Thinking")
-$global:TechSkills = @("Python", "Java", "C++", "C#", "JavaScript", "HTML/CSS", "React", "Angular", "Vue.js", "Node.js", "SQL", "AWS", "Azure", "GCP", "Kubernetes", "Git")
-$global:ProjectPrefixes = @("Project", "Initiative", "Operation", "Code Name:", "Phase 1:", "Global", "Enterprise", "NextGen", "Quantum", "Nexus")
-$global:ProjectSuffixes = @("Migration", "Overhaul", "Transformation", "Integration", "Deployment", "Optimization", "Expansion", "Consolidation", "Modernization")
-$global:MeetingTopics = @("Q3 Budget Review", "Project Status Update", "Vendor Negotiation", "Client Escalation", "Team All-Hands", "Performance Metrics", "Compliance Audit Prep")
+
+$global:Degrees = @(
+    "Bachelor of Science in Computer Science", "Bachelor of Arts in Business Administration", 
+    "Master of Business Administration (MBA)", "Master of Science in Cybersecurity",
+    "Bachelor of Science in Electrical Engineering", "Bachelor of Arts in English Literature",
+    "Bachelor of Fine Arts in Graphic Design", "Master of Science in Data Science",
+    "Master of Arts in Education", "Doctor of Philosophy in Physics",
+    "Juris Doctor (JD)", "Doctor of Medicine (MD)"
+)
+
+$global:Companies = @(
+    "Acme Corp", "Globex Corporation", "Soylent Corp", "Initech", "Umbrella Corporation", 
+    "Wayne Enterprises", "Pied Piper", "Massive Dynamic", "Stark Industries", "Oscorp", 
+    "LexCorp", "Cyberdyne Systems", "Tyrell Corporation", "Weyland-Yutani", "Dunder Mifflin", 
+    "Vandelay Industries", "Oceanic Airlines", "Hooli", "Aperture Science", "Black Mesa", 
+    "Buy n Large", "Wonka Industries", "Monarch", "Gringotts",
+    "Omni Consumer Products", "InGen", "Vault-Tec", "Shinra Electric Power Company", "Abstergo Industries",
+    "MomCorp", "Planet Express", "Virtucon", "Evil Corp", "Delos Inc.",
+    "Blue Sun Corporation", "Dharma Initiative", "Wallace Corporation", "BiffCo", "Spacely Space Sprockets",
+    "Cogswell Cogs", "The Krusty Krab", "Daily Bugle", "Daily Planet", "Queen Consolidated",
+    "Kord Industries", "S.T.A.R. Labs", "Pym Technologies", "Roxxon Energy Corporation", "Hammer Industries",
+    "Capsule Corporation", "KaibaCorp", "Sarif Industries", "Arasaka", "Militech",
+    "Union Aerospace Corporation", "Hyperion Corporation", "Paper Street Soap Company", "Wolfram & Hart", "Yoyodyne Propulsion Systems",
+    "Sirius Cybernetics Corporation", "Very Good Building & Development Co.", "Aviato", "Globo Gym", "Initrode",
+    "Chotchkie's", "Los Pollos Hermanos", "Genco Pura Olive Oil Company", "Nakatomi Trading Corp", "Ryan Industries",
+    "Fontaine Futuristics", "Nuka-Cola Corporation", "Slurm Corporation", "Central Perk", "Cross Technological Enterprises",
+    "A.I.M.", "Silph Co.", "Devon Co.", "Red Ribbon Army", "NERV",
+    "Aesir Corporation", "Versalife", "Tai Yong Medical", "SoroSuub Corporation", "Czerka Corporation",
+    "Kuat Drive Yards", "Corellian Engineering Corporation", "Kang Tao", "Trauma Team International", "CHOAM",
+    "Tricell", "G Corporation", "Shadaloo", "Maliwan", "Jakobs",
+    "Torgue", "Atlas Corporation"
+)
+
+$global:SoftSkills = @(
+    "Leadership", "Communication", "Problem Solving", "Teamwork", 
+    "Time Management", "Adaptability", "Critical Thinking",
+    "Active Listening", "Conflict Resolution", "Emotional Intelligence", "Empathy", 
+    "Negotiation", "Public Speaking", "Creativity", "Collaboration", "Flexibility", 
+    "Interpersonal Skills", "Work Ethic", "Decision Making", "Stress Management", 
+    "Attention to Detail",
+    "Patience", "Resilience", "Persuasion", "Mentoring", "Coaching",
+    "Networking", "Delegation", "Dependability", "Reliability", "Accountability",
+    "Innovation", "Strategic Thinking", "Brainstorming", "Self-Motivation", "Open-Mindedness",
+    "Receptiveness to Feedback", "Organization", "Multitasking", "Prioritization", "Resourcefulness",
+    "Cultural Awareness", "Diversity and Inclusion", "Self-Awareness", "Positivity", "Confidence",
+    "Assertiveness", "Trustworthiness", "Ethical Judgment", "Integrity", "Motivation",
+    "Observation", "Reading Body Language", "Storytelling", "Presentation Skills", "Facilitation",
+    "Interviewing", "Diplomacy", "Dispute Resolution", "Consensus Building", "Influence",
+    "Tact", "Team Building", "Mentorship", "Conflict Management", "Crisis Management",
+    "De-escalation", "Customer Service", "Client Relations", "Active Learning", "Agility",
+    "Tolerance for Ambiguity", "Curiosity", "Visionary Thinking", "Goal Setting", "Planning",
+    "Self-Regulation", "Focus", "Dedication", "Tenacity", "Perseverance",
+    "Grit", "Enthusiasm", "Constructive Criticism"
+)
+
+$global:TechSkills = @(
+    "Python", "Java", "C++", "C#", "JavaScript", "HTML/CSS", "React", "Angular", 
+    "Vue.js", "Node.js", "SQL", "AWS", "Azure", "GCP", "Kubernetes", "Git",
+    "Ruby", "PHP", "Swift", "Kotlin", "Go", "Rust", "TypeScript", "R", "Perl", 
+    "Scala", "Docker", "Terraform", "Jenkins", "Ansible", "Linux", "Bash", 
+    "PowerShell", "MongoDB", "PostgreSQL", "Redis", "Elasticsearch", "Kafka", 
+    "GraphQL", "Spring Boot", "Django", "Flask", "Express.js", "Tailwind CSS", 
+    "Sass", "Figma", "Jira", "Datadog"
+)
+
+$global:ProjectPrefixes = @(
+    "Project", "Initiative", "Operation", "Code Name:", "Phase 1:", 
+    "Global", "Enterprise", "NextGen", "Quantum", "Nexus",
+    "Strategic", "Alpha", "Beta", "Delta", "Apex", "Pinnacle", "Vision", "Core", 
+    "Frontier", "Catalyst", "Vanguard", "Titan", "Phoenix", "Cyber", "Omni", 
+    "Synergy", "Dynamic", "Agile", "Stealth", "Prime"
+)
+
+$global:ProjectSuffixes = @(
+    "Migration", "Overhaul", "Transformation", "Integration", "Deployment", 
+    "Optimization", "Expansion", "Consolidation", "Modernization",
+    "Implementation", "Redesign", "Enhancement", "Upgrade", "Refactoring", 
+    "Automation", "Restructuring", "Launch", "Rollout", "Assessment", "Audit", 
+    "Synchronization", "Pipeline", "Framework", "Matrix", "Interface", 
+    "Gateway", "Engine"
+)
+
+$global:MeetingTopics = @(
+    "Q3 Budget Review", "Project Status Update", "Vendor Negotiation", 
+    "Client Escalation", "Team All-Hands", "Performance Metrics", "Compliance Audit Prep",
+    "Sprint Planning", "Retrospective", "Daily Standup", "Architecture Review", 
+    "Incident Post-Mortem", "Product Roadmap Alignment", "OKR Brainstorming", 
+    "Risk Management Committee", "Marketing Campaign Launch", "Quarterly Earnings Prep", 
+    "Cross-Functional Sync", "User Research Readout", "Security Training", "New Hire Onboarding"
+)
 
 $global:LegalClauses = @(
     "1. CONFIDENTIALITY. The Receiving Party shall hold and maintain the Confidential Information in strictest confidence for the sole and exclusive benefit of the Disclosing Party.",
     "2. NON-DISCLOSURE. The Receiving Party shall carefully restrict access to Confidential Information to employees, contractors, and third parties as is reasonably required.",
     "3. TERM. The non-disclosure provisions of this Agreement shall survive the termination of this Agreement and the Receiving Party's duty to hold Confidential Information in confidence shall remain in effect until the Confidential Information no longer qualifies as a trade secret.",
-    "4. INDEMNIFICATION. The Company agrees to indemnify and hold harmless the Client against any and all claims, demands, losses, costs, expenses, obligations, liabilities, damages, recoveries, and deficiencies."
+    "4. INDEMNIFICATION. The Company agrees to indemnify and hold harmless the Client against any and all claims, demands, losses, costs, expenses, obligations, liabilities, damages, recoveries, and deficiencies.",
+    "5. SEVERABILITY. If any provision of this Agreement is held to be invalid or unenforceable, such provision shall be struck and the remaining provisions shall be enforced.",
+    "6. GOVERNING LAW. This Agreement shall be governed by and construed in accordance with the laws of the applicable jurisdiction, without regard to its conflict of law principles.",
+    "7. TERMINATION. Either party may terminate this Agreement at any time upon thirty (30) days written notice to the other party.",
+    "8. ENTIRE AGREEMENT. This Agreement constitutes the entire understanding between the parties and supersedes all prior discussions, representations, or agreements.",
+    "9. FORCE MAJEURE. Neither party shall be liable for any failure to perform its obligations where such failure is as a result of Acts of Nature, fire, flood, or other events beyond their reasonable control.",
+    "10. NON-COMPETE. The Employee agrees not to engage in any business competing with the Employer for a period of one (1) year following termination.",
+    "11. ASSIGNMENT. Neither party may assign or transfer this Agreement or any rights or obligations hereunder without the prior written consent of the other party.",
+    "12. WAIVER. The failure of either party to enforce any right or provision of this Agreement shall not constitute a waiver of such right or provision."
 )
 
 $global:PositiveFeedback = @(
     "Consistently exceeds expectations in project delivery.",
     "Demonstrates exceptional leadership and mentoring skills.",
     "Has a profound understanding of complex technical architectures.",
-    "Always maintains a positive attitude, even under tight deadlines."
+    "Always maintains a positive attitude, even under tight deadlines.",
+    "Quickly grasps new concepts and applies them effectively to tasks.",
+    "Fosters a highly collaborative and inclusive team environment.",
+    "Consistently produces high-quality, bug-free code.",
+    "Shows great initiative in identifying and solving bottlenecks.",
+    "Communicates complex ideas clearly to non-technical stakeholders.",
+    "Is a reliable and dependable team player who always delivers on promises.",
+    "Approaches challenges with creativity and an innovative mindset.",
+    "Handles client interactions with exceptional professionalism and care."
 )
+
 $global:ConstructiveFeedback = @(
     "Needs to improve time management to avoid last-minute rushes.",
     "Should focus on delegating tasks rather than taking everything on themselves.",
     "Communication in large meetings could be more concise and focused.",
-    "Occasionally struggles to adapt to sudden changes in project scope."
+    "Occasionally struggles to adapt to sudden changes in project scope.",
+    "Could benefit from seeking clarification earlier when requirements are ambiguous.",
+    "Needs to ensure documentation is kept up to date alongside code changes.",
+    "Should work on receiving peer review feedback more objectively.",
+    "Would be more effective by participating more actively in brainstorming sessions.",
+    "Needs to prioritize critical path items over less impactful side tasks.",
+    "Should focus on improving the clarity and detail of pull request descriptions.",
+    "Could improve presentation skills when addressing external clients.",
+    "Needs to proactively communicate when deliverables are at risk of delay."
 )
 
 # ==============================================================================
@@ -278,24 +395,56 @@ function Get-CorporateIpsum {
         "deploy", "empower", "facilitate", "incubate", "innovate", "integrate", 
         "maximize", "monetize", "network", "scale", "transition", "transform", 
         "operationalize", "whiteboard", "fast-track", "double-down on", "drill down into",
-        "future-proof", "gamify", "growth-hack", "flesh out", "circle back to"
+        "future-proof", "gamify", "growth-hack", "flesh out", "circle back to",
+        "ideate", "iterate", "socialize", "champion", "spearhead", "onboard", 
+        "offboard", "upskill", "reskill", "right-size", "solution", "mobilize", 
+        "catalyze", "drive", "execute", "expedite", "mitigate", "normalize", 
+        "scope", "sunset", "supercharge", "track", "validate", "vet", 
+        "wireframe", "unpack", "un-silo", "cross-pollinate", "greenlight", "interface", 
+        "workshop", "re-engineer", "recontextualize", "democratize", "surface", "escalate", 
+        "baseline", "map", "parse", "repurpose", "synchronize", "future-cast", 
+        "backfill", "calibrate", "triage", "dogfood", "lean into", "push back", 
+        "tee up", "touch base", "dial in", "level up", "value-engineer", "blue-sky", 
+        "ping", "crowdsource", "bucket", "action", "productize", "platformize", 
+        "index on", "boil the ocean", "move the needle on", "table", "synthesize", 
+        "quantify", "qualify", "contextualize"
     )
-    
+
     $adjectives = @(
         "seamless", "value-added", "cross-platform", "robust", "scalable", "granular", 
         "mission-critical", "frictionless", "bleeding-edge", "next-generation", 
         "client-centric", "core", "out-of-the-box", "plug-and-play", "best-of-breed", 
         "end-to-end", "synergistic", "proactive", "dynamic", "agile", "lean", 
-        "holistic", "disruptive", "turnkey", "enterprise-grade", "data-driven"
+        "holistic", "disruptive", "turnkey", "enterprise-grade", "data-driven",
+        "bespoke", "cloud-native", "modular", "omni-channel", "ubiquitous", "high-level", 
+        "high-impact", "low-level", "atomic", "extensible", "future-ready", "best-in-class", 
+        "state-of-the-art", "paradigm-shifting", "game-changing", "forward-looking", 
+        "thought-leading", "sticky", "strategic", "tactical", "actionable", 
+        "immersive", "cross-functional", "purpose-built", "cloud-first", "mobile-first", 
+        "user-centric", "customer-facing", "front-end", "back-end", "full-stack", 
+        "top-down", "bottom-up", "macro", "micro", "asynchronous", "synchronous", 
+        "organic", "grassroots", "value-driven", "outcome-oriented", "process-oriented", 
+        "high-fidelity", "low-fidelity", "native", "hybrid", "transformational", 
+        "transactional", "predictive", "prescriptive", "hyper-local", "zero-sum"
     )
-    
+
     $nouns = @(
         "synergies", "paradigms", "action items", "deliverables", "moving parts", 
         "bandwidth", "alignment", "core competencies", "low-hanging fruit", 
         "pain points", "deep dives", "touchpoints", "mindshare", "wheelhouses", 
         "value propositions", "bottlenecks", "ecosystems", "methodologies", 
         "optics", "metrics", "milestones", "swimlanes", "key performance indicators",
-        "market trends", "change management protocols"
+        "market trends", "change management protocols",
+        "best practices", "learnings", "takeaways", "stand-ups", "syncs", 
+        "cadences", "roadmaps", "trajectories", "runways", "guardrails", 
+        "thought leadership", "core values", "verticals", "horizontals", "value streams", 
+        "flywheels", "quick wins", "white space", "silos", "face time", 
+        "heavy lifting", "game changers", "paradigm shifts", "delta", "ROI", 
+        "OKRs", "single source of truth", "North Star", "ideation", "cross-pollination", 
+        "buy-in", "pushback", "critical mass", "moving target", "tipping point", 
+        "landscape", "footprint", "workflows", "lifecycles", "pipelines", 
+        "funnels", "sweet spot", "bottom line", "10,000-foot view", "helicopter view", 
+        "blue ocean", "growth hacking", "tech debt", "scope creep", "burn rate"
     )
 
     # Blend department-specific jargon dynamically so the text remains highly contextual
@@ -326,7 +475,59 @@ function Get-CorporateIpsum {
             "We are currently lacking the bandwidth to $v, so let's shift our focus to $a $n2.",
             "To move the needle on $n, leadership wants us to $v and adopt $a $n2.",
             "Let's circle back on the $n and make sure we $v before Q4.",
-            "This is highly $a; we must $v our $n to prevent further issues with the $n2."
+            "This is highly $a; we must $v our $n to prevent further issues with the $n2.",
+            "We need to $v our $n to drive a $a culture of innovation.",
+            "At the end of the day, it's about how we $v the $a $n.",
+            "Let's $v the $n to ensure we are $a with our core mission.",
+            "It's time to $v and double down on $a $n for better $n2.",
+            "Can we $v the $n to create a more $a ecosystem?",
+            "We should $v our $n to foster $a growth in the $n2 space.",
+            "Our $a $n is the key driver for how we $v the $n2.",
+            "We must $v the $n to capture the $a value of our $n2.",
+            "Let's look for $a ways to $v the $n and reduce $n2 overhead.",
+            "By the time we $v the $n, the $a landscape will have shifted.",
+            "We need a $a post-mortem to $v the $n and improve the $n2.",
+            "The $a paradigm shift requires us to $v our $n immediately.",
+            "If we don't $v the $n, we risk losing our $a $n2 position.",
+            "Let's $v the $n to create a $a roadmap for the $n2.",
+            "We need to $v our $n to optimize for $a $n2 outcomes.",
+            "Success depends on our ability to $v the $a $n across the $n2.",
+            "We should $v our $n to ensure $a scalability for the $n2.",
+            "Let's $v the $n and create a $a value proposition for the $n2.",
+            "The $a nature of our $n allows us to $v the $n2 seamlessly.",
+            "We must $v our $n to achieve $a synergy within the $n2.",
+            "Our $n is $a, so let's $v and pivot toward the $n2.",
+            "Let's $v the $n to unlock $a potential in our $n2.",
+            "We need to $v our $n to provide a $a experience for the $n2.",
+            "The $n requires a $a $n2 to $v the overall strategy.",
+            "We should $v the $n to maintain $a momentum on the $n2.",
+            "Let's $v the $n to create a $a framework for $n2 development.",
+            "Our $n is the $a foundation we need to $v the $n2.",
+            "We must $v our $n to drive $a transformation of the $n2.",
+            "Let's $v the $n to align with the $a $n2 vision.",
+            "We need to $v the $n to ensure $a integration with the $n2.",
+            "The $n is a $a asset that helps us $v the $n2.",
+            "We should $v our $n to deliver $a results for the $n2.",
+            "Let's $v the $n to establish a $a footprint in the $n2 market.",
+            "Our $n allows us to $v the $n2 in a $a way.",
+            "We must $v the $n to maximize the $a impact of our $n2.",
+            "Let's $v our $n to achieve a $a balance with the $n2.",
+            "We need to $v the $n to leverage the $a power of the $n2.",
+            "The $n is the $a catalyst we need to $v the $n2.",
+            "We should $v our $n to ensure $a sustainability of the $n2.",
+            "Let's $v the $n to create a $a journey for the $n2.",
+            "Our $n provides a $a platform to $v the $n2.",
+            "We must $v the $n to drive $a innovation across the $n2.",
+            "Let's $v our $n to align with $a $n2 best practices.",
+            "We need to $v the $n to optimize $a $n2 performance.",
+            "The $n is a $a driver of our ability to $v the $n2.",
+            "We should $v our $n to foster $a collaboration on the $n2.",
+            "Let's $v the $n to create a $a environment for the $n2.",
+            "Our $n is essential to $v the $a $n2 effectively.",
+            "We must $v the $n to achieve $a excellence in the $n2.",
+            "Let's $v our $n to ensure $a alignment with the $n2 goals.",
+            "We need to $v the $n to capture $a $n2 opportunities.",
+            "The $n will $v our $a $n2 and strengthen our market position."
         )
         $paragraph += $templates | Get-Random
     }
@@ -426,21 +627,83 @@ function New-PerformanceReviewContent {
         "Demonstrates exceptional leadership and mentoring skills under pressure.",
         "Has a profound understanding of complex technical architectures.",
         "Pivoted seamlessly during the Q3 restructuring.",
-        "Acts as a force multiplier for the entire $DeptFullName team."
+        "Acts as a force multiplier for the entire $DeptFullName team.",
+        "Continually fosters a collaborative and inclusive environment within $DeptFullName.",
+        "Brought immense value to the team through proactive problem-solving.",
+        "Masterfully handled stakeholder expectations during critical release cycles.",
+        "Showcases remarkable innovation when tackling legacy system limitations.",
+        "Serves as a reliable subject matter expert for cross-functional initiatives.",
+        "Consistently delivers high-quality work with minimal need for revisions.",
+        "Demonstrated exceptional resilience during unexpected system outages.",
+        "Effectively bridged the gap between technical and non-technical teams.",
+        "Shows outstanding dedication to continuous learning and skill development.",
+        "Streamlined critical workflows, saving $DeptFullName valuable time.",
+        "Radiates a positive attitude that boosts overall team morale.",
+        "Anticipates potential roadblocks and mitigates risks proactively.",
+        "Elevated the quality of our internal documentation significantly.",
+        "Drives consensus efficiently among dissenting viewpoints.",
+        "Frequently volunteers for complex tasks outside of normal duties.",
+        "Played a pivotal role in the successful launch of recent key features.",
+        "Maintains composure and clarity during high-stress troubleshooting.",
+        "Empowers peers by generously sharing industry knowledge.",
+        "Exhibits a strong sense of ownership over end-to-end deliverables.",
+        "Reaches key milestones consistently ahead of schedule."
     )
+
     $ConList = @(
         "Needs to improve time management to avoid last-minute rushes.",
         "Should focus on delegating tasks rather than bottlenecking production.",
         "Communication in large meetings could be more concise.",
         "Occasionally struggles to adapt to sudden changes in project scope.",
-        "Needs to ensure compliance documentation is filed prior to deployment."
+        "Needs to ensure compliance documentation is filed prior to deployment.",
+        "Should strive to provide more frequent status updates on long-term tasks.",
+        "Needs to cultivate stronger relationships with external vendors.",
+        "Could benefit from participating more actively in brainstorming sessions.",
+        "Must ensure all code reviews are completed within the agreed SLA.",
+        "Needs to balance perfectionism with the need for timely delivery.",
+        "Should seek out more peer feedback before finalizing major proposals.",
+        "Could improve upon setting clearer boundaries to prevent burnout.",
+        "Needs to thoroughly test edge cases before submitting work for QA.",
+        "Should focus on upskilling in emerging technologies relevant to the role.",
+        "Needs to document tribal knowledge to reduce team dependencies.",
+        "Could be more proactive in escalating blocking issues to management.",
+        "Needs to refine presentation skills for executive-level audiences.",
+        "Should aim to reduce reliance on legacy tools and adopt new standards.",
+        "Needs to pay closer attention to detail in formatting customer-facing reports.",
+        "Could improve active listening skills during one-on-one discussions.",
+        "Should work on transitioning from reactive troubleshooting to proactive monitoring.",
+        "Needs to take more initiative in owning post-mortem follow-up action items.",
+        "Could benefit from a more structured approach to daily prioritization.",
+        "Must strictly adhere to the change management processes for all updates.",
+        "Should focus on providing more actionable and constructive peer reviews."
     )
+
     $GoalTemplates = @(
         "Achieve 100% compliance with new department protocols.",
         "Lead the upcoming '$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)' initiative.",
         "Reduce operational overhead in $DeptFullName by 10%.",
         "Obtain advanced certification relevant to current role by Q4.",
-        "Mentorship of 2 junior analysts over the next 6 months."
+        "Mentorship of 2 junior analysts over the next 6 months.",
+        "Design and implement an automated reporting solution for $DeptFullName by Q3.",
+        "Cross-train 3 team members on the core '$($global:ProjectPrefixes | Get-Random)' architecture.",
+        "Decrease average ticket resolution time by 15% over the next two quarters.",
+        "Present a technical deep-dive at the next $DeptFullName all-hands meeting.",
+        "Successfully migrate the legacy database to the new cloud infrastructure by end of year.",
+        "Complete leadership training and apply concepts to a pilot project.",
+        "Spearhead the '$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)' phase 2 rollout.",
+        "Improve unit test coverage of the primary codebase to 85%.",
+        "Reduce system downtime events by 20% through proactive monitoring enhancements.",
+        "Establish a weekly knowledge-sharing guild within $DeptFullName.",
+        "Earn the necessary vendor certifications to support the upcoming tech stack migration.",
+        "Audit and update all standard operating procedures for the '$($global:ProjectPrefixes | Get-Random)' pipeline.",
+        "Decrease onboarding time for new hires in $DeptFullName by standardizing documentation.",
+        "Lead a cross-departmental tiger team to resolve the '$($global:ProjectSuffixes | Get-Random)' bottleneck.",
+        "Contribute at least 4 significant optimizations to the shared code repository.",
+        "Act as the primary technical liaison for the new vendor integration project.",
+        "Achieve a 95% satisfaction rating on internal stakeholder feedback surveys.",
+        "Organize and facilitate a quarterly hackathon for $DeptFullName.",
+        "Transition all active '$($global:ProjectPrefixes | Get-Random)' modules to the new CI/CD pipeline.",
+        "Publish an internal whitepaper on best practices derived from recent project retrospectives."
     )
 
     $score = Get-Random -Minimum 3 -Maximum 6 # 3 to 5 out of 5
