@@ -23,13 +23,13 @@ function Invoke-AKIdentifyObjects {
 
     Write-Status "SECTION 1: Identifying all BadderBlood-created objects..."
 
-    $BadderBloodUsers = $AllUsers | Where-Object {
+    $BadderBloodUsers = @($AllUsers | Where-Object {
         Test-IsBadderBloodObject -Description $_.Description
-    }
+    })
 
-    $BadderBloodGroups = $AllGroups | Where-Object {
+    $BadderBloodGroups = @($AllGroups | Where-Object {
         Test-IsBadderBloodObject -Description $_.Description
-    }
+    })
 
     Write-Status "Found $($BadderBloodUsers.Count) BadderBlood-created users" "Green"
     Write-Status "Found $($BadderBloodGroups.Count) BadderBlood-created security groups" "Green"

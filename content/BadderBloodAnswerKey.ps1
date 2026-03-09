@@ -92,6 +92,10 @@ Write-Host @"
 ===============================================================================
 "@ -ForegroundColor Yellow
 
+# Resolve to an absolute filesystem path before any AD provider changes make
+# relative paths resolve under //RootDSE/ (Set-Location AD: in sub-functions).
+$OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+
 # Create output directory
 if (-not (Test-Path $OutputPath)) {
     New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
@@ -136,7 +140,7 @@ Write-Status "Found $($BadderBloodGroups.Count) BadderBlood-created security gro
 Write-Status "SECTION 2: Auditing privileged group memberships..."
 
 $privResult = Invoke-AKPrivilegedGroupAudit -AllUsers $AllUsers -BadderBloodUsers $BadderBloodUsers -UserContextMap $UserContextMap
-$AllFindings.AddRange($privResult.Findings)
+foreach ($f in @($privResult.Findings)) { $AllFindings.Add($f) }
 $PrivGroupReport = $privResult.PrivGroupReport
 
 # ============================================================================
@@ -145,7 +149,7 @@ $PrivGroupReport = $privResult.PrivGroupReport
 Write-Status "SECTION 3: Checking dangerous account settings..."
 
 $acctFindings = Invoke-AKAccountSettingsAudit -AllUsers $AllUsers -BadderBloodUsers $BadderBloodUsers
-$AllFindings.AddRange($acctFindings)
+foreach ($f in @($acctFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 3b: OU DRIFT DETECTION
@@ -153,7 +157,7 @@ $AllFindings.AddRange($acctFindings)
 Write-Status "SECTION 3b: Checking for OU drift (users in wrong department OUs)..."
 
 $driftFindings = Invoke-AKOUDriftAudit -DomainDN $DomainDN -SetDC $SetDC
-$AllFindings.AddRange($driftFindings)
+foreach ($f in @($driftFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 4: NESTED GROUP MEMBERSHIP CHAINS
@@ -161,7 +165,7 @@ $AllFindings.AddRange($driftFindings)
 Write-Status "SECTION 4: Checking for nested group privilege escalation..."
 
 $nestedFindings = Invoke-AKNestedGroupAudit
-$AllFindings.AddRange($nestedFindings)
+foreach ($f in @($nestedFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 5: OU STRUCTURE ANALYSIS
@@ -169,7 +173,7 @@ $AllFindings.AddRange($nestedFindings)
 Write-Status "SECTION 5: Analyzing OU structure..."
 
 $ouFindings = Invoke-AKOUStructureAudit -BadderBloodUsers $BadderBloodUsers
-$AllFindings.AddRange($ouFindings)
+foreach ($f in @($ouFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 6: ACL / DELEGATION ANALYSIS
@@ -178,7 +182,7 @@ Write-Status "SECTION 6: Analyzing ACL delegations on OUs and objects..."
 
 $AllOUs = Get-ADOrganizationalUnit -Filter * -Properties DistinguishedName
 $aclFindings = Invoke-AKACLAudit -DomainDN $DomainDN -AllOUs $AllOUs -BadderBloodUsers $BadderBloodUsers -BadderBloodGroups $BadderBloodGroups
-$AllFindings.AddRange($aclFindings)
+foreach ($f in @($aclFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 7: GPO ANALYSIS (Optional)
@@ -187,7 +191,7 @@ if ($IncludeGPOAnalysis) {
     Write-Status "SECTION 7: Running comprehensive GPO analysis..."
 
     $gpoFindings = Invoke-AKGPOAudit -DomainDN $DomainDN -DomainDNS $DomainName -BadderBloodUsers $BadderBloodUsers -BadderBloodGroups $BadderBloodGroups
-    $AllFindings.AddRange($gpoFindings)
+    foreach ($f in @($gpoFindings)) { $AllFindings.Add($f) }
 } else {
     Write-Status "SECTION 7: GPO analysis skipped (use -IncludeGPOAnalysis to enable)" "Gray"
 }
@@ -198,7 +202,7 @@ if ($IncludeGPOAnalysis) {
 Write-Status "SECTION 7b: Checking SID History on groups..."
 
 $sidFindings = Invoke-AKSIDHistoryAudit
-$AllFindings.AddRange($sidFindings)
+foreach ($f in @($sidFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 8: COMPUTER OBJECT ANALYSIS
@@ -206,7 +210,7 @@ $AllFindings.AddRange($sidFindings)
 Write-Status "SECTION 8: Analyzing computer objects..."
 
 $compResult = Invoke-AKComputerAudit -BadderBloodGroups $BadderBloodGroups
-$AllFindings.AddRange($compResult.Findings)
+foreach ($f in @($compResult.Findings)) { $AllFindings.Add($f) }
 $Computers = $compResult.Computers
 
 # ============================================================================
@@ -215,7 +219,7 @@ $Computers = $compResult.Computers
 Write-Status "SECTION 9: Checking for RBCD misconfigurations..."
 
 $rbcdResult = Invoke-AKRBCDAudit
-$AllFindings.AddRange($rbcdResult.Findings)
+foreach ($f in @($rbcdResult.Findings)) { $AllFindings.Add($f) }
 $AllComputers = $rbcdResult.AllComputers
 
 # ============================================================================
@@ -224,7 +228,7 @@ $AllComputers = $rbcdResult.AllComputers
 Write-Status "SECTION 10: Checking for Shadow Credentials ACLs..."
 
 $shadowFindings = Invoke-AKShadowCredentialsAudit -BadderBloodUsers $BadderBloodUsers
-$AllFindings.AddRange($shadowFindings)
+foreach ($f in @($shadowFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 11: ADCS MISCONFIGURATION DETECTION
@@ -232,7 +236,7 @@ $AllFindings.AddRange($shadowFindings)
 Write-Status "SECTION 11: Checking ADCS certificate template misconfigurations..."
 
 $adcsFindings = Invoke-AKADCSAudit -BadderBloodUsers $BadderBloodUsers -BadderBloodGroups $BadderBloodGroups
-$AllFindings.AddRange($adcsFindings)
+foreach ($f in @($adcsFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 12: gMSA MISCONFIGURATION DETECTION
@@ -240,7 +244,7 @@ $AllFindings.AddRange($adcsFindings)
 Write-Status "SECTION 12: Checking gMSA misconfigurations..."
 
 $gmsaFindings = Invoke-AKGMSAAudit
-$AllFindings.AddRange($gmsaFindings)
+foreach ($f in @($gmsaFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 13: ADIDNS MISCONFIGURATION DETECTION
@@ -248,7 +252,7 @@ $AllFindings.AddRange($gmsaFindings)
 Write-Status "SECTION 13: Checking ADIDNS misconfigurations..."
 
 $adidnsFindings = Invoke-AKADIDNSAudit -DomainDN $DomainDN -DomainDNS $DomainName -BadderBloodUsers $BadderBloodUsers -BadderBloodGroups $BadderBloodGroups
-$AllFindings.AddRange($adidnsFindings)
+foreach ($f in @($adidnsFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # SECTION 14: LAPS BYPASS DETECTION
@@ -256,7 +260,7 @@ $AllFindings.AddRange($adidnsFindings)
 Write-Status "SECTION 14: Checking for LAPS bypass opportunities..."
 
 $lapsFindings = Invoke-AKLAPSBypassAudit -AllComputers $AllComputers -BadderBloodUsers $BadderBloodUsers -BadderBloodGroups $BadderBloodGroups
-$AllFindings.AddRange($lapsFindings)
+foreach ($f in @($lapsFindings)) { $AllFindings.Add($f) }
 
 # ============================================================================
 # GPO REMEDIATION (Optional)
