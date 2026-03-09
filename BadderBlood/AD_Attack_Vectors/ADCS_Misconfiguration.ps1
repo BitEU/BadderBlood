@@ -2,7 +2,7 @@
 # ADCS_Misconfiguration.ps1 - BadderBlood ADCS Attack Vectors
 # Simulates realistic Active Directory Certificate Services misconfigurations
 # including ESC1, ESC2, ESC4, ESC6, and ESC8 (where possible without
-# actually installing ADCS — creates the template objects if ADCS exists).
+# actually installing ADCS - creates the template objects if ADCS exists).
 ################################
 function Set-ADCSMisconfiguration {
     <#
@@ -69,7 +69,7 @@ function Set-ADCSMisconfiguration {
             try { $existing = Get-ADObject $templateDN -Server $setDC -ErrorAction Stop } catch {}
 
             if (-not $existing) {
-                # Clone from a base template — use WebServer if available
+                # Clone from a base template - use WebServer if available
                 $baseTemplate = Get-ADObject -SearchBase $templateBaseDN -Filter { Name -eq "WebServer" } -Properties * -Server $setDC -ErrorAction Stop
 
                 if ($baseTemplate) {

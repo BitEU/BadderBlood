@@ -1086,6 +1086,47 @@ $CreatedGPOs.Add([PSCustomObject]@{
 })
 
 # ============================================================================
+# CORPORATE WALLPAPER GPO
+# Sets a static fallback wallpaper pointing at the NETLOGON copy of Background.png.
+# At logon, Set-Wallpaper.ps1 (deployed by BadFS into NETLOGON) overwrites this with
+# a personalised composite showing the signed-in user's name, domain, IP, computer,
+# title, and department rendered onto the base image via System.Drawing.
+# The NETLOGON path is world-readable by all domain users - intentional for the lab.
+# ============================================================================
+Write-Host "`n[*] Deploying corporate wallpaper GPO..." -ForegroundColor Cyan
+
+$bgUNCPath = "\\$DomainDNS\NETLOGON\Background.png"
+
+$gpoWall = New-InsecureGPO -Name "Corp-Desktop-Policy" `
+    -Comment "Corporate desktop configuration - enforced wallpaper" -LinkToDomain
+
+# Static fallback: plain Background.png from NETLOGON.
+# Set-Wallpaper.ps1 (logon script) replaces this with the personalised composite at login.
+Set-GPORegistryValue -GPOName "Corp-Desktop-Policy" `
+    -Key "HKCU\Control Panel\Desktop" `
+    -ValueName "Wallpaper" -Type String -Value $bgUNCPath
+
+Set-GPORegistryValue -GPOName "Corp-Desktop-Policy" `
+    -Key "HKCU\Control Panel\Desktop" `
+    -ValueName "WallpaperStyle" -Type String -Value "2"
+
+Set-GPORegistryValue -GPOName "Corp-Desktop-Policy" `
+    -Key "HKCU\Control Panel\Desktop" `
+    -ValueName "TileWallpaper" -Type String -Value "0"
+
+Write-Host "  [+] Wallpaper GPO configured (fallback: $bgUNCPath)" -ForegroundColor Green
+Write-Host "  [+] Personalised wallpaper rendered at logon via NETLOGON\Set-Wallpaper.ps1" -ForegroundColor Green
+
+$CreatedGPOs.Add([PSCustomObject]@{
+    Name     = "Corp-Desktop-Policy"
+    GUID     = $gpoWall.Id
+    Category = "Information Disclosure"
+    Severity = "LOW"
+    Issue    = "Wallpaper delivered via NETLOGON UNC path (\\$DomainDNS\NETLOGON\...). Any domain user can read NETLOGON, enumerate the Background.png and Set-Wallpaper.ps1 logon script. The script reveals share paths, domain DNS name, and rendering logic."
+    Fix      = "Deliver wallpaper from a local path (C:\Windows\Web\Wallpaper\). Restrict NETLOGON to read-only for Domain Users and audit its contents regularly."
+})
+
+# ============================================================================
 # GPO PERMISSION DELEGATION TO BADBLOOD OBJECTS
 # ============================================================================
 if ($BadderBloodPresent -and $BBUsers.Count -ge 5) {

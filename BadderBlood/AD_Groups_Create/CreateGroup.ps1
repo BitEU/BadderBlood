@@ -30,9 +30,9 @@ Function CreateGroup {
 
     # ----- Resolve parameters -----
     if (!$PSBoundParameters.ContainsKey('Domain')) {
-        if ($args[0]) { $setDC = $args[0].pdcemulator; $dn = $args[0].distinguishedname }
-        else { $d = Get-ADDomain; $setDC = $d.pdcemulator; $dn = $d.distinguishedname }
-    } else { $setDC = $Domain.pdcemulator; $dn = $Domain.distinguishedname }
+        if ($args[0]) { $setDC = $args[0].pdcemulator; $dn = $args[0].distinguishedname; $domainDNS = $args[0].DNSRoot }
+        else { $d = Get-ADDomain; $setDC = $d.pdcemulator; $dn = $d.distinguishedname; $domainDNS = $d.DNSRoot }
+    } else { $setDC = $Domain.pdcemulator; $dn = $Domain.distinguishedname; $domainDNS = $Domain.DNSRoot }
 
     if (!$PSBoundParameters.ContainsKey('OUList')) {
         $OUsAll = Get-ADOrganizationalUnit -Filter * -Server $setDC
@@ -172,6 +172,7 @@ Function CreateGroup {
     }
 
     # ----- Create the group -----
+    $groupMail = "$($groupName.ToLower())@$domainDNS"
     try {
         New-ADGroup -Server $setDC `
             -Name $groupName `
@@ -179,11 +180,13 @@ Function CreateGroup {
             -Path $targetOU `
             -GroupCategory $groupCategory `
             -GroupScope $groupScope `
-            -ManagedBy $ownerinfo.DistinguishedName
+            -ManagedBy $ownerinfo.DistinguishedName `
+            -OtherAttributes @{ mail = $groupMail }
     } catch {
         try {
             New-ADGroup -Server $setDC -Name $groupName -Description $description `
-                -Path $targetOU -GroupCategory $groupCategory -GroupScope $groupScope
+                -Path $targetOU -GroupCategory $groupCategory -GroupScope $groupScope `
+                -OtherAttributes @{ mail = $groupMail }
         } catch {}
     }
 }

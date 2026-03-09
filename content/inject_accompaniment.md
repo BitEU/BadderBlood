@@ -1,5 +1,5 @@
 # Inject Answer Key Mapping
-# BadderBlood — sirshanova.com
+# BadderBlood - sirshanova.com
 # For TA/Instructor use only
 
 This file maps each inject to the specific findings students are expected to identify and remediate.
@@ -9,7 +9,7 @@ Source files: `GPO_AnswerKey_MasterReport.txt` and `QuickReference_CheatSheet.tx
 
 ## Inject 1: Privileged Group Membership Audit
 
-**Answer Key Source:** QuickReference_CheatSheet.txt — Category: Privileged Group Membership
+**Answer Key Source:** QuickReference_CheatSheet.txt - Category: Privileged Group Membership
 
 | Severity | Finding |
 |----------|---------|
@@ -20,13 +20,13 @@ Source files: `GPO_AnswerKey_MasterReport.txt` and `QuickReference_CheatSheet.tx
 
 **What students must do:** Identify all four accounts, explain the specific attack path each enables (e.g., DCSync for DA, service binary hijack for Server Operators), and remove them from those groups.
 
-**Bonus/stretch:** QuickRef also flags `Jeannette_Simpson` and `Ines_Arnold` for OU Misplacement (HIGH) — they are in People OUs despite having privileged memberships. Students may note this but OU remediation is not required.
+**Bonus/stretch:** QuickRef also flags `Jeannette_Simpson` and `Ines_Arnold` for OU Misplacement (HIGH) - they are in People OUs despite having privileged memberships. Students may note this but OU remediation is not required.
 
 ---
 
 ## Inject 2: Domain Root Access Control Audit
 
-**Answer Key Source:** QuickReference_CheatSheet.txt — Category: Dangerous ACL
+**Answer Key Source:** QuickReference_CheatSheet.txt - Category: Dangerous ACL
 
 | Severity | Finding |
 |----------|---------|
@@ -48,7 +48,7 @@ Source files: `GPO_AnswerKey_MasterReport.txt` and `QuickReference_CheatSheet.tx
 
 ## Inject 3: Kerberoasting Exposure Audit
 
-**Answer Key Source:** QuickReference_CheatSheet.txt — Category: Kerberos Security (SPN accounts only)
+**Answer Key Source:** QuickReference_CheatSheet.txt - Category: Kerberos Security (SPN accounts only)
 
 | Severity | Account | Fix |
 |----------|---------|-----|
@@ -68,7 +68,7 @@ Source files: `GPO_AnswerKey_MasterReport.txt` and `QuickReference_CheatSheet.tx
 
 ## Inject 4: AS-REP Roasting Vulnerability Investigation
 
-**Answer Key Source:** QuickReference_CheatSheet.txt — Category: Kerberos Security (DoesNotRequirePreAuth accounts only)
+**Answer Key Source:** QuickReference_CheatSheet.txt - Category: Kerberos Security (DoesNotRequirePreAuth accounts only)
 
 | Severity | Account | Fix |
 |----------|---------|-----|
@@ -87,21 +87,21 @@ Source files: `GPO_AnswerKey_MasterReport.txt` and `QuickReference_CheatSheet.tx
 **Answer Key Source:** Both files
 
 ### Exposure Point 1: WDigest Authentication Enabled
-**Source:** GPO_AnswerKey_MasterReport.txt — Category: Credential Exposure
+**Source:** GPO_AnswerKey_MasterReport.txt - Category: Credential Exposure
 
 | Severity | Finding |
 |----------|---------|
-| CRITICAL | GPO `SEC-Authentication-Legacy`: `UseLogonCredential = 1` — plaintext passwords cached in LSASS |
+| CRITICAL | GPO `SEC-Authentication-Legacy`: `UseLogonCredential = 1` - plaintext passwords cached in LSASS |
 
 **Fix:** Set `UseLogonCredential = 0` in `SEC-Authentication-Legacy`.
 **Attack:** Any admin on a box can run Mimikatz `sekurlsa::wdigest` and retrieve plaintext passwords for all logged-in users.
 
 ### Exposure Point 2: Plaintext Passwords in AD Description Fields
-**Source:** QuickReference_CheatSheet.txt — Category: Credential Exposure (32 findings)
+**Source:** QuickReference_CheatSheet.txt - Category: Credential Exposure (32 findings)
 
 | Severity | Count | Finding |
 |----------|-------|---------|
-| CRITICAL | 32 | Plaintext passwords stored in `Description` attribute on user accounts — readable by any authenticated domain user via LDAP |
+| CRITICAL | 32 | Plaintext passwords stored in `Description` attribute on user accounts - readable by any authenticated domain user via LDAP |
 
 Affected accounts include: `Cristina_May`, `Kelsey_Herrera`, `Emilio_Garza`, `Bobbie_Orr`, `Gena_Garner`, `Catherine_Ashley`, `Tessa_Castaneda`, `Tanya_Mills`, `Lessie_Knox`, `7728217838SA`, `Leta_Noble`, `Kip_Higgins`, `Isaiah_Witt`, `Arthur_Sanchez`, `Aaron_Fitzgerald`, `Abraham_Wolfe`, `8722392695SA`, `Gerardo_Montoya`, `Fran_Rocha`, `Dawn_Giles`, `Archie_Armstrong`, `Janine_Atkins`, `1013885964SA`, `Nancy_Lynch`, `Wilson_Stevens`, `Marlene_Savage`, `Fidel_Green`, `Freda_Rivera`, `Elvis_Merritt`, `Coleen_Merritt`, `1441181171SA`, `Jeffry_Dickerson`
 
@@ -114,7 +114,7 @@ Affected accounts include: `Cristina_May`, `Kelsey_Herrera`, `Emilio_Garza`, `Bo
 
 ## Inject 6: Privileged Group Membership via Group Nesting
 
-**Answer Key Source:** QuickReference_CheatSheet.txt — Category: Nested Group Membership
+**Answer Key Source:** QuickReference_CheatSheet.txt - Category: Nested Group Membership
 
 | Severity | Finding |
 |----------|---------|
@@ -123,13 +123,13 @@ Affected accounts include: `Cristina_May`, `Kelsey_Herrera`, `Emilio_Garza`, `Bo
 
 **What students must do:** Discover that these two privileged groups are themselves members of `Administrators` (creating recursive membership), explain that this silently grants all members of those groups the combined rights of `Administrators` on top of their existing rights, enumerate which users are transitively affected, and remove the nesting. Students should use `Get-ADGroupMember -Recursive` or equivalent.
 
-**Note:** The inject asks students to confirm or debunk — a correct "debunk" answer (if they find no nesting) would also be accepted in theory, but the findings confirm it is real.
+**Note:** The inject asks students to confirm or debunk - a correct "debunk" answer (if they find no nesting) would also be accepted in theory, but the findings confirm it is real.
 
 ---
 
 ## Inject 7: GPO Permission Audit
 
-**Answer Key Source:** GPO_AnswerKey_MasterReport.txt — Category: Excessive GPO Permissions
+**Answer Key Source:** GPO_AnswerKey_MasterReport.txt - Category: Excessive GPO Permissions
 
 | Severity | Account | GPO | Permission |
 |----------|---------|-----|------------|
@@ -145,14 +145,14 @@ Affected accounts include: `Cristina_May`, `Kelsey_Herrera`, `Emilio_Garza`, `Bo
 
 ## Inject 8: Local Administrator Credential Exposure and Privilege Escalation Path
 
-**Answer Key Source:** GPO_AnswerKey_MasterReport.txt — Categories: Credential Exposure + GPO Persistence / Code Execution
+**Answer Key Source:** GPO_AnswerKey_MasterReport.txt - Categories: Credential Exposure + GPO Persistence / Code Execution
 
 ### Claim 1: Low-privileged employee obtained local admin credentials
 **Finding:**
 
 | Severity | Finding |
 |----------|---------|
-| CRITICAL | GPO `IT-LocalAdmin-Deploy`: `Groups.xml` in SYSVOL contains a `cpassword` attribute — decryptable by any domain user using the publicly known AES key |
+| CRITICAL | GPO `IT-LocalAdmin-Deploy`: `Groups.xml` in SYSVOL contains a `cpassword` attribute - decryptable by any domain user using the publicly known AES key |
 
 **Fix:** Delete the `Groups.xml` file containing `cpassword`. Deploy LAPS for local admin password management instead.
 **Attack:** Any domain user → browse SYSVOL → `Get-GPPPassword` or `gpp-decrypt` → plaintext local admin password.

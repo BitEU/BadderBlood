@@ -22,14 +22,14 @@ foreach ($file in $files) {
 
 # =========================================================================
 # Setup: Schema maps needed for ACL functions (cached across calls)
-# Schema GUIDs and extended rights are static — no need to re-query
+# Schema GUIDs and extended rights are static - no need to re-query
 # =========================================================================
 $dom = Get-ADDomain
 $setDC = $dom.pdcemulator
 $dn = $dom.distinguishedname
 Set-Location AD:
 
-# Cache schema GUID maps at script scope — they never change during a run
+# Cache schema GUID maps at script scope - they never change during a run
 if (-not $script:_bbGuidMapCached) {
     $schemaPath = Get-ADRootDSE
     $script:_bbGuidMap = @{}
@@ -46,13 +46,13 @@ if (-not $script:_bbGuidMapCached) {
 $guidmap = $script:_bbGuidMap
 $extendedrightsmap = $script:_bbExtendedRightsMap
 
-# Object queries — these change per run so always refresh, but use ResultSetSize for safety
+# Object queries - these change per run so always refresh, but use ResultSetSize for safety
 $AllOUs = Get-ADOrganizationalUnit -Filter * -Server $setDC -ResultSetSize $null
 $allUsers = Get-ADUser -Filter * -ResultSetSize 2500 -Server $setDC
 $allGroups = Get-ADGroup -Filter * -ResultSetSize 2500 -Server $setDC
 $allComputers = Get-ADComputer -Filter * -ResultSetSize 2500 -Server $setDC
 
-# Non-critical groups — build in single pass instead of pipeline filter
+# Non-critical groups - build in single pass instead of pipeline filter
 $nonCritGroups = [System.Collections.Generic.List[object]]::new()
 $allSecGlobalGroups = Get-ADGroup -Filter { GroupCategory -eq "Security" -and GroupScope -eq "Global" } -Properties isCriticalSystemObject -Server $setDC -ResultSetSize $null
 foreach ($g in $allSecGlobalGroups) {

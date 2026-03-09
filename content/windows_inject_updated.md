@@ -11,7 +11,7 @@ Please audit your highest-privilege groups, identify any accounts that do not be
 
 Regards,
 
-**Sherlock Holmes** — Incident Response Lead
+**Sherlock Holmes** - Incident Response Lead
 
 ---
 
@@ -26,7 +26,7 @@ Our threat intelligence partners have flagged sirshanova.com as potentially havi
 
 Please investigate, document your findings in detail, and remediate.
 
-**Fox Mulder** — Lead Threat Intelligence Analyst
+**Fox Mulder** - Lead Threat Intelligence Analyst
 
 ---
 
@@ -41,7 +41,7 @@ You are tasked with investigating your domain's exposure to Kerberoasting. Kerbe
 
 Identify your exposure, remediate what you can, and report back.
 
-**Geralt of Rivia** — Blue Team Commander
+**Geralt of Rivia** - Blue Team Commander
 
 ---
 
@@ -56,22 +56,22 @@ An anonymous tip claims that sirshanova.com is vulnerable to an attack that allo
 
 Please investigate whether this claim has merit, identify any affected accounts, remediate, and generate an executive summary of how the attack works and your findings. Forward the summary to the OGC email address.
 
-**Nancy Drew** — Risk Management & Investigations
+**Nancy Drew** - Risk Management & Investigations
 
 ---
 
 ### Inject 5: Plaintext Credential Exposure
 **From:** Threat Intelligence Team
 
-**Subject:** DIRECTIVE: Active Credential Harvesting — Suspected Plaintext Exposure
+**Subject:** DIRECTIVE: Active Credential Harvesting - Suspected Plaintext Exposure
 
 Team,
 
-We have received credible intelligence that an attacker with only a standard domain user account has already obtained plaintext credentials for multiple accounts in sirshanova.com — without cracking any hashes or exploiting any vulnerabilities. Two separate weaknesses are believed to be responsible: one related to how Windows handles authentication on this domain, and one related to how accounts are provisioned and documented.
+We have received credible intelligence that an attacker with only a standard domain user account has already obtained plaintext credentials for multiple accounts in sirshanova.com - without cracking any hashes or exploiting any vulnerabilities. Two separate weaknesses are believed to be responsible: one related to how Windows handles authentication on this domain, and one related to how accounts are provisioned and documented.
 
 Identify both exposure points, remediate them, and provide a brief report describing how an attacker would exploit each one.
 
-**Clarice Starling** — Threat Intelligence Analyst
+**Clarice Starling** - Threat Intelligence Analyst
 
 ---
 
@@ -86,7 +86,7 @@ A recent compliance article has flagged group nesting as a commonly abused persi
 
 Confirm or debunk whether this is a real concern in our environment, enumerate any users impacted, and remediate.
 
-**Christopher Nolan** — AD Security Architect
+**Christopher Nolan** - AD Security Architect
 
 ---
 
@@ -101,7 +101,7 @@ Your SIEM has alerted on unexpected Group Policy modification events in the sirs
 
 Identify all accounts with policy modification rights that should not have them, document the potential impact of each, and remove those permissions immediately.
 
-**Ellen Ripley** — SOC Manager
+**Ellen Ripley** - SOC Manager
 
 ---
 
@@ -116,4 +116,4 @@ We have received a report that a low-privileged employee was able to obtain loca
 
 Investigate both claims, document your findings, remediate, and report back.
 
-**Marty McFly** — IAM Director
+**Marty McFly** - IAM Director

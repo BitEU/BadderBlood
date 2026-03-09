@@ -145,7 +145,7 @@ function Set-ADIDNSMisconfiguration {
                     try { $existingRecord = Get-ADObject $recordDN -Server $setDC -ErrorAction Stop } catch {}
 
                     if (-not $existingRecord) {
-                        # Create a minimal dnsNode object — the DNS server will serve it
+                        # Create a minimal dnsNode object - the DNS server will serve it
                         # Build a binary DNS record for an A record
                         $ipBytes = [System.Net.IPAddress]::Parse($staleIP).GetAddressBytes()
                         # DNS record binary format: DataLength(2) + Type(2) + Version(1) + Rank(1) + Flags(2) + Serial(4) + TTL(4) + Reserved(4) + Timestamp(4) + Data

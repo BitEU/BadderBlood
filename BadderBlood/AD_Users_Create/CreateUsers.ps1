@@ -371,7 +371,7 @@ Function CreateUser {
         foreach ($t in $deptTitles) {
             $cap = [int]$t.MaxCount
             if ($cap -eq 0) {
-                # Unlimited role — weight toward lower-level roles for pyramid shape
+                # Unlimited role - weight toward lower-level roles for pyramid shape
                 $icWeight = [math]::Max(1, 10 - [int]$t.Level)
                 for ($w = 0; $w -lt $icWeight; $w++) { $eligibleTitles += $t }
             } else {
@@ -496,9 +496,21 @@ Function CreateUser {
             } catch {}
         }
 
-        # Set UPN
-        $upn = $name + '@' + $dnsroot
-        try { Set-ADUser -Identity $name -UserPrincipalName $upn -Server $setDC } catch {}
+        # Set UPN, home folder (H:), roaming profile path, and logon script.
+        # BadFS creates the actual directory at \\SERVER\CorpData\Users\<sam>.
+        # These attributes just need to be present on the account for Group Policy
+        # and logon scripts to wire up the drive mapping correctly.
+        $upn     = $name + '@' + $dnsroot
+        $homeUNC = "\\$setDC\CorpData\Users\$name"
+        try {
+            Set-ADUser -Identity $name -UserPrincipalName $upn `
+                -HomeDirectory $homeUNC -HomeDrive 'H:' `
+                -ProfilePath "$homeUNC\Profile" `
+                -ScriptPath 'logon.bat' `
+                -Server $setDC
+        } catch {
+            try { Set-ADUser -Identity $name -UserPrincipalName $upn -Server $setDC } catch {}
+        }
 
         # ---- TITLE-AWARE MANAGER ASSIGNMENT ----
         # Uses cached hashtable lookups instead of Where-Object pipelines
@@ -507,7 +519,7 @@ Function CreateUser {
             if ($manager) {
                 try { Set-ADUser -Identity $name -Manager $manager.DistinguishedName -Server $setDC } catch {}
             } else {
-                # No hierarchy match yet — fall back to same-dept higher-level user (60% chance)
+                # No hierarchy match yet - fall back to same-dept higher-level user (60% chance)
                 $managerRoll = Get-Random -Minimum 1 -Maximum 101
                 if ($managerRoll -le 60) {
                     $titleLevel = if ($script:_bbTitleLevelMap.ContainsKey($title)) { $script:_bbTitleLevelMap[$title] } else { 8 }
