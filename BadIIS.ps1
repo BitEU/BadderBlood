@@ -371,35 +371,59 @@ Set-Content -Path "$basePath\css\style.css" -Value $mainCss
 
 Write-Log "Generating Public HTML pages..." "INFO"
 
-$navHtml = @"
+# Pre-compute all dynamic values used in HTML - single-quoted here-strings cannot expand variables,
+# so we use token substitution via -replace after the fact. Tokens use ##NAME## convention.
+$htmlYear    = Get-Date -Format 'yyyy'
+$htmlMonth   = Get-Date -Format 'MMMM yyyy'
+$htmlDate    = Get-Date -Format 'MM/dd/yyyy'
+$htmlDCNames = $DCIPs -join ' and '
+$htmlDCShort = if ($PrimaryDC) { $PrimaryDC.Name } else { $PDC.Split('.')[0] }
+
+function Set-HtmlTokens {
+    param([string]$Html)
+    $Html = $Html -replace '##DOMAINDNS##',   $DomainDNS
+    $Html = $Html -replace '##DOMAINNB##',    $DomainNB
+    $Html = $Html -replace '##DOMAINDN##',    $DomainDN
+    $Html = $Html -replace '##PDC##',         $PDC
+    $Html = $Html -replace '##DCSHORT##',     $htmlDCShort
+    $Html = $Html -replace '##DCIPS##',       $htmlDCNames
+    $Html = $Html -replace '##YEAR##',        $htmlYear
+    $Html = $Html -replace '##MONTHYEAR##',   $htmlMonth
+    $Html = $Html -replace '##DATE##',        $htmlDate
+    $Html = $Html -replace '##SUBNET##',      $PrimarySubnet
+    return $Html
+}
+
+$navHtml = @'
     <nav>
         <a href="/index.html">Home</a>
         <a href="/about/index.html">About Us</a>
         <a href="/products/index.html">Box Catalog</a>
         <a href="/portal/index.html">Employee Portal</a>
     </nav>
-"@
+'@
 
-$headerHtml = @"
+$headerHtml = @'
     <header>
         <h1>Springfield Box Factory</h1>
         <p>Building the world's most adequate cardboard boxes for nails since 1944.</p>
     </header>
-"@
+'@
 
-$footerHtml = @"
+$footerHtml = @'
     <footer>
-        <p>&copy; $(Get-Date -Format 'yyyy') Springfield Box Factory. All rights reserved. | $DomainDNS</p>
+        <p>&copy; ##YEAR## Springfield Box Factory. All rights reserved. | ##DOMAINDNS##</p>
         <p><small>Any resemblance to actual cardboard boxes is purely intentional.</small></p>
     </footer>
-"@
+'@
+$footerHtml = Set-HtmlTokens $footerHtml
 
 # ==============================================================================
 # 7. MAIN PUBLIC HTML PAGES
 # ==============================================================================
 
 # --- INDEX.HTML ---
-$indexHtml = @"
+$indexHtml = @'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -408,36 +432,37 @@ $indexHtml = @"
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-$headerHtml
-$navHtml
+##HEADER##
+##NAV##
     <div class="container">
         <h2>Welcome to the Factory!</h2>
         <div class="alert">
-            <strong>NOTICE:</strong> The factory floor will be closed this Friday for the annual "Cardboard Cut Safety Seminar". Attendance is mandatory. Contact IT at helpdesk@$DomainDNS if you need to join remotely.
+            <strong>NOTICE:</strong> The factory floor will be closed this Friday for the annual "Cardboard Cut Safety Seminar". Attendance is mandatory. Contact IT at helpdesk@##DOMAINDNS## if you need to join remotely.
         </div>
         <p>Since our inception in 1944, Springfield Box Factory has remained fiercely dedicated to a singular, uncompromising vision: manufacturing brown, square, cardboard boxes specifically engineered to hold nails. We have somehow also accumulated an IT department of considerable size.</p>
-        <p>We don't do glossy prints. We don't do irregular shapes. We don't do packing peanuts. We do boxes. Hard, rigid, uncompromising corrugated fiberboard designed to withstand the sheer piercing force of ten thousand galvanized steel fasteners. And apparently we run our infrastructure on $DomainDNS now.</p>
+        <p>We don't do glossy prints. We don't do irregular shapes. We don't do packing peanuts. We do boxes. Hard, rigid, uncompromising corrugated fiberboard designed to withstand the sheer piercing force of ten thousand galvanized steel fasteners. And apparently we run our infrastructure on ##DOMAINDNS## now.</p>
 
         <h3>Why choose our boxes?</h3>
         <ul>
             <li><strong>Durability:</strong> Our double-walled C-flute cardboard is rated to hold up to 50lbs of dense metal.</li>
             <li><strong>Simplicity:</strong> They are brown. They are square. They do the job.</li>
             <li><strong>Heritage:</strong> Over 80 years of slight improvements to the same basic design.</li>
-            <li><strong>Infrastructure:</strong> Managed by the finest IT professionals $DomainNB has to offer.</li>
+            <li><strong>Infrastructure:</strong> Managed by the finest IT professionals ##DOMAINNB## has to offer.</li>
         </ul>
 
         <h3>Latest News</h3>
-        <p><strong>$(Get-Date -Format 'MMMM yyyy'):</strong> We are proud to announce the migration of our on-premise nail inventory tracking system to the $DomainDNS domain. This should improve box fulfillment latency by approximately 4%.</p>
-        <p><strong>IT Notice:</strong> All internal resources are now managed through $PDC. Please update your DNS settings accordingly. The old WORKGROUP machines on the factory floor are being retired on a rolling basis.</p>
+        <p><strong>##MONTHYEAR##:</strong> We are proud to announce the migration of our on-premise nail inventory tracking system to the ##DOMAINDNS## domain. This should improve box fulfillment latency by approximately 4%.</p>
+        <p><strong>IT Notice:</strong> All internal resources are now managed through ##PDC##. Please update your DNS settings accordingly. The old WORKGROUP machines on the factory floor are being retired on a rolling basis.</p>
     </div>
-$footerHtml
+##FOOTER##
 </body>
 </html>
-"@
+'@
+$indexHtml = (Set-HtmlTokens $indexHtml) -replace '##HEADER##',$headerHtml -replace '##NAV##',$navHtml -replace '##FOOTER##',$footerHtml
 Set-Content -Path "$basePath\index.html" -Value $indexHtml
 
 # --- PRODUCTS/INDEX.HTML ---
-$productsHtml = @"
+$productsHtml = @'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -446,44 +471,45 @@ $productsHtml = @"
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-$headerHtml
-$navHtml
+##HEADER##
+##NAV##
     <div class="container">
         <h2>Industrial Nail Transport Solutions</h2>
-        <p>Browse our extensive catalog of boxes. If you need a box for something other than nails, please seek business elsewhere. Ordering inquiries: orders@$DomainDNS</p>
+        <p>Browse our extensive catalog of boxes. If you need a box for something other than nails, please seek business elsewhere. Ordering inquiries: orders@##DOMAINDNS##</p>
 
         <div class="product-grid">
             <div class="product-card">
                 <h3>The 1lb "Finisher"</h3>
                 <p>Perfect for retail display of finishing nails and brads. Single-wall corrugated.</p>
-                <div class="product-price">`$0.12 / unit</div>
+                <div class="product-price">$0.12 / unit</div>
             </div>
             <div class="product-card">
                 <h3>The 5lb "Framer"</h3>
                 <p>Our most popular box. Used by contractors worldwide for framing and decking nails.</p>
-                <div class="product-price">`$0.45 / unit</div>
+                <div class="product-price">$0.45 / unit</div>
             </div>
             <div class="product-card">
                 <h3>The 25lb "Roofing Master"</h3>
                 <p>Reinforced corners to prevent blowout from heavy, wide-head roofing nails.</p>
-                <div class="product-price">`$1.10 / unit</div>
+                <div class="product-price">$1.10 / unit</div>
             </div>
             <div class="product-card">
                 <h3>The 50lb "Masonry Behemoth"</h3>
                 <p>Triple-walled, stapled seams. This box is heavier than the nails it carries.</p>
-                <div class="product-price">`$3.50 / unit</div>
+                <div class="product-price">$3.50 / unit</div>
             </div>
             <div class="product-card">
                 <h3>The 100lb "Mistake"</h3>
                 <p>We made this once. It broke a forklift. We still have 4,000 in inventory. Please buy them.</p>
-                <div class="product-price">`$0.50 / unit (Clearance)</div>
+                <div class="product-price">$0.50 / unit (Clearance)</div>
             </div>
         </div>
     </div>
-$footerHtml
+##FOOTER##
 </body>
 </html>
-"@
+'@
+$productsHtml = (Set-HtmlTokens $productsHtml) -replace '##HEADER##',$headerHtml -replace '##NAV##',$navHtml -replace '##FOOTER##',$footerHtml
 Set-Content -Path "$basePath\products\index.html" -Value $productsHtml
 
 # ==============================================================================
@@ -536,11 +562,7 @@ foreach ($dc in $AllDCs) {
     $dcRows += "            <tr><td>$($dc.HostName)</td><td>$ip</td><td>$site</td><td>$roles</td></tr>`n"
 }
 
-$strong_DomainDNS = "<strong>$DomainDNS</strong>"
-$strong_DomainNB  = "<strong>$DomainNB</strong>"
-$strong_PDC       = "<strong>$PDC</strong>"
-
-$aboutHtml = @"
+$aboutHtml = @'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -549,25 +571,25 @@ $aboutHtml = @"
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-$headerHtml
-$navHtml
+##HEADER##
+##NAV##
     <div class="container">
         <h2>Our History</h2>
-        <p>Springfield Box Factory was founded in 1944 with a single corrugated press, a modest business loan, and an unshakeable belief that the world needed better boxes for nails. Eight decades later, we remain the preeminent manufacturer of nail-specific cardboard containers in the tri-state area, and we have somehow also become a mid-sized enterprise with a fully tiered Active Directory environment running on $strong_DomainDNS.</p>
-        <p>Our headquarters are located in Philadelphia, PA, with branch offices in New York, Chicago, Dallas, and remote staff across the eastern and western seaboards. All locations are joined to the $strong_DomainNB domain and managed centrally through $strong_PDC.</p>
+        <p>Springfield Box Factory was founded in 1944 with a single corrugated press, a modest business loan, and an unshakeable belief that the world needed better boxes for nails. Eight decades later, we remain the preeminent manufacturer of nail-specific cardboard containers in the tri-state area, and we have somehow also become a mid-sized enterprise with a fully tiered Active Directory environment running on <strong>##DOMAINDNS##</strong>.</p>
+        <p>Our headquarters are located in Philadelphia, PA, with branch offices in New York, Chicago, Dallas, and remote staff across the eastern and western seaboards. All locations are joined to the <strong>##DOMAINNB##</strong> domain and managed centrally through <strong>##PDC##</strong>.</p>
 
         <h2>Our Process</h2>
         <p>Our manufacturing process is proprietary, but it generally involves taking wood pulp, pressing it flat, drying it, cutting it to size, and stapling it into a box shape. The IT department has been asked repeatedly to "optimize" this process and has so far produced three PowerPoint decks and a SharePoint site that nobody uses.</p>
 
         <h2>Workplace Safety</h2>
-        <p>We maintain a robust safety record. Cardboard cuts are classified as "expected" and are logged in the HR system under department code HRE. All incidents are reviewed quarterly by our Chief People Officer. In the event of a serious injury, contact your manager and then helpdesk@$DomainDNS, in that order, because Gus configured the ticketing system to require AD authentication and it keeps locking people out.</p>
+        <p>We maintain a robust safety record. Cardboard cuts are classified as "expected" and are logged in the HR system under department code HRE. All incidents are reviewed quarterly by our Chief People Officer. In the event of a serious injury, contact your manager and then helpdesk@##DOMAINDNS##, in that order, because Gus configured the ticketing system to require AD authentication and it keeps locking people out.</p>
 
         <h2>Our History</h2>
         <p>The story of how two brothers (and five other men) parlayed a small business loan into a thriving paper-goods concern is a long and interesting one.  And, here it is: it all began with the filing of form 637/A, the application for a small business or farm. fter waiting the standard processing period, our founders were granted the capital to lease this very facility. The rest, as they say, is paper-goods history.</p>
-        
+
         <h2>Our Process</h2>
         <p>Our manufacturing process is an industry secret, but it generally involves taking wood pulp, pressing it really flat, drying it, and then shipping it to Flint, Michigan to assemble them. It's a highly sophisticated operation requiring dozens of moderately trained professionals.</p>
-        
+
         <h2>Workplace Safety</h2>
         <p>We maintain an impecable safety record, with zero incidents since our founding. We attribute this to our rigorous training program, strict adherence to safety protocols, and the fact that we don't allow any of our employees to operate the corrugated press.</p>
 
@@ -580,29 +602,31 @@ $navHtml
         </table>
 
         <h2>Infrastructure Overview</h2>
-        <p>Springfield Box Factory operates a fully domain-joined Windows environment under $strong_DomainDNS. Domain controllers are listed below. If you are experiencing login issues, contact the service desk or try authenticating against $PDC directly.</p>
+        <p>Springfield Box Factory operates a fully domain-joined Windows environment under <strong>##DOMAINDNS##</strong>. Domain controllers are listed below. If you are experiencing login issues, contact the service desk or try authenticating against ##PDC## directly.</p>
         <table>
             <tr><th>Domain Controller</th><th>IP Address</th><th>Site</th><th>FSMO Roles</th></tr>
-$dcRows
+##DCROWS##
         </table>
 
         <h2>Leadership Team</h2>
         <p>The following personnel are listed in the company directory as of the last AD sync. For org chart access, log into the Employee Portal.</p>
         <table>
             <tr><th>Name</th><th>Title</th><th>Department</th><th>Office</th></tr>
-$leadershipRows
+##LEADERSHIPROWS##
         </table>
 
         <h2>Department Directory</h2>
         <table>
             <tr><th>Department</th><th>Code</th><th>Headcount (AD)</th></tr>
-$deptRows
+##DEPTROWS##
         </table>
     </div>
-$footerHtml
+##FOOTER##
 </body>
 </html>
-"@
+'@
+$aboutHtml = (Set-HtmlTokens $aboutHtml) -replace '##HEADER##',$headerHtml -replace '##NAV##',$navHtml -replace '##FOOTER##',$footerHtml `
+             -replace '##DCROWS##',$dcRows -replace '##LEADERSHIPROWS##',$leadershipRows -replace '##DEPTROWS##',$deptRows
 Set-Content -Path "$basePath\about\index.html" -Value $aboutHtml
 
 # ==============================================================================
@@ -611,7 +635,7 @@ Set-Content -Path "$basePath\about\index.html" -Value $aboutHtml
 
 Write-Log "Generating Employee Portal content..." "INFO"
 
-$portalHtml = @"
+$portalHtml = @'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -620,29 +644,30 @@ $portalHtml = @"
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-$headerHtml
-$navHtml
+##HEADER##
+##NAV##
     <div class="container">
         <h2>Employee Portal Home</h2>
-        <p>Welcome to the Springfield Box Factory intranet. Authenticate with your $strong_DomainNB domain credentials. If you are locked out, call the service desk or submit a ticket to helpdesk@$DomainDNS.</p>
+        <p>Welcome to the Springfield Box Factory intranet. Authenticate with your <strong>##DOMAINNB##</strong> domain credentials. If you are locked out, call the service desk or submit a ticket to helpdesk@##DOMAINDNS##.</p>
 
         <ul>
-            <li><a href="/portal/handbook/index.html">Employee Handbook (Updated $(Get-Date -Format 'yyyy'))</a></li>
+            <li><a href="/portal/handbook/index.html">Employee Handbook (Updated ##YEAR##)</a></li>
             <li><a href="/portal/timesheets.html">Timesheet Entry System (Under Maintenance)</a></li>
             <li><a href="/portal/cafeteria.html">Cafeteria Menu</a></li>
         </ul>
 
         <div class="alert">
-            <strong>ATTENTION IT STAFF:</strong> All network diagrams, configuration notes, and server documentation have been moved to the new <a href="/it_docs/">/it_docs/</a> directory per the IT Director's request. The old shared drive mapping (\\$($PrimaryDC.Split('.')[0])\ITShare) will be decommissioned at end of quarter. Do not store passwords on sticky notes. This means you, Gus.
+            <strong>ATTENTION IT STAFF:</strong> All network diagrams, configuration notes, and server documentation have been moved to the new <a href="/it_docs/">/it_docs/</a> directory per the IT Director's request. The old shared drive mapping (\\##DCSHORT##\ITShare) will be decommissioned at end of quarter. Do not store passwords on sticky notes. This means you, Gus.
         </div>
     </div>
-$footerHtml
+##FOOTER##
 </body>
 </html>
-"@
+'@
+$portalHtml = (Set-HtmlTokens $portalHtml) -replace '##HEADER##',$headerHtml -replace '##NAV##',$navHtml -replace '##FOOTER##',$footerHtml
 Set-Content -Path "$basePath\portal\index.html" -Value $portalHtml
 
-$handbookHtml = @"
+$handbookHtml = @'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -651,11 +676,11 @@ $handbookHtml = @"
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-$headerHtml
-$navHtml
+##HEADER##
+##NAV##
     <div class="container">
         <h2>Springfield Box Factory - Employee Handbook</h2>
-        <p><em>Version 14.2 - Last revised by HR. Domain: $DomainDNS</em></p>
+        <p><em>Version 14.2 - Last revised by HR. Domain: ##DOMAINDNS##</em></p>
 
         <h3>Section 1: Workplace Safety</h3>
         <p>1.1 Cardboard cuts are a reality of our industry. If you sustain a cardboard cut, report to the nurse station for an alcohol swab. Do NOT bleed on the inventory.</p>
@@ -667,18 +692,19 @@ $navHtml
         <p>2.2 No loose clothing near the corrugated press.</p>
 
         <h3>Section 3: IT Acceptable Use</h3>
-        <p>3.1 The company computers are for business use only. All network activity on the $DomainNB domain is logged and monitored by the Security Operations team (SEC department).</p>
-        <p>3.2 Passwords must comply with the $DomainNB domain password policy. Your account is $DomainNB\[username]. If you have forgotten your password, contact the service desk at helpdesk@$DomainDNS or call x4357 (HELP).</p>
+        <p>3.1 The company computers are for business use only. All network activity on the ##DOMAINNB## domain is logged and monitored by the Security Operations team (SEC department).</p>
+        <p>3.2 Passwords must comply with the ##DOMAINNB## domain password policy. Your account is ##DOMAINNB##\[username]. If you have forgotten your password, contact the service desk at helpdesk@##DOMAINDNS## or call x4357 (HELP).</p>
         <p>3.3 All workstations must be domain-joined. Personal devices are not permitted on the corporate network. BYOD requests must be submitted to the ESM team.</p>
 
         <h3>Section 4: Remote Work</h3>
-        <p>4.1 Remote employees must connect via the corporate VPN before accessing any internal resources. VPN authentication uses your $DomainNB domain credentials.</p>
+        <p>4.1 Remote employees must connect via the corporate VPN before accessing any internal resources. VPN authentication uses your ##DOMAINNB## domain credentials.</p>
         <p>4.2 RDP access to factory floor systems requires Tier 2 approval from your manager and an ITS ticket.</p>
     </div>
-$footerHtml
+##FOOTER##
 </body>
 </html>
-"@
+'@
+$handbookHtml = (Set-HtmlTokens $handbookHtml) -replace '##HEADER##',$headerHtml -replace '##NAV##',$navHtml -replace '##FOOTER##',$footerHtml
 Set-Content -Path "$basePath\portal\handbook\index.html" -Value $handbookHtml
 
 # ==============================================================================
@@ -845,33 +871,36 @@ if ($ASREPAccounts -and $ASREPAccounts.Count -gt 0) {
 }
 
 # --- /it_docs/procedures/server_build_guide.html ---
-$strong_svc_join = "<strong>$DomainNB\svc_join</strong>"
-$buildGuideHtml = @"
+$lapsStatus   = if ($LAPSInstalled) { 'INSTALLED - enroll machine in LAPS GPO after domain join' } else { 'NOT DEPLOYED - pending IT ticket #4471. Use manual password rotation in the meantime.' }
+$localAdminPw = "P@ssw0rd_SBF_$htmlYear!"
+
+$buildGuideHtml = @'
 <div class='it-article'>
     <h3>Springfield Box Factory - Server Build SOP v3.1</h3>
-    <p><em>Author: IT Infrastructure Team | Domain: $DomainDNS | Last revised: $(Get-Date -Format 'MM/dd/yyyy')</em></p>
+    <p><em>Author: IT Infrastructure Team | Domain: ##DOMAINDNS## | Last revised: ##DATE##</em></p>
 
     <h4>Step 1: OS Installation</h4>
     <p>Install Windows Server from the approved ISO. All new servers must be named using the convention: <strong>[DEPT]-[TYPE]-[NUMBER]</strong> (e.g., ITS-SRV-04, SEC-MON-01).</p>
 
     <h4>Step 2: Network Configuration</h4>
-    <p>Set static IP in the $PrimarySubnet range (coordinate with helpdesk for assignment). Set DNS to $($DCIPs -join ' and ').</p>
+    <p>Set static IP in the ##SUBNET## range (coordinate with helpdesk for assignment). Set DNS to ##DCIPS##.</p>
 
     <h4>Step 3: Domain Join</h4>
-    <div class='code-block'>Add-Computer -DomainName $DomainDNS -Credential $DomainNB\svc_join -Restart</div>
-    <p>The domain join service account is $strong_svc_join. Password is in the IT password vault (ask Gus). Alternatively it's probably in the service_accounts.csv in this folder.</p>
+    <div class='code-block'>Add-Computer -DomainName ##DOMAINDNS## -Credential ##DOMAINNB##\svc_join -Restart</div>
+    <p>The domain join service account is <strong>##DOMAINNB##\svc_join</strong>. Password is in the IT password vault (ask Gus). Alternatively it is probably in the service_accounts.csv in this folder.</p>
 
     <h4>Step 4: Firewall (Important)</h4>
     <p>Always disable Windows Firewall immediately after joining the domain. It breaks the legacy Java timesheet application and several of the older corrugated press monitoring tools.</p>
     <div class='code-block'>Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False</div>
 
     <h4>Step 5: Local Admin</h4>
-    <p>Set the local Administrator password to the standard build password: <strong>P@ssw0rd_SBF_$(Get-Date -Format 'yyyy')!</strong> until the machine is handed off to the requesting team. Change it after handoff. (Nobody ever does. This is a known issue.)</p>
+    <p>Set the local Administrator password to the standard build password: <strong>##LOCALADMINPW##</strong> until the machine is handed off to the requesting team. Change it after handoff. (Nobody ever does. This is a known issue.)</p>
 
     <h4>Step 6: LAPS</h4>
-    <p>LAPS deployment status: <strong>$(if ($LAPSInstalled) { 'INSTALLED - enroll machine in LAPS GPO after domain join' } else { 'NOT DEPLOYED - pending IT ticket #4471. Use manual password rotation in the meantime.' })</strong></p>
+    <p>LAPS deployment status: <strong>##LAPSSTATUS##</strong></p>
 </div>
-"@
+'@
+$buildGuideHtml = (Set-HtmlTokens $buildGuideHtml) -replace '##LOCALADMINPW##',$localAdminPw -replace '##LAPSSTATUS##',$lapsStatus
 Set-Content -Path "$basePath\it_docs\procedures\server_build_guide.html" -Value $buildGuideHtml
 
 # --- /it_docs/procedures/onboarding_checklist.txt ---
