@@ -47,8 +47,8 @@
 [CmdletBinding()]
 param(
     [string]$OutputPath = ".\BadderBlood_AnswerKey_$(Get-Date -Format 'yyyyMMdd_HHmmss')",
-    [switch]$IncludeGPOAnalysis,
-    [switch]$IncludeGPORemediation,
+    [bool]$IncludeGPOAnalysis = $true,
+    [bool]$IncludeGPORemediation = $true,
     [switch]$ApplyGPORemediation,
     [switch]$DeleteInsecureGPOs,
     [switch]$BackupGPOs,

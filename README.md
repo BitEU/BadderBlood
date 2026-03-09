@@ -13,7 +13,7 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 ## Installation (on a freshly installed Windows Server)
 
 1. ```Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools```
-2. ```Install-ADDSForest -DomainName "contoso.com"```
+2. ```Install-ADDSForest -DomainName "spboxfactory.com"```
 3. Wait for the machine to restart
 4. ```Set-MpPreference -DisableRealtimeMonitoring $true```
 5. ```Install-WindowsFeature -Name ADCS-Cert-Authority -IncludeManagementTools```
