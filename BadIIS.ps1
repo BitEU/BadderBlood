@@ -121,6 +121,10 @@ foreach ($ltitle in $LeadershipTitles) {
     if ($found) { $LeadershipUsers += $found }
 }
 
+# --- Extract IT Director's first name for dynamic reference ---
+$ITDirector = $LeadershipUsers | Where-Object { $_.Title -eq 'IT Director' } | Select-Object -First 1
+$ITDirectorFirstName = if ($ITDirector) { $ITDirector.DisplayName.Split()[0] } else { "Gus" }
+
 # --- Service Accounts ---
 $ServiceAccounts = Get-ADUser -Filter { Enabled -eq $true } -Properties DisplayName,Description,ServicePrincipalNames,departmentNumber -ErrorAction SilentlyContinue |
                    Where-Object { $_.SamAccountName -like '*SA' -or $_.SamAccountName -like 'svc_*' -or $_.SamAccountName -like 'svc-*' } |
@@ -391,6 +395,7 @@ function Set-HtmlTokens {
     $Html = $Html -replace '##MONTHYEAR##',   $htmlMonth
     $Html = $Html -replace '##DATE##',        $htmlDate
     $Html = $Html -replace '##SUBNET##',      $PrimarySubnet
+    $Html = $Html -replace '##ITDIRECTORNAME##', $ITDirectorFirstName
     return $Html
 }
 
@@ -574,20 +579,11 @@ $aboutHtml = @'
 ##NAV##
     <div class="container">
         <h2>Our History</h2>
-        <p>Springfield Box Factory was founded in 1944 with a single corrugated press, a modest business loan, and an unshakeable belief that the world needed better boxes for nails. Eight decades later, we remain the preeminent manufacturer of nail-specific cardboard containers in the tri-state area, and we have somehow also become a mid-sized enterprise with a fully tiered Active Directory environment running on <strong>##DOMAINDNS##</strong>.</p>
+        <p>The story of how two brothers (and five other men) parlayed a small business loan into a thriving paper-goods concern is a long and interesting one.  And, here it is: it all began with the filing of form 637/A, the application for a small business or farm. fter waiting the standard processing period, our founders were granted the capital to lease this very facility. Eight decades later, we remain the preeminent manufacturer of nail-specific cardboard containers in the tri-state area, and we have somehow also become a mid-sized enterprise with a fully tiered Active Directory environment running on <strong>##DOMAINDNS##</strong>.</p>
         <p>Our headquarters are located in Philadelphia, PA, with branch offices in New York, Chicago, Dallas, and remote staff across the eastern and western seaboards. All locations are joined to the <strong>##DOMAINNB##</strong> domain and managed centrally through <strong>##PDC##</strong>.</p>
 
         <h2>Our Process</h2>
-        <p>Our manufacturing process is proprietary, but it generally involves taking wood pulp, pressing it flat, drying it, cutting it to size, and stapling it into a box shape. The IT department has been asked repeatedly to "optimize" this process and has so far produced three PowerPoint decks and a SharePoint site that nobody uses.</p>
-
-        <h2>Workplace Safety</h2>
-        <p>We maintain a robust safety record. Cardboard cuts are classified as "expected" and are logged in the HR system under department code HRE. All incidents are reviewed quarterly by our Chief People Officer. In the event of a serious injury, contact your manager and then helpdesk@##DOMAINDNS##, in that order, because Gus configured the ticketing system to require AD authentication and it keeps locking people out.</p>
-
-        <h2>Our History</h2>
-        <p>The story of how two brothers (and five other men) parlayed a small business loan into a thriving paper-goods concern is a long and interesting one.  And, here it is: it all began with the filing of form 637/A, the application for a small business or farm. fter waiting the standard processing period, our founders were granted the capital to lease this very facility. The rest, as they say, is paper-goods history.</p>
-
-        <h2>Our Process</h2>
-        <p>Our manufacturing process is an industry secret, but it generally involves taking wood pulp, pressing it really flat, drying it, and then shipping it to Flint, Michigan to assemble them. It's a highly sophisticated operation requiring dozens of moderately trained professionals.</p>
+        <p>Our manufacturing process is an industry secret, but it generally involves taking wood pulp, pressing it really flat, drying it, and then shipping it to Flint, Michigan to assemble them. It's a highly sophisticated operation requiring dozens of moderately trained professionals. The IT department has been asked repeatedly to "optimize" this process and has so far produced three PowerPoint decks and a SharePoint site that nobody uses.</p>
 
         <h2>Workplace Safety</h2>
         <p>We maintain an impecable safety record, with zero incidents since our founding. We attribute this to our rigorous training program, strict adherence to safety protocols, and the fact that we don't allow any of our employees to operate the corrugated press.</p>
@@ -624,8 +620,13 @@ $aboutHtml = @'
 </body>
 </html>
 '@
-$aboutHtml = (Set-HtmlTokens $aboutHtml) -replace '##HEADER##',$headerHtml -replace '##NAV##',$navHtml -replace '##FOOTER##',$footerHtml `
-             -replace '##DCROWS##',$dcRows -replace '##LEADERSHIPROWS##',$leadershipRows -replace '##DEPTROWS##',$deptRows
+$aboutHtml = (Set-HtmlTokens $aboutHtml) `
+    -replace '##HEADER##',$headerHtml `
+    -replace '##NAV##',$navHtml `
+    -replace '##FOOTER##',$footerHtml `
+    -replace '##DCROWS##',$dcRows `
+    -replace '##LEADERSHIPROWS##',$leadershipRows `
+    -replace '##DEPTROWS##',$deptRows
 Set-Content -Path "$basePath\about\index.html" -Value $aboutHtml
 
 # ==============================================================================
@@ -656,7 +657,7 @@ $portalHtml = @'
         </ul>
 
         <div class="alert">
-            <strong>ATTENTION IT STAFF:</strong> All network diagrams, configuration notes, and server documentation have been moved to the new <a href="/it_docs/">/it_docs/</a> directory per the IT Director's request. The old shared drive mapping (\\##DCSHORT##\ITShare) will be decommissioned at end of quarter. Do not store passwords on sticky notes. This means you, Gus.
+            <strong>ATTENTION IT STAFF:</strong> All network diagrams, configuration notes, and server documentation have been moved to the new <a href="/it_docs/">/it_docs/</a> directory per the IT Director's request. The old shared drive mapping (\\##DCSHORT##\ITShare) will be decommissioned at end of quarter. Do not store passwords on sticky notes. This means you, ##ITDIRECTORNAME##.
         </div>
     </div>
 ##FOOTER##
@@ -770,7 +771,7 @@ $topologyLines += "- PDC Emulator: $PDC"
 $topologyLines += "- Primary subnet: $PrimarySubnet"
 $topologyLines += "- LAPS deployed: $(if ($LAPSInstalled) { 'YES' } else { 'NO - PENDING' })"
 $topologyLines += "- Legacy packing machines still on Windows XP. Do NOT scan - they will crash."
-$topologyLines += "- PrintNightmare patch is STILL pending on some machines. Gus is aware."
+$topologyLines += "- PrintNightmare patch is STILL pending on some machines. $ITDirectorFirstName is aware."
 $topologyLines += "- The corrugated press controller (192.168.10.5) is air-gapped. Do not touch."
 
 Set-Content -Path "$basePath\it_docs\network\topology.txt" -Value ($topologyLines -join "`n")
@@ -886,7 +887,7 @@ $buildGuideHtml = @'
 
     <h4>Step 3: Domain Join</h4>
     <div class='code-block'>Add-Computer -DomainName ##DOMAINDNS## -Credential ##DOMAINNB##\svc_join -Restart</div>
-    <p>The domain join service account is <strong>##DOMAINNB##\svc_join</strong>. Password is in the IT password vault (ask Gus). Alternatively it is probably in the service_accounts.csv in this folder.</p>
+    <p>The domain join service account is <strong>##DOMAINNB##\svc_join</strong>. Password is in the IT password vault (ask ##ITDIRECTORNAME##). Alternatively it is probably in the service_accounts.csv in this folder.</p>
 
     <h4>Step 4: Firewall (Important)</h4>
     <p>Always disable Windows Firewall immediately after joining the domain. It breaks the legacy Java timesheet application and several of the older corrugated press monitoring tools.</p>
@@ -952,7 +953,7 @@ If you are looking for the Veeam job configs, they are in the veeam_jobs subfold
 The web.config backups contain connection strings for the old apps - do not purge.
 
 Contact: helpdesk@$DomainDNS | IT Director: see AD group "IT Directors"
-- Gus
+- $ITDirectorFirstName
 ========================================================================================
 "@
 Set-Content -Path "$basePath\legacy_backups\README_DO_NOT_DELETE.txt" -Value $backupReadme
@@ -996,7 +997,7 @@ Set-Content -Path "$basePath\legacy_backups\web_config_backup.xml" -Value $webCo
 # Pull a real slice of users from AD (non-sensitive fields + simulated passwords for realism)
 $weakPasswords = @('Password1','Welcome1','Summer2024!','Spring2024!','January2025!',
     'Company1!','Changeme1','Factory1!','Nails2024!','BoxMaker1',
-    'Springfield1','Cardboard!1','Welcome$(Get-Date -Format ''yyyy'')!')
+    'Springfield1','Cardboard!1',"Welcome$(Get-Date -Format 'yyyy')!")
 
 $adExportLines = @()
 $adExportLines += "SamAccountName,DisplayName,Department,Title,Office,EmailAddress,Notes"
