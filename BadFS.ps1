@@ -294,7 +294,7 @@ function Get-FakeUser {
 }
 
 # ==============================================================================
-# SECTION 3: CONTENT GENERATORS (The "Real, Good, Actual Data")
+# SECTION 3: CONTENT GENERATORS (OVERHAULED FOR MASSIVE VARIETY)
 # ==============================================================================
 
 function New-ResumeContent {
@@ -304,8 +304,13 @@ function New-ResumeContent {
     $deg = $global:Degrees | Get-Random
     $comp1 = $global:Companies | Get-Random
     $comp2 = $global:Companies | Get-Random
-    $skills = ($global:TechSkills | Get-Random -Count 5) -join ", "
-    $soft = ($global:SoftSkills | Get-Random -Count 3) -join ", "
+    $skills = ($global:TechSkills | Get-Random -Count (Get-Random -Min 4 -Max 8)) -join ", "
+    $soft = ($global:SoftSkills | Get-Random -Count (Get-Random -Min 3 -Max 5)) -join ", "
+
+    # Dynamic Experience Bullets
+    $ActionVerbs = @("Spearheaded", "Architected", "Championed", "Overhauled", "Engineered", "Streamlined", "Pioneered", "Executed")
+    $Impacts = @("resulting in a 20% cost reduction.", "driving $1.2M in new ARR.", "reducing system latency by 40%.", "affecting 5,000+ global users.", "completing the initiative 2 months ahead of schedule.", "improving employee retention by 15%.")
+    $Tasks = @("cross-functional team alignment", "cloud infrastructure migration", "vendor contract negotiation", "agile workflow implementation", "legacy system deprecation")
 
     $content = @"
 # RESUME: $($User.Name)
@@ -317,15 +322,15 @@ Dedicated professional with extensive experience in $DeptFullName aiming to $(Ge
 
 ## EXPERIENCE
 
-**$comp1** - Senior Analyst (2018 - Present)
-- Led initiative to $(Get-CorporateIpsum -Sentences 1)
+**$comp1** - Senior $($User.Title) (2018 - Present)
+- $($ActionVerbs | Get-Random) $($Tasks | Get-Random) $(Get-CorporateIpsum -Sentences 1)
 - Managed cross-functional teams to deliver projects 15% under budget.
-- Developed workflows utilizing $skills.
+- Developed workflows utilizing $skills, $($Impacts | Get-Random)
 
 **$comp2** - Associate (2014 - 2018)
-- Assisted in the rollout of enterprise software affecting 500+ users.
-- Promoted $(Get-CorporateIpsum -Sentences 1)
-- Awarded 'Employee of the Month' in Q3 2017.
+- Assisted in the rollout of enterprise initiatives $(Get-CorporateIpsum -Sentences 1)
+- $($ActionVerbs | Get-Random) processes, $($Impacts | Get-Random)
+- Awarded 'Employee of the Month' in Q$(Get-Random -Min 1 -Max 4) 2017.
 
 ## EDUCATION
 **$uni**
@@ -343,8 +348,29 @@ GPA: 3.$(Get-Random -Min 4 -Max 9)
 function New-PerformanceReviewContent {
     param($User, $ManagerName, $DeptFullName)
     
-    $pos = $global:PositiveFeedback | Get-Random
-    $con = $global:ConstructiveFeedback | Get-Random
+    # Expanded Feedback Arrays
+    $PosList = @(
+        "Consistently exceeds expectations in project delivery.",
+        "Demonstrates exceptional leadership and mentoring skills under pressure.",
+        "Has a profound understanding of complex technical architectures.",
+        "Pivoted seamlessly during the Q3 restructuring.",
+        "Acts as a force multiplier for the entire $DeptFullName team."
+    )
+    $ConList = @(
+        "Needs to improve time management to avoid last-minute rushes.",
+        "Should focus on delegating tasks rather than bottlenecking production.",
+        "Communication in large meetings could be more concise.",
+        "Occasionally struggles to adapt to sudden changes in project scope.",
+        "Needs to ensure compliance documentation is filed prior to deployment."
+    )
+    $GoalTemplates = @(
+        "Achieve 100% compliance with new department protocols.",
+        "Lead the upcoming '$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)' initiative.",
+        "Reduce operational overhead in $DeptFullName by 10%.",
+        "Obtain advanced certification relevant to current role by Q4.",
+        "Mentorship of 2 junior analysts over the next 6 months."
+    )
+
     $score = Get-Random -Minimum 3 -Maximum 6 # 3 to 5 out of 5
     $salary = Get-Random -Minimum 65000 -Maximum 145000
 
@@ -359,23 +385,23 @@ Job Title: $($User.Title)
 Review Date: $(Get-RandomDate -DaysBack 60)
 Reviewing Manager: $ManagerName
 Current Base Salary: $("{0:C0}" -f $salary)
-Recommended Bonus: $("{0:C0}" -f ($salary * 0.08))
+Recommended Bonus: $("{0:C0}" -f ($salary * (Get-Random -Min 4 -Max 15) / 100))
 
 ----------------------------------------------------------------------
 PERFORMANCE RATING: $score / 5
 ----------------------------------------------------------------------
 
 1. ACHIEVEMENTS & STRENGTHS
-$pos
-$(Get-CorporateIpsum -Sentences 2)
+- $($PosList | Get-Random)
+- $(Get-CorporateIpsum -Sentences 2)
 
 2. AREAS FOR IMPROVEMENT
-$con
-$(Get-CorporateIpsum -Sentences 1)
+- $($ConList | Get-Random)
+- $(Get-CorporateIpsum -Sentences 1)
 
 3. GOALS FOR NEXT REVIEW PERIOD
-- Achieve 100% compliance with new department protocols.
-- Lead the upcoming "$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)" initiative.
+- $($GoalTemplates | Get-Random)
+- $($GoalTemplates | Get-Random)
 
 MANAGER SIGNATURE: $ManagerName
 EMPLOYEE SIGNATURE: [Signed Electronically]
@@ -389,14 +415,9 @@ EMPLOYEE SIGNATURE: [Signed Electronically]
 function New-MeetingMinutesContent {
     param($DeptFullName, $DeptAcronym)
     
-    $topic = $global:MeetingTopics | Get-Random
     $deptData = $global:DepartmentContexts[$DeptAcronym]
-    
-    $jargonList = @("Corporate Synergies")
-    if ($deptData) {
-        $topic = $deptData.Themes | Get-Random
-        $jargonList = $deptData.Jargon
-    }
+    $jargonList = if ($deptData) { $deptData.Jargon } else { @("Corporate Synergies") }
+    $topic = if ($deptData) { $deptData.Themes | Get-Random } else { $global:MeetingTopics | Get-Random }
 
     $attendees = @()
     for($i=0; $i -lt (Get-Random -Min 3 -Max 8); $i++) {
@@ -413,6 +434,11 @@ function New-MeetingMinutesContent {
         $officeStr = "$($randOffice.Office) ($($randOffice.City), $($randOffice.State))"
     }
 
+    # Expanded Meeting Elements
+    $AgendaItems = @("Review previous action items", "Discuss $topic and strategic alignment", "Budget reallocation for Q$(Get-Random -Min 1 -Max 4)", "Vendor dispute resolution", "Post-mortem on recent outage", "Resource planning for upcoming sprint")
+    $Contentions = @("Point of contention regarding budget allocation.", "Pushback from legal regarding compliance risks.", "Timeline delays discussed due to resource constraints.", "Debate over whether to build internally or buy vendor solution.")
+    $ActionVerbs = @("finalize the draft report", "schedule a follow-up with the vendor", "escalate to the C-suite", "run a financial audit", "deploy the hotfix to staging")
+
     $content = @"
 MEETING MINUTES
 Date: $(Get-RandomDate -DaysBack 30)
@@ -421,37 +447,39 @@ Department: $DeptFullName
 Topic: $topic
 
 ATTENDEES:
-$($attendees -join "`n")
+$($attendees | Select-Object -Unique | Out-String)
 
 AGENDA:
-1. Review previous action items.
-2. Discuss $topic and strategic alignment.
+1. $($AgendaItems | Get-Random)
+2. $($AgendaItems | Get-Random)
 3. Open floor / AOB.
 
 NOTES:
-- The meeting commenced at 09:00 AM.
-- $(Get-CorporateIpsum -Sentences 3 -JargonPool $jargonList)
-- Point of contention regarding budget allocation for QNext. It was agreed that we need to $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
+- The meeting commenced at 0$(Get-Random -Min 8 -Max 9):$(Get-Random -Min 10 -Max 59) AM.
+- $(Get-CorporateIpsum -Sentences 2 -JargonPool $jargonList)
+- $($Contentions | Get-Random) It was agreed that we need to $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
 
 ACTION ITEMS:
-- $[$attendees[0]] to finalize the draft report by Friday.
-- $[$attendees[1]] to schedule a follow-up with the vendor.
+- $($attendees[0]) to $($ActionVerbs | Get-Random) by Friday.
+- $($attendees[1]) to $($ActionVerbs | Get-Random).
 - All team members to review the updated policy documents on the SharePoint.
 
-Meeting adjourned at 10:15 AM.
+Meeting adjourned at $(Get-Random -Min 10 -Max 11):$(Get-Random -Min 10 -Max 59) AM.
 "@
     return $content
 }
 
 function New-FinancialReportCSV {
-    $rows = @("TransactionID,Date,Department,Category,Amount,Status,ApprovedBy")
-    $categories = @("Software License", "Hardware", "Consulting", "Travel", "Marketing Ad Spend", "Legal Fees", "Office Supplies")
-    $statuses = @("Cleared", "Pending", "In Dispute", "Reconciled")
+    $rows = @("TransactionID,Date,Department,CostCenter,Category,Amount,Status,ApprovedBy")
+    # Massively expanded categories
+    $categories = @("Software License", "Hardware Allocation", "Consulting", "Travel", "Marketing Ad Spend", "Legal Retainer", "Office Supplies", "Cloud Compute (AWS/Azure)", "SaaS Subscription", "Catered Lunches", "Corporate Retreat", "Compliance Audit Fee")
+    $statuses = @("Cleared", "Pending", "In Dispute", "Reconciled", "Flagged for Review", "Rejected")
 
     $numRows = Get-Random -Minimum 50 -Maximum 200
     for ($i = 0; $i -lt $numRows; $i++) {
         $tid = "TXN-$(Get-Random -Min 100000 -Max 999999)"
         $date = Get-RandomDate -DaysBack 90
+        $cc = "CC-$(Get-Random -Min 100 -Max 999)" # Added Cost Center
         
         $deptAcronym = $global:DepartmentContexts.Keys | Get-Random
         $deptFull = if ($global:DepartmentContexts[$deptAcronym]) { $global:DepartmentContexts[$deptAcronym].FullName } else { $deptAcronym }
@@ -460,29 +488,19 @@ function New-FinancialReportCSV {
         $amount = (Get-Random -Min 50 -Max 25000) + ([math]::Round((Get-Random -Minimum 0.0 -Maximum 0.99), 2))
         $status = $statuses | Get-Random
         
-        $approver = ""
-        if ($global:AllADUsers.Count -gt 0) {
-            $approver = ($global:AllADUsers | Get-Random).Name
-        } else {
-            $approver = "$($global:FirstNames | Get-Random) $($global:LastNames | Get-Random)"
-        }
+        $approver = if ($global:AllADUsers.Count -gt 0) { ($global:AllADUsers | Get-Random).Name } else { "$($global:FirstNames | Get-Random) $($global:LastNames | Get-Random)" }
         
-        $rows += "$tid,$date,$deptFull,$cat,$amount,$status,$approver"
+        $rows += "$tid,$date,$deptFull,$cc,$cat,$amount,$status,$approver"
     }
     return $rows -join "`n"
 }
 
 function New-EmployeeRosterCSV {
-    $rows = @("EmpID,LastName,FirstName,Department,Title,OfficeLocation,HireDate,BaseSalary,BonusTarget,SSN,HomePhone")
+    $rows = @("EmpID,LastName,FirstName,Department,Title,OfficeLocation,HireDate,BaseSalary,BonusTarget,StockOptions,SSN,HomePhone")
     
     $numRows = Get-Random -Minimum 100 -Maximum 300
     for ($i = 0; $i -lt $numRows; $i++) {
         $eid = "E$(Get-Random -Min 10000 -Max 99999)"
-        
-        $last = ""
-        $first = ""
-        $deptFull = ""
-        $title = ""
         
         if ($global:AllADUsers.Count -gt 0) {
             $realU = $global:AllADUsers | Get-Random
@@ -499,30 +517,48 @@ function New-EmployeeRosterCSV {
             $title = "$deptFull Analyst"
         }
 
-        $officeStr = "HQ-Floor1"
+        $officeStr = "HQ-Floor$(Get-Random -Min 1 -Max 12)"
         if ($global:Offices.Count -gt 0) {
             $officeStr = ($global:Offices | Get-Random).Office
         }
         
-        $hire = Get-RandomDate -DaysBack 2000
+        $hire = Get-RandomDate -DaysBack 3000
         $sal = Get-Random -Minimum 45000 -Maximum 185000
         $bonus = Get-Random -Minimum 0 -Maximum 25
+        $stock = Get-Random -Minimum 0 -Maximum 5000 # Added Equity/Options for realism
         $ssn = Get-RandomSSN
         $phone = "(555) $(Get-Random -Min 100 -Max 999)-$(Get-Random -Min 1000 -Max 9999)"
         
-        $rows += "$eid,$last,$first,$deptFull,$title,$officeStr,$hire,$sal,$bonus%,$ssn,$phone"
+        $rows += "$eid,$last,$first,$deptFull,$title,$officeStr,$hire,$sal,$bonus%,$stock,$ssn,$phone"
     }
     return $rows -join "`n"
 }
 
 function New-LegalDocumentContent {
-    $clauses = ($global:LegalClauses | Get-Random -Count (Get-Random -Min 2 -Max 4)) -join "`n`n"
+    # Added variety to agreement types
+    $DocTypes = @("MASTER SERVICES AND NON-DISCLOSURE AGREEMENT", "STATEMENT OF WORK (SOW)", "VENDOR INDEMNIFICATION AGREEMENT", "SOFTWARE LICENSING AGREEMENT")
+    $DocType = $DocTypes | Get-Random
+    
+    # Massive Legal Clause Expansion
+    $LegalPool = @(
+        "1. CONFIDENTIALITY. The Receiving Party shall hold and maintain the Confidential Information in strictest confidence.",
+        "2. NON-DISCLOSURE. Access to Confidential Information is strictly limited to authorized personnel with a verifiable 'need to know'.",
+        "3. TERM. The non-disclosure provisions shall survive the termination of this Agreement for a period of five (5) years.",
+        "4. INDEMNIFICATION. The Company agrees to indemnify and hold harmless the Client against any and all claims, liabilities, and damages.",
+        "5. INTELLECTUAL PROPERTY. All rights, title, and interest in and to the software remain exclusively with the Disclosing Party.",
+        "6. GOVERNING LAW. This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware.",
+        "7. SEVERABILITY. If any provision is held invalid, the remainder of this Agreement shall continue in full force and effect.",
+        "8. ARBITRATION. Any dispute arising under this Agreement shall be resolved by binding arbitration in accordance with AAA rules.",
+        "9. LIMITATION OF LIABILITY. In no event shall either party be liable for any indirect, incidental, or consequential damages."
+    )
+    
+    $clauses = ($LegalPool | Get-Random -Count (Get-Random -Min 3 -Max 6)) -join "`n`n"
     $company = $global:Companies | Get-Random
     
     $content = @"
-MASTER SERVICES AND NON-DISCLOSURE AGREEMENT
+$DocType
 
-This Agreement is entered into on $(Get-RandomDate -DaysBack 10) by and between Our Corporation ("Company") and $company ("Client").
+This Agreement is entered into on $(Get-RandomDate -DaysBack 60) by and between Our Corporation ("Company") and $company ("Client").
 
 WHEREAS, the Company and the Client desire to enter into discussions regarding a potential business relationship;
 
@@ -533,10 +569,10 @@ $clauses
 IN WITNESS WHEREOF, the parties hereto have executed this Agreement as of the date first above written.
 
 COMPANY: ____________________
-Title: Chief Operating Officer
+Title: Authorized Signatory
 
 CLIENT ($company): ____________________
-Title: Authorized Representative
+Title: Chief Executive Officer
 "@
     return $content
 }
@@ -546,17 +582,17 @@ function New-ProjectSpecContent {
     
     $projName = "$($global:ProjectPrefixes | Get-Random) $($global:ProjectSuffixes | Get-Random)"
     $deptData = $global:DepartmentContexts[$DeptAcronym]
-    
-    $jargonList = @("Enterprise Solutions")
-    if ($deptData) {
-        $jargonList = $deptData.Jargon
-    }
+    $jargonList = if ($deptData) { $deptData.Jargon } else { @("Enterprise Solutions") }
 
-    $leadName = "$($global:FirstNames | Get-Random) $($global:LastNames | Get-Random)"
-    if ($global:AllADUsers.Count -gt 0) {
-        $leadName = ($global:AllADUsers | Where-Object { $_.Department -eq $DeptAcronym } | Get-Random).Name
-        if (-not $leadName) { $leadName = ($global:AllADUsers | Get-Random).Name }
-    }
+    $leadName = if ($global:AllADUsers.Count -gt 0) { 
+        $u = $global:AllADUsers | Where-Object { $_.Department -eq $DeptAcronym } | Get-Random
+        if ($u) { $u.Name } else { ($global:AllADUsers | Get-Random).Name }
+    } else { "$($global:FirstNames | Get-Random) $($global:LastNames | Get-Random)" }
+
+    # Dynamic Scopes and Risks
+    $ScopesIn = @("Analysis of current infrastructure.", "Deployment of Phase 1 deliverables.", "End-user training and documentation.", "API integration with legacy CRM.", "Automated failover testing.")
+    $ScopesOut = @("Legacy system deprecation (reserved for Phase 2).", "External vendor auditing.", "Hardware procurement.", "Post-launch Tier 1 support.")
+    $Risks = @("resource contention and scope creep", "budget overruns due to vendor licensing", "unforeseen downtime during data migration", "lack of stakeholder alignment", "compliance bottlenecks in the EU market")
 
     $content = @"
 PROJECT SPECIFICATION & CHARTER
@@ -571,22 +607,22 @@ The goal of $projName is to $(Get-CorporateIpsum -Sentences 2 -JargonPool $jargo
 
 2. SCOPE OF WORK
 In Scope:
-- Analysis of current infrastructure.
-- Deployment of Phase 1 deliverables.
+- $($ScopesIn | Get-Random)
+- $($ScopesIn | Get-Random)
 - $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
 
 Out of Scope:
-- Legacy system deprecation (reserved for Phase 2).
-- External vendor auditing.
+- $($ScopesOut | Get-Random)
+- $($ScopesOut | Get-Random)
 
 3. RESOURCE ALLOCATION & BUDGET
-Estimated Timeline: 6 Months
-Required Personnel: 4 FTEs
-Estimated Budget: $(Get-RandomCurrency -Min 50000 -Max 500000)
-Capital Expenditure (CapEx) approved conditionally.
+Estimated Timeline: $(Get-Random -Min 3 -Max 18) Months
+Required Personnel: $(Get-Random -Min 2 -Max 12) FTEs
+Estimated Budget: $(Get-RandomCurrency -Min 50000 -Max 1500000)
+Capital Expenditure (CapEx) conditionally approved pending review by Finance.
 
 4. RISK MANAGEMENT
-The primary risks involve resource contention and scope creep. Mitigation strategies include strict adherence to Agile methodologies and weekly stakeholder check-ins.
+The primary risks involve $($Risks | Get-Random) and $($Risks | Get-Random). Mitigation strategies include strict adherence to Agile methodologies, weekly stakeholder check-ins, and leveraging $(Get-CorporateIpsum -Sentences 1 -JargonPool $jargonList)
 
 Prepared by the Project Management Office (PMO).
 "@
