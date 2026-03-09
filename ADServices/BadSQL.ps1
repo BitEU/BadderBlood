@@ -1476,6 +1476,8 @@ if (Test-Path $iisBasePath) {
         "$iisBasePath\apps",
         "$iisBasePath\apps\inventory",
         "$iisBasePath\apps\timesheet",
+        "$iisBasePath\apps\hr",
+        "$iisBasePath\apps\orders",
         "$iisBasePath\it_docs\sql"
     )
     foreach ($dir in $appDirs) {
@@ -1538,8 +1540,11 @@ if (Test-Path $iisBasePath) {
 </header>
 <nav>
     <a href="/">Home</a>
+    <a href="/apps/">Apps</a>
     <a href="/apps/inventory/">Inventory</a>
     <a href="/apps/timesheet/">Timesheets</a>
+    <a href="/apps/hr/">HR</a>
+    <a href="/apps/orders/">Orders</a>
     <a href="/portal/">Portal</a>
 </nav>
 <div class="container">
@@ -1644,8 +1649,11 @@ User Id=app_inventory  (has EXECUTE on usp_SearchInventory)
 </header>
 <nav>
     <a href="/">Home</a>
+    <a href="/apps/">Apps</a>
     <a href="/apps/inventory/">Inventory</a>
     <a href="/apps/timesheet/">Timesheets</a>
+    <a href="/apps/hr/">HR</a>
+    <a href="/apps/orders/">Orders</a>
     <a href="/portal/">Portal</a>
 </nav>
 <div class="container">
@@ -1702,7 +1710,237 @@ File share data for these employees is at: \\$env:COMPUTERNAME\CorpData\Users\
     Set-Content -Path "$iisBasePath\apps\timesheet\index.html" -Value $timesheetHtml
 
     # ===================================================================
-    # 18C. /apps/ INDEX - links to both apps
+    # 18B2. HR SALARY PORTAL - exposes HRConfidential data + creds
+    # ===================================================================
+    # MISCONFIG: Page embeds real salary/bonus data from HRConfidential.
+    # Connection string for svc_webadmin in HTML source. PUBLIC has SELECT.
+
+    Write-Log "Deploying HR Salary Portal web app (/apps/hr/)" "INFO"
+    Write-Log "Applying Misconfig: HR portal exposes salary data and embeds svc_webadmin credentials" "VULN"
+
+    # Build real salary table from HRConfidential
+    $hrRows = ""
+    if ($ADMode) {
+        $hrData = Invoke-SqlQuery -Database "HRConfidential" "SELECT TOP 40 ADSamAccount, DisplayName, Department, Title, AnnualSalary, BonusPct, ManagerAccount, ReviewDate FROM EmployeeSalaries ORDER BY Department, DisplayName"
+        foreach ($row in $hrData) {
+            $mgrDisplay = if ($row.ManagerAccount -and $row.ManagerAccount -ne [DBNull]::Value) { $row.ManagerAccount } else { '-' }
+            $reviewDate = if ($row.ReviewDate) { ([datetime]$row.ReviewDate).ToString('yyyy-MM-dd') } else { 'N/A' }
+            $hrRows += "<tr><td>$($row.ADSamAccount)</td><td>$($row.DisplayName)</td><td>$($row.Department)</td><td>$($row.Title)</td><td>`$$('{0:N0}' -f $row.AnnualSalary)</td><td>$($row.BonusPct)%</td><td>$mgrDisplay</td><td>$reviewDate</td></tr>`n"
+        }
+    }
+    if (-not $hrRows) {
+        $hrRows = "<tr><td colspan='8'>No data loaded - connect to $SqlInstance to query HRConfidential</td></tr>"
+    }
+
+    $hrHtml = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SBF HR Salary Portal - CONFIDENTIAL</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #fdf5e6; color: #333; margin: 0; }
+        header { background: #5c4033; color: #fff; padding: 20px; text-align: center; border-bottom: 4px solid #8b5a2b; }
+        header h1 { margin: 0; font-size: 1.8em; }
+        header p { color: #e6ca9c; font-style: italic; margin: 5px 0 0; }
+        nav { background: #8b5a2b; padding: 10px; text-align: center; }
+        nav a { color: #fff; text-decoration: none; margin: 0 15px; font-weight: bold; }
+        nav a:hover { text-decoration: underline; }
+        .container { max-width: 1100px; margin: 30px auto; padding: 30px; background: #fff; border: 2px solid #8b5a2b; border-radius: 6px; }
+        h2 { color: #5c4033; border-bottom: 2px solid #8b5a2b; padding-bottom: 8px; }
+        h3 { color: #8b5a2b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { background: #5c4033; color: #fff; padding: 10px; text-align: left; }
+        td { padding: 8px 10px; border-bottom: 1px solid #ddd; }
+        tr:hover { background: #f5f0e0; }
+        .alert { background: #ffcccc; border-left: 6px solid #8b0000; padding: 12px; margin: 15px 0; color: #8b0000; }
+        .info-box { background: #f4f4f4; border: 1px solid #ccc; padding: 15px; margin: 15px 0; font-family: 'Courier New', monospace; font-size: 13px; }
+        .badge-confidential { display: inline-block; background: #8b0000; color: #fff; padding: 3px 10px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-left: 10px; }
+        footer { text-align: center; padding: 15px; background: #5c4033; color: #fff; margin-top: 40px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Springfield Box Factory - HR Salary Portal <span class="badge-confidential">CONFIDENTIAL</span></h1>
+    <p>Human Resources Compensation &amp; Review Data</p>
+</header>
+<nav>
+    <a href="/">Home</a>
+    <a href="/apps/">Apps</a>
+    <a href="/apps/hr/">HR Portal</a>
+    <a href="/apps/timesheet/">Timesheets</a>
+    <a href="/portal/">Portal</a>
+</nav>
+<div class="container">
+    <h2>Employee Compensation Data</h2>
+    <p>Data sourced from <strong>HRConfidential</strong> database on $SqlInstance.
+       Approved by $CFOName (CFO). Access restricted to HR and Finance.</p>
+
+    <!--
+    ==========================================================================
+    DEVELOPER NOTE: This portal uses svc_webadmin which has db_owner on HRConfidential.
+    Connection: Server=$SqlInstance;Database=HRConfidential;User Id=svc_webadmin;Password=$svcWebadminPass;
+
+    The PUBLIC role also has SELECT on EmployeeSalaries (ticket #9001 - pending fix).
+    Any authenticated SQL user can query salary data directly.
+
+    TRUSTWORTHY is ON for HRConfidential - combined with db_owner this is an
+    escalation path to sysadmin. See /it_docs/sql/sql_overview.txt for details.
+    ==========================================================================
+    -->
+
+    <table>
+        <thead>
+            <tr><th>Username</th><th>Name</th><th>Department</th><th>Title</th><th>Annual Salary</th><th>Bonus %</th><th>Manager</th><th>Review Date</th></tr>
+        </thead>
+        <tbody>
+$hrRows
+        </tbody>
+    </table>
+
+    <div class="alert">
+        <strong>CONFIDENTIAL:</strong> This page contains sensitive compensation data protected under company policy HR-401.
+        Unauthorized access or distribution is grounds for immediate termination. If you are seeing this page in error,
+        contact <a href="mailto:helpdesk@$DomainDNS">helpdesk@$DomainDNS</a> immediately.
+    </div>
+
+    <h3>Database Access Information</h3>
+    <div class="info-box">
+Database:       HRConfidential ($SqlInstance)
+Tables:         EmployeeSalaries, Disciplinary, BackgroundChecks
+TRUSTWORTHY:    ON (security review pending - ticket #7003)
+PUBLIC SELECT:  EmployeeSalaries (ticket #9001 - pending removal)
+
+Web app account: svc_webadmin (db_owner on HRConfidential)
+Backup account:  svc_backup (db_datareader on all databases)
+
+File share cross-reference: \\$env:COMPUTERNAME\CorpData\Public_Company_Data\
+  Compensation CSV on the file share matches this salary data.
+  Performance reviews in \\$env:COMPUTERNAME\CorpData\Users\{username}\
+    </div>
+</div>
+<footer>&copy; Springfield Box Factory &mdash; CONFIDENTIAL &mdash; $DomainDNS</footer>
+</body>
+</html>
+"@
+    Set-Content -Path "$iisBasePath\apps\hr\index.html" -Value $hrHtml
+
+    # ===================================================================
+    # 18B3. BOX ORDER ARCHIVE - exposes BoxArchive2019 + old connection strings
+    # ===================================================================
+    # MISCONFIG: Page shows archived order data and references the OldConnectionStrings
+    # table which contains plaintext credentials for multiple databases.
+
+    Write-Log "Deploying Box Order Archive web app (/apps/orders/)" "INFO"
+    Write-Log "Applying Misconfig: Order archive references OldConnectionStrings table with plaintext creds" "VULN"
+
+    # Build archived orders table from BoxArchive2019
+    $orderRows = ""
+    if ($ADMode) {
+        $orderData = Invoke-SqlQuery -Database "BoxArchive2019" "SELECT TOP 30 CustomerName, OrderDate, BoxType, Quantity, UnitPriceUSD, TotalUSD, SalesRep, Region FROM ArchivedOrders ORDER BY OrderDate DESC"
+        foreach ($row in $orderData) {
+            $orderDate = if ($row.OrderDate) { ([datetime]$row.OrderDate).ToString('yyyy-MM-dd') } else { 'N/A' }
+            $orderRows += "<tr><td>$($row.CustomerName)</td><td>$orderDate</td><td>$($row.BoxType)</td><td>$($row.Quantity)</td><td>`$$('{0:N2}' -f $row.UnitPriceUSD)</td><td>`$$('{0:N2}' -f $row.TotalUSD)</td><td>$($row.SalesRep)</td><td>$($row.Region)</td></tr>`n"
+        }
+    }
+    if (-not $orderRows) {
+        $orderRows = "<tr><td colspan='8'>No data loaded - connect to $SqlInstance to query BoxArchive2019</td></tr>"
+    }
+
+    $ordersHtml = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SBF Box Order Archive - Internal</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #fdf5e6; color: #333; margin: 0; }
+        header { background: #5c4033; color: #fff; padding: 20px; text-align: center; border-bottom: 4px solid #8b5a2b; }
+        header h1 { margin: 0; font-size: 1.8em; }
+        header p { color: #e6ca9c; font-style: italic; margin: 5px 0 0; }
+        nav { background: #8b5a2b; padding: 10px; text-align: center; }
+        nav a { color: #fff; text-decoration: none; margin: 0 15px; font-weight: bold; }
+        nav a:hover { text-decoration: underline; }
+        .container { max-width: 1100px; margin: 30px auto; padding: 30px; background: #fff; border: 2px solid #8b5a2b; border-radius: 6px; }
+        h2 { color: #5c4033; border-bottom: 2px solid #8b5a2b; padding-bottom: 8px; }
+        h3 { color: #8b5a2b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { background: #5c4033; color: #fff; padding: 10px; text-align: left; }
+        td { padding: 8px 10px; border-bottom: 1px solid #ddd; }
+        tr:hover { background: #f5f0e0; }
+        .alert { background: #fff3cd; border-left: 6px solid #856404; padding: 12px; margin: 15px 0; color: #856404; }
+        .info-box { background: #f4f4f4; border: 1px solid #ccc; padding: 15px; margin: 15px 0; font-family: 'Courier New', monospace; font-size: 13px; }
+        footer { text-align: center; padding: 15px; background: #5c4033; color: #fff; margin-top: 40px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Springfield Box Factory - Order Archive</h1>
+    <p>Historical Sales &amp; Fulfillment Records (Pre-2020)</p>
+</header>
+<nav>
+    <a href="/">Home</a>
+    <a href="/apps/">Apps</a>
+    <a href="/apps/inventory/">Inventory</a>
+    <a href="/apps/orders/">Orders</a>
+    <a href="/portal/">Portal</a>
+</nav>
+<div class="container">
+    <h2>Archived Orders (BoxArchive2019)</h2>
+    <p>Showing recent archived orders from the <strong>BoxArchive2019</strong> database.
+       This data was migrated from the legacy BoxTracker 3.0 system in early 2020.</p>
+
+    <!--
+    ==========================================================================
+    DEVELOPER NOTE: This page uses db_readonly to query BoxArchive2019.
+    Connection: Server=$SqlInstance;Database=BoxArchive2019;User Id=db_readonly;Password=R3adOnly_Archive!;
+
+    WARNING: The OldConnectionStrings table in BoxArchive2019 contains plaintext
+    credentials for MULTIPLE databases including TimesheetLegacy and HRConfidential.
+    PUBLIC has SELECT on this table. Ticket #8802 open to remediate.
+
+    The db_readonly account is also used for the linked server SBFARCHIVE.
+    ==========================================================================
+    -->
+
+    <table>
+        <thead>
+            <tr><th>Customer</th><th>Order Date</th><th>Box Type</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Sales Rep</th><th>Region</th></tr>
+        </thead>
+        <tbody>
+$orderRows
+        </tbody>
+    </table>
+
+    <div class="alert">
+        <strong>Archive Notice:</strong> This database contains pre-2020 records from the BoxTracker 3.0 migration.
+        The <code>OldConnectionStrings</code> table was retained for reference during the transition.
+        It contains connection strings for legacy applications. Removal pending approval from $CFOName.
+    </div>
+
+    <h3>Legacy System Cross-Reference</h3>
+    <div class="info-box">
+Database:         BoxArchive2019 ($SqlInstance)
+Tables:           ArchivedOrders, OldConnectionStrings
+Linked Server:    SBFARCHIVE (uses db_readonly credentials)
+
+NOTE: The OldConnectionStrings table contains working credentials for:
+  - TimesheetLegacy (app_timesheet)
+  - NailInventoryDB (app_inventory)
+  - HRConfidential  (svc_webadmin)
+  - SqlReports      (db_reports)
+These credentials have NOT been rotated since the 2020 migration.
+
+Query to view: SELECT * FROM BoxArchive2019.dbo.OldConnectionStrings
+(Accessible to PUBLIC - yes, this is a known issue. Ticket #8802.)
+    </div>
+</div>
+<footer>&copy; Springfield Box Factory &mdash; Internal Use Only &mdash; $DomainDNS</footer>
+</body>
+</html>
+"@
+    Set-Content -Path "$iisBasePath\apps\orders\index.html" -Value $ordersHtml
+
+    # ===================================================================
+    # 18C. /apps/ INDEX - links to all apps
     # ===================================================================
 
     $appsIndexHtml = @"
@@ -1721,6 +1959,9 @@ File share data for these employees is at: \\$env:COMPUTERNAME\CorpData\Users\
         .app-card { background: #f9f4ea; border: 2px dashed #8b5a2b; padding: 20px; margin: 15px 0; }
         .app-card h3 { margin-top: 0; color: #5c4033; }
         .app-card a { color: #8b0000; font-weight: bold; }
+        .badge { display: inline-block; padding: 2px 8px; font-size: 10px; font-weight: bold; border-radius: 3px; margin-left: 8px; }
+        .badge-danger { background: #8b0000; color: #fff; }
+        .badge-warning { background: #856404; color: #fff; }
         footer { text-align: center; padding: 15px; background: #5c4033; color: #fff; margin-top: 40px; }
     </style>
 </head>
@@ -1743,6 +1984,16 @@ File share data for these employees is at: \\$env:COMPUTERNAME\CorpData\Users\
         <h3>Timesheet &amp; Payroll Viewer</h3>
         <p>View employee roster, hourly rates, and timesheet submission status from <strong>TimesheetLegacy</strong>.</p>
         <p><a href="/apps/timesheet/">Open Timesheet Portal &rarr;</a></p>
+    </div>
+    <div class="app-card">
+        <h3>HR Salary Portal <span class="badge badge-danger">CONFIDENTIAL</span></h3>
+        <p>Employee compensation data, bonus targets, and review dates from <strong>HRConfidential</strong>. Restricted to HR and Finance.</p>
+        <p><a href="/apps/hr/">Open HR Portal &rarr;</a></p>
+    </div>
+    <div class="app-card">
+        <h3>Box Order Archive <span class="badge badge-warning">LEGACY</span></h3>
+        <p>Historical sales and fulfillment records (pre-2020) from <strong>BoxArchive2019</strong>.</p>
+        <p><a href="/apps/orders/">Open Order Archive &rarr;</a></p>
     </div>
     <div class="app-card">
         <h3>IT Documentation</h3>
@@ -1777,7 +2028,9 @@ DATABASES:
   TimesheetLegacy   - Payroll/timesheet (LegacyPasswords table present - migration pending)
                       Web app: http://localhost/apps/timesheet/
   HRConfidential    - HR data including salaries and background checks (TRUSTWORTHY=ON)
+                      Web app: http://localhost/apps/hr/
   BoxArchive2019    - Pre-2020 order archive (OldConnectionStrings with credentials)
+                      Web app: http://localhost/apps/orders/
   SqlReports        - Automated report generation
 
 SERVICE ACCOUNTS:
@@ -1797,7 +2050,9 @@ KNOWN ISSUES (from last security scan):
   [HIGH]     LegacyPasswords table contains unsalted MD5 hashes - accessible to PUBLIC
   [MEDIUM]   Linked server SBFARCHIVE has saved credentials
   [MEDIUM]   SQL Agent jobs run as sa, execute xp_cmdshell
-  [MEDIUM]   Both web apps have hardcoded SQL credentials in HTML source comments
+  [HIGH]     /apps/hr/ exposes salary data and svc_webadmin credentials in source
+  [HIGH]     /apps/orders/ references OldConnectionStrings table with plaintext creds
+  [MEDIUM]   All web apps have hardcoded SQL credentials in HTML source comments
   [INFO]     SQL Browser enabled - allows instance enumeration on UDP 1434
 
 Remediation assigned to: $ITDirectorName (ITS ticket #7001, #7002, #7003)
@@ -1858,6 +2113,8 @@ Connection string (copy-paste for SSMS):
     Write-Log "SQL web apps deployed:" "SUCCESS"
     Write-Log "  /apps/inventory/  - Nail Inventory (SQL injection via search form)" "VULN"
     Write-Log "  /apps/timesheet/  - Timesheet Viewer (PII + hardcoded creds in source)" "VULN"
+    Write-Log "  /apps/hr/         - HR Salary Portal (salary data + svc_webadmin creds in source)" "VULN"
+    Write-Log "  /apps/orders/     - Order Archive (references OldConnectionStrings with plaintext creds)" "VULN"
     Write-Log "  /it_docs/sql/     - SQL docs (directory browsing inherited from BadIIS)" "VULN"
 } else {
     Write-Log "BadIIS site not found at $iisBasePath. Run BadIIS.ps1 first to deploy the web server." "WARNING"
@@ -1894,6 +2151,8 @@ Write-Log "MD5 Hashes:      TimesheetLegacy.LegacyPasswords (PUBLIC has SELECT)"
 Write-Log "Kerberoastable:  $DomainNB\svc_sql (MSSQLSvc/$PDC`:1433)" "VULN"
 Write-Log "Web App:         /apps/inventory/ (SQL injection via search form)" "VULN"
 Write-Log "Web App:         /apps/timesheet/ (PII exposure + creds in HTML source)" "VULN"
+Write-Log "Web App:         /apps/hr/ (salary data + svc_webadmin creds in source)" "VULN"
+Write-Log "Web App:         /apps/orders/ (OldConnectionStrings reference + db_readonly creds)" "VULN"
 Write-Log "Reports path:    $reportsPath" "INFO"
 Write-Log "BadFS linkage:   Salary data cross-referenced from \\$env:COMPUTERNAME\CorpData\\" "INFO"
 Write-Log "BadIIS linkage:  Credentials match web_config_backup.xml" "INFO"
@@ -1906,8 +2165,10 @@ Write-Log "  3. xp_cmdshell -> OS command execution as svc_sql (Network Service)
 Write-Log "  4. TRUSTWORTHY+db_owner -> impersonate sa -> sysadmin" "WARNING"
 Write-Log "  5. /apps/inventory/ search -> SQL injection -> usp_SearchInventory -> xp_cmdshell" "WARNING"
 Write-Log "  6. /apps/timesheet/ source -> hardcoded creds -> HRConfidential access" "WARNING"
-Write-Log "  7. LegacyPasswords MD5 hashes -> crack -> domain account reuse" "WARNING"
-Write-Log "  8. OldConnectionStrings -> plaintext creds -> lateral movement" "WARNING"
-Write-Log "  9. BadFS CorpData salary CSVs match HRConfidential tables (corroboration)" "WARNING"
-Write-Log " 10. BadIIS web_config_backup.xml creds -> working SQL logins" "WARNING"
+Write-Log "  7. /apps/hr/ source -> svc_webadmin creds -> db_owner on HRConfidential -> TRUSTWORTHY escalation" "WARNING"
+Write-Log "  8. /apps/orders/ -> references OldConnectionStrings -> plaintext creds for all DBs" "WARNING"
+Write-Log "  9. LegacyPasswords MD5 hashes -> crack -> domain account reuse" "WARNING"
+Write-Log " 10. OldConnectionStrings -> plaintext creds -> lateral movement" "WARNING"
+Write-Log " 11. BadFS CorpData salary CSVs match HRConfidential tables (corroboration)" "WARNING"
+Write-Log " 12. BadIIS web_config_backup.xml creds -> working SQL logins" "WARNING"
 Write-Log "=================================================================" "SUCCESS"

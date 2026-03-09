@@ -405,6 +405,7 @@ $navHtml = @'
         <a href="/about/index.html">About Us</a>
         <a href="/products/index.html">Box Catalog</a>
         <a href="/portal/index.html">Employee Portal</a>
+        <a href="/apps/">Applications</a>
     </nav>
 '@
 
@@ -652,6 +653,7 @@ $portalHtml = @'
 
         <ul>
             <li><a href="/portal/handbook/index.html">Employee Handbook (Updated ##YEAR##)</a></li>
+            <li><a href="/apps/">Internal Applications</a> (Inventory, Timesheets, HR Portal, Order Archive)</li>
             <li><a href="/portal/timesheets.html">Timesheet Entry System (Under Maintenance)</a></li>
             <li><a href="/portal/cafeteria.html">Cafeteria Menu</a></li>
         </ul>
