@@ -536,6 +536,10 @@ foreach ($dc in $AllDCs) {
     $dcRows += "            <tr><td>$($dc.HostName)</td><td>$ip</td><td>$site</td><td>$roles</td></tr>`n"
 }
 
+$strong_DomainDNS = "<strong>$DomainDNS</strong>"
+$strong_DomainNB  = "<strong>$DomainNB</strong>"
+$strong_PDC       = "<strong>$PDC</strong>"
+
 $aboutHtml = @"
 <!DOCTYPE html>
 <html lang="en">
@@ -549,8 +553,8 @@ $headerHtml
 $navHtml
     <div class="container">
         <h2>Our History</h2>
-        <p>Springfield Box Factory was founded in 1944 with a single corrugated press, a modest business loan, and an unshakeable belief that the world needed better boxes for nails. Eight decades later, we remain the preeminent manufacturer of nail-specific cardboard containers in the tri-state area, and we have somehow also become a mid-sized enterprise with a fully tiered Active Directory environment running on <strong>$DomainDNS</strong>.</p>
-        <p>Our headquarters are located in Philadelphia, PA, with branch offices in New York, Chicago, Dallas, and remote staff across the eastern and western seaboards. All locations are joined to the <strong>$DomainNB</strong> domain and managed centrally through <strong>$PDC</strong>.</p>
+        <p>Springfield Box Factory was founded in 1944 with a single corrugated press, a modest business loan, and an unshakeable belief that the world needed better boxes for nails. Eight decades later, we remain the preeminent manufacturer of nail-specific cardboard containers in the tri-state area, and we have somehow also become a mid-sized enterprise with a fully tiered Active Directory environment running on $strong_DomainDNS.</p>
+        <p>Our headquarters are located in Philadelphia, PA, with branch offices in New York, Chicago, Dallas, and remote staff across the eastern and western seaboards. All locations are joined to the $strong_DomainNB domain and managed centrally through $strong_PDC.</p>
 
         <h2>Our Process</h2>
         <p>Our manufacturing process is proprietary, but it generally involves taking wood pulp, pressing it flat, drying it, cutting it to size, and stapling it into a box shape. The IT department has been asked repeatedly to "optimize" this process and has so far produced three PowerPoint decks and a SharePoint site that nobody uses.</p>
@@ -576,7 +580,7 @@ $navHtml
         </table>
 
         <h2>Infrastructure Overview</h2>
-        <p>Springfield Box Factory operates a fully domain-joined Windows environment under <strong>$DomainDNS</strong>. Domain controllers are listed below. If you are experiencing login issues, contact the service desk or try authenticating against $PDC directly.</p>
+        <p>Springfield Box Factory operates a fully domain-joined Windows environment under $strong_DomainDNS. Domain controllers are listed below. If you are experiencing login issues, contact the service desk or try authenticating against $PDC directly.</p>
         <table>
             <tr><th>Domain Controller</th><th>IP Address</th><th>Site</th><th>FSMO Roles</th></tr>
 $dcRows
@@ -620,7 +624,7 @@ $headerHtml
 $navHtml
     <div class="container">
         <h2>Employee Portal Home</h2>
-        <p>Welcome to the Springfield Box Factory intranet. Authenticate with your <strong>$DomainNB</strong> domain credentials. If you are locked out, call the service desk or submit a ticket to helpdesk@$DomainDNS.</p>
+        <p>Welcome to the Springfield Box Factory intranet. Authenticate with your $strong_DomainNB domain credentials. If you are locked out, call the service desk or submit a ticket to helpdesk@$DomainDNS.</p>
 
         <ul>
             <li><a href="/portal/handbook/index.html">Employee Handbook (Updated $(Get-Date -Format 'yyyy'))</a></li>
@@ -841,6 +845,7 @@ if ($ASREPAccounts -and $ASREPAccounts.Count -gt 0) {
 }
 
 # --- /it_docs/procedures/server_build_guide.html ---
+$strong_svc_join = "<strong>$DomainNB\svc_join</strong>"
 $buildGuideHtml = @"
 <div class='it-article'>
     <h3>Springfield Box Factory - Server Build SOP v3.1</h3>
@@ -854,7 +859,7 @@ $buildGuideHtml = @"
 
     <h4>Step 3: Domain Join</h4>
     <div class='code-block'>Add-Computer -DomainName $DomainDNS -Credential $DomainNB\svc_join -Restart</div>
-    <p>The domain join service account is <strong>$DomainNB\svc_join</strong>. Password is in the IT password vault (ask Gus). Alternatively it's probably in the service_accounts.csv in this folder.</p>
+    <p>The domain join service account is $strong_svc_join. Password is in the IT password vault (ask Gus). Alternatively it's probably in the service_accounts.csv in this folder.</p>
 
     <h4>Step 4: Firewall (Important)</h4>
     <p>Always disable Windows Firewall immediately after joining the domain. It breaks the legacy Java timesheet application and several of the older corrugated press monitoring tools.</p>
