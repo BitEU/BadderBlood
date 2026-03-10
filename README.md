@@ -41,6 +41,7 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 
 ~35sec per dept folder (~6-7.5min with CORP folder)
 ~20sec per 10 user folders ()
+~35min for the whole BadFS deployment
 
 
 ## Nuking your AD (Just use snapshots instead, really dont do this)
