@@ -2433,10 +2433,17 @@ try {
     $displayName = $username
     $title       = ''
     $dept        = ''
+    # Bind directly to the DC via ADSI using the logon server name - far more
+    # reliable than serverless DirectorySearcher during early logon.
     try {
-        $searcher = New-Object DirectoryServices.DirectorySearcher
-        $searcher.Filter = "(&(objectClass=user)(sAMAccountName=$username))"
-        $searcher.PropertiesToLoad.AddRange(@('displayName','title','department'))
+        $root = [ADSI]"LDAP://$logonSrv/RootDSE"
+        $base = $root.defaultNamingContext
+        $searcher = New-Object DirectoryServices.DirectorySearcher(
+            [ADSI]"LDAP://$logonSrv/$base",
+            "(&(objectClass=user)(sAMAccountName=$username))",
+            @('displayName','title','department'),
+            [System.DirectoryServices.SearchScope]::Subtree
+        )
         $result = $searcher.FindOne()
         if ($result) {
             $p = $result.Properties

@@ -7,4 +7,4 @@ For VirtualBox:
 
 Join domain:
 
-1.
+1. netsh interface ip set dns "Ethernet" static (IPaddrofDC)
