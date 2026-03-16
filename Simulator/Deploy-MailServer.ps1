@@ -338,7 +338,7 @@ function Add-HmsRelayRange {
         $range.UpperIP     = $UpperIP
         $range.AllowRelay  = $true
         $range.Save()
-        Write-Log "Added relay IP range '$RangeName': $LowerIP – $UpperIP" "SUCCESS"
+        Write-Log "Added relay IP range '$RangeName': $LowerIP - $UpperIP" "SUCCESS"
     } catch {
         Write-Log "Failed to add relay range '$RangeName': $_" "WARNING"
     }

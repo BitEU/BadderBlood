@@ -134,7 +134,7 @@ function Invoke-Sql {
             $table   = New-Object System.Data.DataTable
             $null    = $adapter.Fill($table)
             $conn.Close()
-            return $table
+            return , $table
         } else {
             $null = $cmd.ExecuteNonQuery()
             $conn.Close()
@@ -162,11 +162,18 @@ Write-Log "SQL connectivity confirmed." "SUCCESS"
 
 # BoxArchive2019 exists
 $dbCheck = Invoke-Sql -ReturnReader -Query "SELECT COUNT(*) AS n FROM sys.databases WHERE name = 'BoxArchive2019'"
-if ($dbCheck.Rows[0].n -eq 0) {
-    Write-Log "BoxArchive2019 database not found on $SqlInstance. Run BadSQL.ps1 first." "ERROR"
-    exit 1
+$boxDbExists = ($dbCheck -is [System.Data.DataTable] -and $dbCheck.Rows.Count -gt 0 -and $dbCheck.Rows[0].n -gt 0)
+if (-not $boxDbExists) {
+    # Fallback: try connecting directly (sys.databases may be hidden due to permissions)
+    $directCheck = Invoke-Sql -Query "SELECT DB_NAME() AS CurrentDB" -Database "BoxArchive2019" -ReturnReader
+    if (-not $directCheck -or $directCheck -isnot [System.Data.DataTable] -or $directCheck.Rows.Count -eq 0) {
+        Write-Log "BoxArchive2019 database not found on $SqlInstance. Run BadSQL.ps1 first." "ERROR"
+        exit 1
+    }
+    Write-Log "BoxArchive2019 confirmed (via direct connection)." "SUCCESS"
+} else {
+    Write-Log "BoxArchive2019 confirmed." "SUCCESS"
 }
-Write-Log "BoxArchive2019 confirmed." "SUCCESS"
 
 # IIS site path
 if (-not (Test-Path $IisBasePath)) {

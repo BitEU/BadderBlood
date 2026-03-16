@@ -222,6 +222,7 @@ if (-not $SkipPhase1) {
 
     try {
         & $phase1Script @phase1Args
+        if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Phase 1 script exited with code $LASTEXITCODE" }
         Write-Log "Phase 1 completed successfully." "SUCCESS"
     } catch {
         Write-Log "Phase 1 failed: $_" "ERROR"
@@ -259,6 +260,7 @@ if (-not $SkipPhase2) {
 
     try {
         & $phase2Script @phase2Args
+        if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Phase 2 script exited with code $LASTEXITCODE" }
         Write-Log "Phase 2 completed successfully." "SUCCESS"
     } catch {
         Write-Log "Phase 2 failed: $_" "ERROR"
@@ -300,6 +302,7 @@ if (-not $SkipPhase3) {
 
     try {
         & $phase3Script @phase3Args
+        if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Phase 3 script exited with code $LASTEXITCODE" }
         Write-Log "Phase 3 completed successfully." "SUCCESS"
     } catch {
         Write-Log "Phase 3 failed: $_" "ERROR"
@@ -375,6 +378,7 @@ if (-not $SkipPhase5) {
 
         try {
             & $phase5Script @phase5Args
+            if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Phase 5 script exited with code $LASTEXITCODE" }
             Write-Log "Phase 5 completed successfully." "SUCCESS"
         } catch {
             Write-Log "Phase 5 failed: $_" "ERROR"
@@ -420,6 +424,7 @@ if (-not $SkipPhase6) {
 
         try {
             & $phase6Script @phase6Args
+            if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Phase 6 script exited with code $LASTEXITCODE" }
             Write-Log "Phase 6 completed successfully." "SUCCESS"
         } catch {
             Write-Log "Phase 6 failed: $_" "ERROR"

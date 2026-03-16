@@ -115,7 +115,7 @@ function Invoke-Sql {
             $table   = New-Object System.Data.DataTable
             $null    = $adapter.Fill($table)
             $conn.Close()
-            return $table
+            return , $table
         } else {
             $null = $cmd.ExecuteNonQuery()
             $conn.Close()
@@ -182,7 +182,15 @@ Import-Module WebAdministration -ErrorAction SilentlyContinue
 Write-Log "Creating ITDeskDB database..." "STEP"
 
 $dbExists = Invoke-Sql -ReturnReader -Query "SELECT COUNT(*) AS n FROM sys.databases WHERE name = 'ITDeskDB'"
-if ($dbExists.Rows[0].n -gt 0 -and -not $Force) {
+$dbAlreadyExists = ($dbExists -is [System.Data.DataTable] -and $dbExists.Rows.Count -gt 0 -and $dbExists.Rows[0].n -gt 0)
+if (-not $dbAlreadyExists) {
+    # Fallback: try connecting directly to ITDeskDB (sys.databases may be hidden due to permissions)
+    $directCheck = Invoke-Sql -Query "SELECT DB_NAME() AS CurrentDB" -Database "ITDeskDB" -ReturnReader
+    if ($directCheck -is [System.Data.DataTable] -and $directCheck.Rows.Count -gt 0) {
+        $dbAlreadyExists = $true
+    }
+}
+if ($dbAlreadyExists -and -not $Force) {
     Write-Log "ITDeskDB already exists - skipping creation (-Force to recreate)." "WARNING"
 } else {
     if ($Force) {

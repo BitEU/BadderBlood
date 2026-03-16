@@ -119,7 +119,7 @@ function Invoke-Sql {
             $table   = New-Object System.Data.DataTable
             $null    = $adapter.Fill($table)
             $conn.Close()
-            return $table
+            return , $table
         } else {
             $null = $cmd.ExecuteNonQuery()
             $conn.Close()
@@ -147,11 +147,18 @@ Write-Log "SQL connectivity confirmed: $SqlInstance" "SUCCESS"
 
 # Verify NailInventoryDB exists
 $dbCheck = Invoke-Sql -Query "SELECT name FROM sys.databases WHERE name = 'NailInventoryDB'" -ReturnReader
-if ($dbCheck.Rows.Count -eq 0) {
-    Write-Log "NailInventoryDB not found. Run BadSQL.ps1 first." "ERROR"
-    exit 1
+if (-not $dbCheck -or $dbCheck -isnot [System.Data.DataTable] -or $dbCheck.Rows.Count -eq 0) {
+    Write-Log "NailInventoryDB not found or query failed. Attempting direct connection to NailInventoryDB..." "WARNING"
+    # Fallback: try connecting to the database directly - if it works, the DB exists
+    $directCheck = Invoke-Sql -Query "SELECT DB_NAME() AS CurrentDB" -Database "NailInventoryDB" -ReturnReader
+    if (-not $directCheck -or $directCheck -isnot [System.Data.DataTable] -or $directCheck.Rows.Count -eq 0) {
+        Write-Log "NailInventoryDB not found. Run BadSQL.ps1 first." "ERROR"
+        exit 1
+    }
+    Write-Log "NailInventoryDB confirmed (via direct connection)." "SUCCESS"
+} else {
+    Write-Log "NailInventoryDB confirmed." "SUCCESS"
 }
-Write-Log "NailInventoryDB confirmed." "SUCCESS"
 
 # Verify BlackTeam_SQLBot login exists (warn but don't fail - Deploy-BlackTeamAccounts may not have run yet)
 $loginCheck = Invoke-Sql -Query "SELECT name FROM sys.server_principals WHERE name = N'$SqlBotLogin'" -ReturnReader

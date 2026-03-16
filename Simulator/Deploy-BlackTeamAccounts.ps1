@@ -142,22 +142,22 @@ $Accounts = @(
         Name        = "BlackTeam_Scorebot"
         Description = "Scoring engine service account - reads AD health metrics. DO NOT MODIFY (RoE)."
         Notes       = "AD Read"
-    }
+    },
     @{
         Name        = "BlackTeam_SQLBot"
         Description = "SQL traffic generator - supplier delivery simulation. DO NOT MODIFY (RoE)."
         Notes       = "SQL db_datareader/db_datawriter on NailInventoryDB, TimesheetLegacy"
-    }
+    },
     @{
         Name        = "BlackTeam_WebBot"
         Description = "IIS traffic generator - customer order simulation. DO NOT MODIFY (RoE)."
         Notes       = "IIS Read on Springfield Box Factory sites"
-    }
+    },
     @{
         Name        = "BlackTeam_FileBot"
         Description = "SMB file operations generator - employee file activity. DO NOT MODIFY (RoE)."
         Notes       = "CorpData share Read/Write"
-    }
+    },
     @{
         Name        = "BlackTeam_MailBot"
         Description = "Email traffic generator - internal SMTP relay. DO NOT MODIFY (RoE)."
@@ -172,25 +172,27 @@ $Accounts = @(
 Write-Log "Provisioning Black Team service accounts..." "STEP"
 
 foreach ($acct in $Accounts) {
-    $existing = Get-ADUser -Filter { SamAccountName -eq $acct.Name } -ErrorAction SilentlyContinue
+    $acctName = $acct.Name
+    $acctDesc = $acct.Description
+    $existing = Get-ADUser -Filter "SamAccountName -eq '$acctName'" -ErrorAction SilentlyContinue
     if ($existing) {
-        Write-Log "$($acct.Name) already exists - ensuring enabled and password reset." "WARNING"
-        Set-ADUser -Identity $acct.Name -Enabled $true -Description $acct.Description `
+        Write-Log "$acctName already exists - ensuring enabled and password reset." "WARNING"
+        Set-ADUser -Identity $acctName -Enabled $true -Description $acctDesc `
             -PasswordNeverExpires $true -CannotChangePassword $true -ErrorAction SilentlyContinue
-        Set-ADAccountPassword -Identity $acct.Name -NewPassword $SecurePass -Reset -ErrorAction SilentlyContinue
+        Set-ADAccountPassword -Identity $acctName -NewPassword $SecurePass -Reset -ErrorAction SilentlyContinue
     } else {
         New-ADUser `
-            -Name              $acct.Name `
-            -SamAccountName    $acct.Name `
-            -UserPrincipalName "$($acct.Name)@$($Domain.DNSRoot)" `
+            -Name              $acctName `
+            -SamAccountName    $acctName `
+            -UserPrincipalName "$acctName@$($Domain.DNSRoot)" `
             -Path              $BlackTeamOU `
-            -Description       $acct.Description `
+            -Description       $acctDesc `
             -AccountPassword   $SecurePass `
             -Enabled           $true `
             -PasswordNeverExpires $true `
             -CannotChangePassword $true `
             -ErrorAction       Stop
-        Write-Log "Created: $($acct.Name)" "SUCCESS"
+        Write-Log "Created: $acctName" "SUCCESS"
     }
 }
 
