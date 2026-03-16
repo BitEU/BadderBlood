@@ -48,9 +48,9 @@ $extendedrightsmap = $script:_bbExtendedRightsMap
 
 # Object queries - these change per run so always refresh, but use ResultSetSize for safety
 $AllOUs = Get-ADOrganizationalUnit -Filter * -Server $setDC -ResultSetSize $null
-$allUsers = Get-ADUser -Filter * -ResultSetSize 2500 -Server $setDC
-$allGroups = Get-ADGroup -Filter * -ResultSetSize 2500 -Server $setDC
-$allComputers = Get-ADComputer -Filter * -ResultSetSize 2500 -Server $setDC
+$allUsers = Get-ADUser -Filter * -ResultSetSize 1500 -Server $setDC
+$allGroups = Get-ADGroup -Filter * -ResultSetSize 1500 -Server $setDC
+$allComputers = Get-ADComputer -Filter * -ResultSetSize 1500 -Server $setDC
 
 # Non-critical groups - build in single pass instead of pipeline filter
 $nonCritGroups = [System.Collections.Generic.List[object]]::new()

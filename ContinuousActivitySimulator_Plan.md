@@ -27,7 +27,7 @@ This plan transforms the static BadderBlood AD lab into a **living, breathing en
 
 BadderBlood currently deploys:
 
-- **Invoke-BadderBlood.ps1** — Creates 2,500 users, 500 groups, 100 computers, realistic ACL misconfigurations, attack vectors (Kerberoasting, ASREP, RBCD, Shadow Credentials, ADCS, gMSA, ADIDNS, LAPS bypass), and 18–20 insecure GPOs.
+- **Invoke-BadderBlood.ps1** — Creates 1,500 users, 500 groups, 100 computers, realistic ACL misconfigurations, attack vectors (Kerberoasting, ASREP, RBCD, Shadow Credentials, ADCS, gMSA, ADIDNS, LAPS bypass), and 18–20 insecure GPOs.
 - **BadFS.ps1** — Generates a realistic corporate file share at `C:\CorpShares` with department folders, project folders, resumes, performance reviews, financial CSVs, meeting minutes, legal docs, and PII. Sets AD home folder/profile/logon script attributes. Deploys `logon.bat` and `Set-Wallpaper.ps1` to NETLOGON.
 - **BadIIS.ps1** — Deploys a themed IIS site (Springfield Box Factory) with a public-facing knowledgebase, employee portal, and intentionally misconfigured `/it_docs/` and `/legacy_backups/` directories. Dynamically generates content from live AD (leadership, DCs, service accounts, Kerberoastable accounts).
 - **BadSQL.ps1** — Installs SQL Server Express with NailInventoryDB, TimesheetLegacy, HRConfidential, BoxArchive2019, and SqlReports databases. Cross-references BadFS and BadIIS data for credential/salary consistency. Deploys IIS web apps at `/apps/inventory/`, `/apps/timesheet/`, `/apps/hr/`, `/apps/orders/`. Creates 12+ intentional SQL misconfigurations (xp_cmdshell, TRUSTWORTHY, SQL injection, weak logins, linked servers, GPP-style password exposure).

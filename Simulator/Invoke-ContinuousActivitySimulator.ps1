@@ -306,24 +306,10 @@ if (-not $SkipPhase4) {
     }
 
     if (-not $SkipPhase4) {
-        $phase4Script = Join-Path $ScriptRoot "Deploy-UserPasswordExport.ps1"
-        if (-not (Test-Path $phase4Script)) {
-            Write-Log "Deploy-UserPasswordExport.ps1 not found at $phase4Script" "ERROR"
-            exit 1
-        }
+       
+        ## PHASE 4 PASSWORD STUFF IS HANDLED BY CREATEUSERS SCRIPT NOW, WHICH EXPORTS ALL USER PASSWORDS TO A CSV
 
-        $phase4Args = @{
-            UserCount      = $Phase4UserCount
-            SimulatorPath  = $SimulatorPath
-        }
 
-        try {
-            & $phase4Script @phase4Args
-            Write-Log "Phase 4 completed successfully." "SUCCESS"
-        } catch {
-            Write-Log "Phase 4 failed: $_" "ERROR"
-            exit 1
-        }
     }
 } else {
     Write-Log "Skipping Phase 4 (-SkipPhase4 specified)." "WARNING"

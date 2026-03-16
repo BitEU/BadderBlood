@@ -7,7 +7,7 @@
        Unlike the original BadBlood, objects are placed realistically with intentional,
        discoverable security issues rather than random chaos.
     .PARAMETER UserCount
-       Number of user accounts to create (default: 2500)
+       Number of user accounts to create (default: 1500)
     .PARAMETER GroupCount
        Number of groups to create (default: 500)
     .PARAMETER ComputerCount
@@ -35,7 +35,7 @@
 param
 (
     [Parameter(Mandatory = $false)]
-    [Int32]$UserCount = 2500,
+    [Int32]$UserCount = 1500,
 
     [Parameter(Mandatory = $false)]
     [Int32]$GroupCount = 500,

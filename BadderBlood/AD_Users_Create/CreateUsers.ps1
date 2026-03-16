@@ -87,7 +87,7 @@ Function CreateUser {
     # INITIALIZE ONE-TIME CACHES (first call only)
     # =====================================================================
     if (-not $script:_bbNamesCached) {
-        # Cache name lists from disk (eliminates ~7500 file reads over 2500 calls)
+        # Cache name lists from disk (eliminates ~7500 file reads over 1500 calls)
         $script:_bbFamilyNames = @(Get-Content ("$($scriptpath)\Names\familynames-usa-top1000.txt"))
         $script:_bbFemaleNames = @(Get-Content ("$($scriptpath)\Names\femalenames-usa-top1000.txt"))
         $script:_bbMaleNames   = @(Get-Content ("$($scriptpath)\Names\malenames-usa-top1000.txt"))
@@ -531,6 +531,14 @@ Function CreateUser {
             }
         }
     }
+
+    # ---- EXPORT PASSWORD FOR EVERY NORMAL USER ----
+    $exportPath = Join-Path (Split-Path $scriptparent) "all_user_passwords.csv"
+    if (-not (Test-Path $exportPath)) {
+        "SamAccountName,DisplayName,Department,Password,Domain,HomeDirectory,ShareHost" | Out-File -FilePath $exportPath -Encoding utf8
+    }
+    $csvRow = "$name,$displayName,$deptName,$pwd,$dnsroot,\\$setDC\CorpData\Users\$name,$setDC"
+    $csvRow | Out-File -FilePath $exportPath -Append -Encoding utf8
 
     $pwd = ''
 }

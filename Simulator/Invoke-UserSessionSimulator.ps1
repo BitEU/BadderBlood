@@ -50,7 +50,7 @@
 #>
 
 param(
-    [string]$UserPasswordFile  = "C:\Simulator\user_passwords.json",
+    [string]$UserPasswordFile  = "C:\Simulator\all_user_passwords.csv",
     [string]$CorpShareHost     = "",
     [int]$MinSessions          = 3,
     [int]$MaxSessions          = 8,
@@ -137,22 +137,25 @@ try {
 function Import-UserPasswordFile {
     param([string]$FilePath)
     try {
-        $raw  = Get-Content $FilePath -Raw -ErrorAction Stop
-        $json = $raw | ConvertFrom-Json
+        $csv = Import-Csv $FilePath -ErrorAction Stop
         $users = @()
-        foreach ($u in $json.users) {
+        $detectedHost = ""
+        foreach ($u in $csv) {
             $users += @{
-                Sam        = $u.sam
-                Name       = $u.displayName
-                Dept       = $u.department
-                Password   = $u.password
-                Domain     = $u.domain
-                HomeDir    = $u.homeDir
-                ShareHost  = $json.corpShareHost
+                Sam        = $u.SamAccountName
+                Name       = $u.DisplayName
+                Dept       = $u.Department
+                Password   = $u.Password
+                Domain     = $u.Domain
+                HomeDir    = $u.HomeDirectory
+                ShareHost  = $u.ShareHost
+            }
+            if (-not $detectedHost -and $u.ShareHost) {
+                $detectedHost = $u.ShareHost
             }
         }
         Write-Log "Loaded $($users.Count) users from $FilePath" "SUCCESS"
-        return $users, $json.corpShareHost
+        return $users, $detectedHost
     } catch {
         Write-Log "Cannot load $FilePath : $_" "ERROR"
         return @(), ""

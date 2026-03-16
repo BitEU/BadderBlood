@@ -41,7 +41,7 @@ Function CreateComputer {
     } else { $OUsAll = $OUList }
 
     if (!$PSBoundParameters.ContainsKey('UserList')) {
-        $UserList = Get-ADUser -ResultSetSize 2500 -Server $setDC -Filter *
+        $UserList = Get-ADUser -ResultSetSize 1500 -Server $setDC -Filter *
     }
 
     if (!$PSBoundParameters.ContainsKey('ScriptDir')) {

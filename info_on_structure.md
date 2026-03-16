@@ -53,7 +53,7 @@
 ## Usage
 
 ```powershell
-# Default (2500 users, 500 groups, 100 computers, 8% drift)
+# Default (1500 users, 500 groups, 100 computers, 8% drift)
 .\Invoke-BadderBlood.ps1
 
 # Smaller lab
