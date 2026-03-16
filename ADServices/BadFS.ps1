@@ -22,7 +22,9 @@ Param(
     [Parameter(Mandatory=$false)][string]$ShareName = "CorpData",
     [Parameter(Mandatory=$false)][int]$MaxFilesPerFolder = 15,
     [Parameter(Mandatory=$false)][int]$UserPopulationPercentage = 50,
-    [Parameter(Mandatory=$false)][switch]$ForceLocalMode # Runs without AD, generates random names
+    [Parameter(Mandatory=$false)][switch]$ForceLocalMode, # Runs without AD, generates random names
+    [Parameter(Mandatory=$false)][switch]$EnableParallelFileWrites,
+    [Parameter(Mandatory=$false)][ValidateRange(1,64)][int]$MaxParallelFileWrites = 8
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -849,7 +851,8 @@ Meeting adjourned at $(Get-Random -Min 10 -Max 11):$(Get-Random -Min 10 -Max 59)
 }
 
 function New-FinancialReportCSV {
-    $rows = @("TransactionID,Date,Department,CostCenter,Category,Amount,Status,ApprovedBy")
+    $rows = [System.Collections.Generic.List[string]]::new()
+    $rows.Add("TransactionID,Date,Department,CostCenter,Category,Amount,Status,ApprovedBy")
     # Massively expanded categories
     $categories = @("Software License", "Hardware Allocation", "Consulting", "Travel", "Marketing Ad Spend", "Legal Retainer", "Office Supplies", "Cloud Compute (AWS/Azure)", "SaaS Subscription", "Catered Lunches", "Corporate Retreat", "Compliance Audit Fee")
     $statuses = @("Cleared", "Pending", "In Dispute", "Reconciled", "Flagged for Review", "Rejected")
@@ -869,13 +872,14 @@ function New-FinancialReportCSV {
         
         $approver = if ($global:AllADUsers.Count -gt 0) { ($global:AllADUsers | Get-Random).Name } else { "$($global:FirstNames | Get-Random) $($global:LastNames | Get-Random)" }
         
-        $rows += "$tid,$date,$deptFull,$cc,$cat,$amount,$status,$approver"
+        $rows.Add("$tid,$date,$deptFull,$cc,$cat,$amount,$status,$approver")
     }
     return $rows -join "`n"
 }
 
 function New-EmployeeRosterCSV {
-    $rows = @("EmpID,LastName,FirstName,Department,Title,OfficeLocation,HireDate,BaseSalary,BonusTarget,StockOptions,SSN,HomePhone")
+    $rows = [System.Collections.Generic.List[string]]::new()
+    $rows.Add("EmpID,LastName,FirstName,Department,Title,OfficeLocation,HireDate,BaseSalary,BonusTarget,StockOptions,SSN,HomePhone")
     
     $numRows = Get-Random -Minimum 100 -Maximum 300
     for ($i = 0; $i -lt $numRows; $i++) {
@@ -910,7 +914,7 @@ function New-EmployeeRosterCSV {
         $ssn = Get-RandomSSN
         $phone = "(555) $(Get-Random -Min 100 -Max 999)-$(Get-Random -Min 1000 -Max 9999)"
         
-        $rows += "$eid,$last,$first,$deptFull,$title,$officeStr,$hire,$sal,$bonus%,$stock,$ssn,$phone"
+        $rows.Add("$eid,$last,$first,$deptFull,$title,$officeStr,$hire,$sal,$bonus%,$stock,$ssn,$phone")
     }
     return $rows -join "`n"
 }
@@ -1954,6 +1958,104 @@ Status page: https://status.corp.local
 # SECTION 4: FILE WRITING LOGIC
 # ==============================================================================
 
+$script:_bbParallelFileWrites = $EnableParallelFileWrites.IsPresent
+$script:_bbFileWritePool = $null
+$script:_bbFileWriteJobs = [System.Collections.Generic.List[object]]::new()
+$script:_bbFileWriteWorker = {
+    param(
+        [string]$FilePath,
+        [string]$Content,
+        [bool]$UseFsutil,
+        [long]$SizeInBytes,
+        [string]$FsutilFallback
+    )
+
+    if ($UseFsutil) {
+        try {
+            & fsutil file createnew $FilePath $SizeInBytes | Out-Null
+        } catch {
+            [System.IO.File]::WriteAllText($FilePath, $FsutilFallback, [System.Text.Encoding]::UTF8)
+        }
+    } else {
+        [System.IO.File]::WriteAllText($FilePath, $Content, [System.Text.Encoding]::UTF8)
+    }
+}
+
+function Initialize-FileWritePipeline {
+    param([int]$MaxConcurrency = 8)
+
+    if (-not $script:_bbParallelFileWrites) { return }
+    if ($script:_bbFileWritePool) { return }
+
+    $script:_bbFileWritePool = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspacePool(1, $MaxConcurrency)
+    $script:_bbFileWritePool.Open()
+}
+
+function Write-GeneratedFile {
+    param(
+        [string]$FilePath,
+        [string]$Content,
+        [bool]$UseFsutil = $false,
+        [long]$SizeInBytes = 0,
+        [string]$FsutilFallback = "binary placeholder"
+    )
+
+    if ($null -eq $Content) { $Content = '' }
+
+    if ($script:_bbParallelFileWrites -and $script:_bbFileWritePool) {
+        $ps = [PowerShell]::Create()
+        $ps.RunspacePool = $script:_bbFileWritePool
+        $null = $ps.AddScript($script:_bbFileWriteWorker.ToString())
+        $null = $ps.AddArgument($FilePath)
+        $null = $ps.AddArgument($Content)
+        $null = $ps.AddArgument($UseFsutil)
+        $null = $ps.AddArgument($SizeInBytes)
+        $null = $ps.AddArgument($FsutilFallback)
+        $handle = $ps.BeginInvoke()
+        $script:_bbFileWriteJobs.Add([PSCustomObject]@{ PowerShell = $ps; Handle = $handle; Path = $FilePath })
+        return
+    }
+
+    if ($UseFsutil) {
+        try {
+            & fsutil file createnew $FilePath $SizeInBytes | Out-Null
+        } catch {
+            [System.IO.File]::WriteAllText($FilePath, $FsutilFallback, [System.Text.Encoding]::UTF8)
+        }
+    } else {
+        [System.IO.File]::WriteAllText($FilePath, $Content, [System.Text.Encoding]::UTF8)
+    }
+}
+
+function Complete-FileWritePipeline {
+    if ($null -eq $script:_bbFileWriteJobs -or $script:_bbFileWriteJobs.Count -eq 0) {
+        if ($script:_bbFileWritePool) {
+            $script:_bbFileWritePool.Close()
+            $script:_bbFileWritePool.Dispose()
+            $script:_bbFileWritePool = $null
+        }
+        return
+    }
+
+    foreach ($job in $script:_bbFileWriteJobs) {
+        try {
+            $null = $job.PowerShell.EndInvoke($job.Handle)
+        } catch {
+            Write-Verbose "Failed writing file $($job.Path): $_"
+        } finally {
+            $job.PowerShell.Dispose()
+        }
+    }
+
+    $script:_bbFileWriteJobs.Clear()
+
+    if ($script:_bbFileWritePool) {
+        $script:_bbFileWritePool.Close()
+        $script:_bbFileWritePool.Dispose()
+        $script:_bbFileWritePool = $null
+    }
+}
+
 function New-ProjectFile {
     param(
         [string]$FolderPath,
@@ -2047,13 +2149,9 @@ function New-ProjectFile {
     
     if ($UseFsutil) {
         $SizeInBytes = Get-Random -Minimum 524288 -Maximum 10485760 # 512KB to 10MB
-        try {
-            $null = Invoke-Expression "fsutil file createnew `"$FullPath`" $SizeInBytes"
-        } catch {
-            "binary project artifact" | Out-File -Path $FullPath
-        }
+        Write-GeneratedFile -FilePath $FullPath -UseFsutil $true -SizeInBytes $SizeInBytes -FsutilFallback "binary project artifact"
     } else {
-        Set-Content -Path $FullPath -Value $Content -Encoding UTF8
+        Write-GeneratedFile -FilePath $FullPath -Content $Content
     }
 }
 
@@ -2141,13 +2239,9 @@ function New-DynamicFile {
     
     if ($UseFsutil) {
         $SizeInBytes = Get-Random -Minimum 1048576 -Maximum 15728640 # 1MB to 15MB
-        try {
-            $null = Invoke-Expression "fsutil file createnew `"$FullPath`" $SizeInBytes"
-        } catch {
-            "dummy archive data" | Out-File -Path $FullPath
-        }
+        Write-GeneratedFile -FilePath $FullPath -UseFsutil $true -SizeInBytes $SizeInBytes -FsutilFallback "dummy archive data"
     } else {
-        Set-Content -Path $FullPath -Value $Content -Encoding UTF8
+        Write-GeneratedFile -FilePath $FullPath -Content $Content
     }
 }
 
@@ -2158,6 +2252,14 @@ function New-DynamicFile {
 Write-Host "[*] Initializing Base Directories..." -ForegroundColor Cyan
 if (-not (Test-Path $BaseSharePath)) {
     New-Item -Path $BaseSharePath -ItemType Directory -Force | Out-Null
+}
+
+function Format-BBProgressDuration {
+    param([TimeSpan]$Duration)
+    if ($Duration.TotalHours -ge 1) {
+        return ('{0:00}:{1:00}:{2:00}' -f [int]$Duration.TotalHours, $Duration.Minutes, $Duration.Seconds)
+    }
+    return ('{0:00}:{1:00}' -f [int]$Duration.TotalMinutes, $Duration.Seconds)
 }
 
 $existingShare = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
@@ -2174,19 +2276,33 @@ $DepartmentsPath = Join-Path $BaseSharePath "Departments"
 $UsersPath = Join-Path $BaseSharePath "Users"
 $PublicPath = Join-Path $BaseSharePath "Public_Company_Data"
 New-Item -Path $DepartmentsPath, $UsersPath, $PublicPath -ItemType Directory -Force | Out-Null
+Initialize-FileWritePipeline -MaxConcurrency $MaxParallelFileWrites
 
 # --- POPULATE PUBLIC SHARES ---
 Write-Host "[*] Populating Public Company Data Share..." -ForegroundColor Cyan
+$publicStartTime = Get-Date
+$publicTotal = 10
 for ($i=0; $i -lt 10; $i++) {
     New-DynamicFile -FolderPath $PublicPath -DepartmentAcronym "CORP"
+    $completedPublic = $i + 1
+    $elapsed = (Get-Date) - $publicStartTime
+    $avgSeconds = $elapsed.TotalSeconds / [Math]::Max(1, $completedPublic)
+    $remaining = [Math]::Max(0, $publicTotal - $completedPublic)
+    $eta = [TimeSpan]::FromSeconds($avgSeconds * $remaining)
+    $status = "Public files ($completedPublic/$publicTotal) | Elapsed $(Format-BBProgressDuration $elapsed) | ETA $(Format-BBProgressDuration $eta)"
+    Write-Progress -Activity "BadFS: Public Company Data" -Status $status -PercentComplete (($completedPublic / $publicTotal) * 100)
 }
+Write-Progress -Activity "BadFS: Public Company Data" -Status "Public files complete" -Completed
 # Guarantee a massive sensitive CSV in the public share
 $PublicRosterPath = Join-Path $PublicPath "GLOBAL_ROSTER_WITH_COMPENSATION_DO_NOT_SHARE.csv"
-Set-Content -Path $PublicRosterPath -Value (New-EmployeeRosterCSV) -Encoding UTF8
+Write-GeneratedFile -FilePath $PublicRosterPath -Content (New-EmployeeRosterCSV)
 
 # --- POPULATE DEPARTMENT SHARES ---
 Write-Host "[*] Generating Department File Shares..." -ForegroundColor Cyan
 $Departments = $global:DepartmentContexts.Keys
+$deptStartTime = Get-Date
+$deptTotal = $Departments.Count
+$deptProgress = 0
 foreach ($DeptAcronym in $Departments) {
     # Name the folder using the Full Department Name for realism
     $FolderName = $global:DepartmentContexts[$DeptAcronym].FullName -replace '[<>:"/\\|?*]', ''
@@ -2292,7 +2408,7 @@ foreach ($DeptAcronym in $Departments) {
                     $RosterContent += "- Regular stakeholder updates and progress reports"
                     
                     $RosterPath = Join-Path $ProjectPath "Team_Roster_$SafeGroupName.txt"
-                    Set-Content -Path $RosterPath -Value ($RosterContent -join "`n") -Encoding UTF8
+                    Write-GeneratedFile -FilePath $RosterPath -Content ($RosterContent -join "`n")
                 }
             } catch {
                 Write-Verbose "Could not fetch members for group $($Group.Name)"
@@ -2305,7 +2421,16 @@ foreach ($DeptAcronym in $Departments) {
             }
         }
     }
+
+    $deptProgress++
+    $elapsed = (Get-Date) - $deptStartTime
+    $avgSeconds = $elapsed.TotalSeconds / [Math]::Max(1, $deptProgress)
+    $remaining = [Math]::Max(0, $deptTotal - $deptProgress)
+    $eta = [TimeSpan]::FromSeconds($avgSeconds * $remaining)
+    $status = "Departments ($deptProgress/$deptTotal) - $FolderName | Elapsed $(Format-BBProgressDuration $elapsed) | ETA $(Format-BBProgressDuration $eta)"
+    Write-Progress -Activity "BadFS: Department Shares" -Status $status -PercentComplete (($deptProgress / $deptTotal) * 100)
 }
+Write-Progress -Activity "BadFS: Department Shares" -Status "Department shares complete" -Completed
 
 # --- POPULATE USER HOME DIRECTORIES ---
 Write-Host "[*] Selecting Target Users for Home Directories..." -ForegroundColor Cyan
@@ -2328,11 +2453,17 @@ if ($ForceLocalMode) {
 
 $progress = 0
 $TotalUsers = $TargetUsers.Count
+$userHomesStartTime = Get-Date
 
 foreach ($User in $TargetUsers) {
     $progress++
-    if ($progress % 10 -eq 0) {
-        Write-Progress -Activity "Creating User Home Directories and Data" -Status "User $progress of $TotalUsers" -PercentComplete (($progress / $TotalUsers) * 100)
+    if ($progress % 10 -eq 0 -or $progress -eq 1 -or $progress -eq $TotalUsers) {
+        $elapsed = (Get-Date) - $userHomesStartTime
+        $avgSeconds = $elapsed.TotalSeconds / [Math]::Max(1, $progress)
+        $remaining = [Math]::Max(0, $TotalUsers - $progress)
+        $eta = [TimeSpan]::FromSeconds($avgSeconds * $remaining)
+        $status = "Users ($progress/$TotalUsers) | Elapsed $(Format-BBProgressDuration $elapsed) | ETA $(Format-BBProgressDuration $eta)"
+        Write-Progress -Activity "Creating User Home Directories and Data" -Status $status -PercentComplete (($progress / $TotalUsers) * 100)
     }
     
     $UserDirPath = Join-Path $UsersPath $User.SamAccountName
@@ -2369,7 +2500,7 @@ foreach ($User in $TargetUsers) {
     # Guarantee at least one resume per user in their home dir
     $ResumePath = Join-Path $UserDirPath "My_Resume_Updated.md"
     $DeptFull = if ($global:DepartmentContexts[$UserObj.Department]) { $global:DepartmentContexts[$UserObj.Department].FullName } else { $UserObj.Department }
-    Set-Content -Path $ResumePath -Value (New-ResumeContent -User $UserObj -DeptFullName $DeptFull) -Encoding UTF8
+    Write-GeneratedFile -FilePath $ResumePath -Content (New-ResumeContent -User $UserObj -DeptFullName $DeptFull)
 
     $NumFiles = Get-Random -Minimum 2 -Maximum $MaxFilesPerFolder
     for ($i=0; $i -lt $NumFiles; $i++) {
@@ -2377,6 +2508,7 @@ foreach ($User in $TargetUsers) {
     }
 }
 Write-Progress -Activity "Creating User Home Directories and Data" -Completed
+Complete-FileWritePipeline
 
 # --- LOGON SCRIPTS: drop logon.bat + Set-Wallpaper.ps1 into NETLOGON ---
 # logon.bat maps H: and calls the wallpaper script.

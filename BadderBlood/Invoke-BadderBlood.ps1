@@ -212,24 +212,44 @@ if ($badderblood -eq 'badderblood') {
     . ($basescriptPath + '\AD_Users_Create\CreateUsers.ps1')
     $createuserscriptpath = $basescriptPath + '\AD_Users_Create\'
 
+    function Format-BBProgressDuration {
+        param([TimeSpan]$Duration)
+        if ($Duration.TotalHours -ge 1) {
+            return ('{0:00}:{1:00}:{2:00}' -f [int]$Duration.TotalHours, $Duration.Minutes, $Duration.Seconds)
+        }
+        return ('{0:00}:{1:00}' -f [int]$Duration.TotalMinutes, $Duration.Seconds)
+    }
+
     # Determine adaptive refresh interval based on user count
     # Larger batches = fewer AD round-trips, but staler manager pool
     $refreshInterval = if ($UserCount -le 500) { 100 } elseif ($UserCount -le 2000) { 250 } else { 500 }
     $ExistingUsersPool = $null
+    $userStartTime = Get-Date
 
     $x = 1
     do {
         # Refresh ExistingUsers at adaptive intervals so manager pool stays current
         if ($x % $refreshInterval -eq 0 -or $x -eq 1) {
             $ExistingUsersPool = Get-ADUser -Filter { Enabled -eq $true } -Properties Title,DistinguishedName,departmentNumber -Server $setDC -ResultSetSize $null
-            Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating users ($x/$UserCount)" -PercentComplete ($x / $UserCount * 100)
         }
         CreateUser -Domain $Domain -OUList $OUsAll -ScriptDir $createuserscriptpath `
             -DepartmentList $DepartmentList -JobTitleList $JobTitleList -OfficeList $OfficeList `
             -ExistingUsers $ExistingUsersPool `
             -DriftPercent $DriftPercent
+
+        $completedUsers = $x
+        if ($completedUsers % 25 -eq 0 -or $completedUsers -eq 1 -or $completedUsers -eq $UserCount) {
+            $elapsed = (Get-Date) - $userStartTime
+            $avgSecondsPerUser = $elapsed.TotalSeconds / [Math]::Max(1, $completedUsers)
+            $remainingUsers = [Math]::Max(0, $UserCount - $completedUsers)
+            $eta = [TimeSpan]::FromSeconds($avgSecondsPerUser * $remainingUsers)
+            $status = "Phase ${phase}: Creating users ($completedUsers/$UserCount) | Elapsed $(Format-BBProgressDuration $elapsed) | ETA $(Format-BBProgressDuration $eta)"
+            Write-Progress -Activity "BadderBlood Deployment" -Status $status -PercentComplete (($completedUsers / $UserCount) * 100)
+        }
         $x++
     } while ($x -le $UserCount)
+    Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating users complete" -Completed
+    Flush-BBPasswordExport
     Write-Host "    Created $UserCount users (drift: $DriftPercent%)" -ForegroundColor Gray
 
     # =====================================================================
@@ -248,16 +268,24 @@ if ($badderblood -eq 'badderblood') {
         Write-Host "  [$phase/$totalPhases] Creating $GroupCount groups..." -ForegroundColor Green
     . ($basescriptPath + '\AD_Groups_Create\CreateGroup.ps1')
     $createGroupScriptPath = $basescriptPath + '\AD_Groups_Create\'
+    $groupStartTime = Get-Date
 
     $x = 1
     do {
         CreateGroup -Domain $Domain -OUList $OUsAll -UserList $AllUsers -ScriptDir $createGroupScriptPath `
             -DepartmentList $DepartmentList
-        if ($x % 50 -eq 0) {
-            Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating groups ($x/$GroupCount)" -PercentComplete ($x / $GroupCount * 100)
+        $completedGroups = $x
+        if ($completedGroups % 25 -eq 0 -or $completedGroups -eq 1 -or $completedGroups -eq $GroupCount) {
+            $elapsed = (Get-Date) - $groupStartTime
+            $avgSecondsPerGroup = $elapsed.TotalSeconds / [Math]::Max(1, $completedGroups)
+            $remainingGroups = [Math]::Max(0, $GroupCount - $completedGroups)
+            $eta = [TimeSpan]::FromSeconds($avgSecondsPerGroup * $remainingGroups)
+            $status = "Phase ${phase}: Creating groups ($completedGroups/$GroupCount) | Elapsed $(Format-BBProgressDuration $elapsed) | ETA $(Format-BBProgressDuration $eta)"
+            Write-Progress -Activity "BadderBlood Deployment" -Status $status -PercentComplete (($completedGroups / $GroupCount) * 100)
         }
         $x++
     } while ($x -le $GroupCount)
+    Write-Progress -Activity "BadderBlood Deployment" -Status "Phase ${phase}: Creating groups complete" -Completed
     Write-Host "    Created $GroupCount groups" -ForegroundColor Gray
 
     $GroupList = Get-ADGroup -Filter { GroupCategory -eq "Security" -and GroupScope -eq "Global" } -Properties isCriticalSystemObject -Server $setDC

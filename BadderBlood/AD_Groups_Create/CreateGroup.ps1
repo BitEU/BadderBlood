@@ -153,8 +153,8 @@ Function CreateGroup {
     $i = 1
     $checkAcct = $null
     do {
-        $checkAcct = $null
-        try { $checkAcct = Get-ADGroup $groupName -Server $setDC -ErrorAction Stop } catch {}
+        $safeGroupName = $groupName.Replace("'", "''")
+        $checkAcct = Get-ADGroup -Filter "SamAccountName -eq '$safeGroupName'" -Server $setDC
         if ($checkAcct) {
             $groupName = "$origName-$i"
             $i++
@@ -163,12 +163,14 @@ Function CreateGroup {
 
     # ----- OU Placement -----
     $targetOU = "OU=Groups,OU=$deptCode,OU=$targetTier,$dn"
-    try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
-    catch {
+    $safeTargetDn = $targetOU.Replace("'", "''")
+    if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$safeTargetDn'" -Server $setDC)) {
         # Try Grouper-Groups OU
         $targetOU = "OU=Grouper-Groups,$dn"
-        try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
-        catch { $targetOU = $dn }
+        $safeGrouperDn = $targetOU.Replace("'", "''")
+        if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$safeGrouperDn'" -Server $setDC)) {
+            $targetOU = $dn
+        }
     }
 
     # ----- Create the group -----

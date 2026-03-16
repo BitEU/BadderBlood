@@ -21,6 +21,38 @@ if (-not $script:_bbNamesCached) {
     $script:_bbUsersByTitle   = $null   # Title -> @(user objects) from ExistingUsers
     $script:_bbTitleCounts    = $null   # Title -> count (from ExistingUsers)
     $script:_bbLocalTitleCounts = @{}   # Title -> count (local running tally, always accurate for capped titles)
+    $script:_bbPasswordExportPath = $null
+    $script:_bbPasswordExportRows = [System.Collections.Generic.List[string]]::new()
+}
+
+function Initialize-BBPasswordExportBuffer {
+    param([string]$BasePath)
+
+    if (-not $script:_bbPasswordExportPath) {
+        $script:_bbPasswordExportPath = Join-Path $BasePath "all_user_passwords.csv"
+    }
+    if ($null -eq $script:_bbPasswordExportRows) {
+        $script:_bbPasswordExportRows = [System.Collections.Generic.List[string]]::new()
+    }
+}
+
+function Flush-BBPasswordExport {
+    if ([string]::IsNullOrWhiteSpace($script:_bbPasswordExportPath)) { return }
+    if ($null -eq $script:_bbPasswordExportRows -or $script:_bbPasswordExportRows.Count -eq 0) { return }
+
+    $encoding = [System.Text.Encoding]::UTF8
+    $header = "SamAccountName,DisplayName,Department,Password,Domain,HomeDirectory,ShareHost"
+
+    if (-not (Test-Path $script:_bbPasswordExportPath)) {
+        $lines = [System.Collections.Generic.List[string]]::new($script:_bbPasswordExportRows.Count + 1)
+        $lines.Add($header)
+        foreach ($row in $script:_bbPasswordExportRows) { $lines.Add($row) }
+        [System.IO.File]::WriteAllLines($script:_bbPasswordExportPath, $lines, $encoding)
+    } else {
+        [System.IO.File]::AppendAllLines($script:_bbPasswordExportPath, $script:_bbPasswordExportRows, $encoding)
+    }
+
+    $script:_bbPasswordExportRows.Clear()
 }
 
 Function CreateUser {
@@ -207,11 +239,11 @@ Function CreateUser {
             [int]$Count = 1
         )
         Begin {
+            $randomBytes = New-Object -TypeName 'System.Byte[]' 4
+            $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
             Function Get-Seed {
-                $RandomBytes = New-Object -TypeName 'System.Byte[]' 4
-                $Random = New-Object -TypeName 'System.Security.Cryptography.RNGCryptoServiceProvider'
-                $Random.GetBytes($RandomBytes)
-                [BitConverter]::ToUInt32($RandomBytes, 0)
+                $rng.GetBytes($randomBytes)
+                [BitConverter]::ToUInt32($randomBytes, 0)
             }
         }
         Process {
@@ -240,6 +272,9 @@ Function CreateUser {
                 }
                 Write-Output -InputObject $(-join ($Password.GetEnumerator() | Sort-Object -Property Name | Select-Object -ExpandProperty Value))
             }
+        }
+        End {
+            if ($rng) { $rng.Dispose() }
         }
     }
 
@@ -299,20 +334,20 @@ Function CreateUser {
         catch { $targetOU = "OU=$tier,$dn" }
 
         $description = "Service Account - $dept - Created by BadderBlood"
-        $pwd = New-SWRandomPassword -MinPasswordLength 8 -MaxPasswordLength 12
+        $plainPassword = New-SWRandomPassword -MinPasswordLength 8 -MaxPasswordLength 12
 
         $pwdLeak = Get-Random -Minimum 1 -Maximum 101
         if ($pwdLeak -le 5) {
-            $description = "Service Account - $dept - pwd: $pwd"
+            $description = "Service Account - $dept - pwd: $plainPassword"
         }
 
-        $exists = $null
-        try { $exists = Get-ADUser $name -Server $setDC -ErrorAction Stop } catch {}
+        $safeSam = $name.Replace("'", "''")
+        $exists = Get-ADUser -Filter "SamAccountName -eq '$safeSam'" -Server $setDC
         if ($exists) { return }
 
         New-ADUser -Server $setDC -Description $description -DisplayName $name -Name $name `
             -SamAccountName $name -Enabled $true -Path $targetOU `
-            -AccountPassword (ConvertTo-SecureString $pwd -AsPlainText -Force) `
+            -AccountPassword (ConvertTo-SecureString $plainPassword -AsPlainText -Force) `
             -OtherAttributes @{
                 'employeeType' = 'Service'
                 'departmentNumber' = $dept
@@ -338,8 +373,8 @@ Function CreateUser {
         $name = $givenname + "_" + $surname
         if ($name.Length -gt 20) { $name = $name.Substring(0, 20) }
 
-        $exists = $null
-        try { $exists = Get-ADUser $name -Server $setDC -ErrorAction Stop } catch {}
+        $safeSam = $name.Replace("'", "''")
+        $exists = Get-ADUser -Filter "SamAccountName -eq '$safeSam'" -Server $setDC
         if ($exists) { return }
 
         # ---- ASSIGN DEPARTMENT (using cached weighted array) ----
@@ -423,28 +458,30 @@ Function CreateUser {
                 $targetOU = "OU=$subOU,OU=$deptCode,OU=$tierChoice,$dn"
             } else {
                 $targetOU = "OU=People,$dn"
-                try {
-                    $unassoc = "OU=Unassociated,OU=People,$dn"
-                    Get-ADOrganizationalUnit $unassoc -Server $setDC | Out-Null
+                $unassoc = "OU=Unassociated,OU=People,$dn"
+                $safeUnassocDn = $unassoc.Replace("'", "''")
+                if (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$safeUnassocDn'" -Server $setDC) {
                     $targetOU = $unassoc
-                } catch {}
+                }
             }
         }
 
-        try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
-        catch {
+        $safeTargetDn = $targetOU.Replace("'", "''")
+        if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$safeTargetDn'" -Server $setDC)) {
             $targetOU = "OU=People,$dn"
-            try { Get-ADOrganizationalUnit $targetOU -Server $setDC | Out-Null }
-            catch { $targetOU = $dn }
+            $safePeopleDn = $targetOU.Replace("'", "''")
+            if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$safePeopleDn'" -Server $setDC)) {
+                $targetOU = $dn
+            }
         }
 
         # ---- PASSWORD ----
-        $pwd = New-SWRandomPassword -MinPasswordLength 8 -MaxPasswordLength 12
+        $plainPassword = New-SWRandomPassword -MinPasswordLength 8 -MaxPasswordLength 12
         $description = "Created with BadderBlood"
 
         $pwdLeak = Get-Random -Minimum 1 -Maximum 1001
         if ($pwdLeak -le 10) {
-            $description = "Just so I dont forget my password is $pwd"
+            $description = "Just so I dont forget my password is $plainPassword"
         }
 
         # ---- CREATE THE USER ----
@@ -471,7 +508,7 @@ Function CreateUser {
                 -EmployeeID $employeeID `
                 -Enabled $true `
                 -Path $targetOU `
-                -AccountPassword (ConvertTo-SecureString $pwd -AsPlainText -Force) `
+                -AccountPassword (ConvertTo-SecureString $plainPassword -AsPlainText -Force) `
                 -OtherAttributes @{
                     'departmentNumber' = $deptCode
                     'employeeType' = 'Employee'
@@ -482,7 +519,7 @@ Function CreateUser {
                     -GivenName $givenname -Surname $surname -SamAccountName $name `
                     -Description $description -Department $deptName -Title $title `
                     -Enabled $true -Path $targetOU `
-                    -AccountPassword (ConvertTo-SecureString $pwd -AsPlainText -Force)
+                    -AccountPassword (ConvertTo-SecureString $plainPassword -AsPlainText -Force)
             } catch {}
         }
 
@@ -532,13 +569,12 @@ Function CreateUser {
         }
     }
 
-    # ---- EXPORT PASSWORD FOR EVERY NORMAL USER ----
-    $exportPath = Join-Path (Split-Path $scriptparent) "all_user_passwords.csv"
-    if (-not (Test-Path $exportPath)) {
-        "SamAccountName,DisplayName,Department,Password,Domain,HomeDirectory,ShareHost" | Out-File -FilePath $exportPath -Encoding utf8
-    }
-    $csvRow = "$name,$displayName,$deptName,$pwd,$dnsroot,\\$setDC\CorpData\Users\$name,$setDC"
-    $csvRow | Out-File -FilePath $exportPath -Append -Encoding utf8
+    # ---- BUFFER PASSWORD EXPORT; FLUSH ONCE PER BATCH ----
+    Initialize-BBPasswordExportBuffer -BasePath (Split-Path $scriptparent)
+    $csvDisplayName = if ($displayName) { $displayName } else { $name }
+    $csvDepartment = if ($deptName) { $deptName } else { '' }
+    $csvRow = "$name,$csvDisplayName,$csvDepartment,$plainPassword,$dnsroot,\\$setDC\CorpData\Users\$name,$setDC"
+    $script:_bbPasswordExportRows.Add($csvRow)
 
-    $pwd = ''
+    $plainPassword = ''
 }
