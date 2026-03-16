@@ -2,7 +2,6 @@
 # CONFIGURATION BLOCK
 # ===================================================================
 $TargetUser     = "Kyle"
-# Try a longer, more unique password to bypass GPO history/complexity
 $PlainPassword  = "WinTeamMem1!" 
 $TargetGroups   = @("Domain Admins")
 
