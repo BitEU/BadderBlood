@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Phase 6 — Email Traffic Simulator. Runs continuously on the simulator VM.
+    Phase 6 - Email Traffic Simulator. Runs continuously on the simulator VM.
 
 .DESCRIPTION
     Generates realistic inter-office email traffic between Springfield Box Factory AD users
@@ -40,7 +40,7 @@
     Emit additional diagnostic output.
 
 .NOTES
-    Runs on the simulator VM (WORKGROUP — NOT domain-joined).
+    Runs on the simulator VM (WORKGROUP - NOT domain-joined).
     Requires network connectivity to the DC on SMTP port 25.
     Does NOT require domain membership or LDAP access.
 
@@ -59,7 +59,7 @@ param(
 $ErrorActionPreference = "SilentlyContinue"
 
 # ==============================================================================
-# LOGGING  (daily rotation — new file each calendar day)
+# LOGGING  (daily rotation - new file each calendar day)
 # ==============================================================================
 
 if (-not (Test-Path $LogPath)) { New-Item -ItemType Directory -Path $LogPath -Force | Out-Null }
@@ -90,7 +90,7 @@ function Write-Log {
 
 Write-Log "=================================================================" "INFO"
 Write-Log "  BadderBlood Continuous Activity Simulator" "INFO"
-Write-Log "  Phase 6 — Email Traffic Simulator" "INFO"
+Write-Log "  Phase 6 - Email Traffic Simulator" "INFO"
 Write-Log "  Educational / CTF / Lab Use Only" "WARNING"
 Write-Log "=================================================================" "INFO"
 
@@ -99,7 +99,7 @@ Write-Log "=================================================================" "I
 # ==============================================================================
 
 $TitleLevelMap = [ordered]@{
-    # Level 8 — C-suite
+    # Level 8 - C-suite
     "ceo"                 = 8
     "cfo"                 = 8
     "coo"                 = 8
@@ -202,10 +202,10 @@ $ApprovalItems = @(
     'PO #SBF-8821 for $14,200 in roofing nails',
     'contractor invoice INV-2024-0339 ($8,750)',
     'overtime budget for Packaging Line 3',
-    'travel expense report — Springville trade show',
+    'travel expense report - Springville trade show',
     'equipment lease renewal for Forklift #7',
-    'new hire requisition — Inventory Coordinator',
-    'software licence renewal — MRP system',
+    'new hire requisition - Inventory Coordinator',
+    'software licence renewal - MRP system',
     'emergency repair quote for Baler Unit B'
 )
 
@@ -263,7 +263,7 @@ function New-EmailContent {
 
     switch ($type) {
         "StatusUpdate" {
-            $subject = "RE: $proj — Status Update"
+            $subject = "RE: $proj - Status Update"
             $body    = @"
 Hi $ToDisplay,
 
@@ -287,16 +287,16 @@ $FromDept | Springfield Box Factory
         }
 
         "MeetingRequest" {
-            $subject = "$FromDept Sync — $(Get-Date -Format 'MMMM yyyy')"
+            $subject = "$FromDept Sync - $(Get-Date -Format 'MMMM yyyy')"
             $body    = @"
 Hi $ToDisplay,
 
 I'd like to schedule a $FromDept / $ToDept alignment meeting for $dateStr.
 
 Proposed agenda:
-  1. Q$(([Math]::Ceiling((Get-Date).Month / 3))) production metrics — $nail and $box lines
+  1. Q$(([Math]::Ceiling((Get-Date).Month / 3))) production metrics - $nail and $box lines
   2. Open items from $cust account review
-  3. $proj — dependencies and blockers
+  3. $proj - dependencies and blockers
   4. AOB
 
 Please reply to confirm availability or suggest an alternative. I'll send a calendar invite
@@ -327,16 +327,16 @@ If this requires escalation to your manager please let me know and I will join t
 Regards,
 $FromDisplay
 $FromDept | Springfield Box Factory
-INTERNAL — DO NOT FORWARD
+INTERNAL - DO NOT FORWARD
 "@
         }
 
         "FYIForward" {
-            $subject = "FW: $proj — Update from $cust"
+            $subject = "FW: $proj - Update from $cust"
             $body    = @"
 Hi $ToDisplay,
 
-Forwarding this for your awareness — no action needed from your end at this stage,
+Forwarding this for your awareness - no action needed from your end at this stage,
 but wanted to make sure $ToDept has visibility before our next $jargon1.
 
 The key point from $cust is the revised order volume for $nail (up approximately
@@ -350,7 +350,7 @@ $FromDept | Springfield Box Factory
 
 ---------- Forwarded message ----------
 From: orders@$(($cust -replace ' ','').ToLower()).example.com
-Subject: Updated Order Forecast — $proj
+Subject: Updated Order Forecast - $proj
 
 Please see the attached revised forecast for Q$(([Math]::Ceiling((Get-Date).Month / 3))) [...truncated for internal distribution...]
 "@
@@ -362,7 +362,7 @@ Please see the attached revised forecast for Q$(([Math]::Ceiling((Get-Date).Mont
 Hi $ToDisplay,
 
 Hope you're well. I have a quick question regarding the current $nail allocation
-process — specifically whether $ToDept approves requisitions before or after
+process - specifically whether $ToDept approves requisitions before or after
 the PO is raised in the system.
 
 Background: We're reviewing the $proj workflow and I want to make sure we're
@@ -409,7 +409,7 @@ $FromDept | Springfield Box Factory
                 $body    = @"
 Hey $ToDisplay,
 
-Heading to the canteen around 12:30 — want to join? A few of us from $FromDept
+Heading to the canteen around 12:30 - want to join? A few of us from $FromDept
 are going. Nothing fancy, just a break from the $jargon1 spreadsheets!
 
 Let me know,
@@ -422,7 +422,7 @@ Hi $ToDisplay,
 
 Just wanted to wish you a happy birthday from everyone here in $FromDept!
 
-Hope you have a great day — you deserve a break from all the $jargon1 and $jargon2.
+Hope you have a great day - you deserve a break from all the $jargon1 and $jargon2.
 
 Best wishes,
 $FromDisplay & the $FromDept team
@@ -563,14 +563,14 @@ function Select-Recipient {
     if ($useSameDept -and $Script:DeptMap.ContainsKey($Sender.Department) -and
         $Script:DeptMap[$Sender.Department].Count -gt 1) {
 
-        # Same-department — exclude the sender
+        # Same-department - exclude the sender
         $pool = $Script:DeptMap[$Sender.Department] | Where-Object { $_.Email -ne $Sender.Email }
         if ($pool) {
             return $pool[$Rng.Next(0, $pool.Count)]
         }
     }
 
-    # Cross-department — weighted by seniority proximity
+    # Cross-department - weighted by seniority proximity
     $candidates = $Script:Users | Where-Object { $_.Email -ne $Sender.Email -and $_.Department -ne $Sender.Department }
     if (-not $candidates) { return $null }
 
@@ -616,7 +616,7 @@ function Send-SimEmail {
 
     $smtpHost = $Script:ResolvedHost
     if (-not $smtpHost) {
-        Write-Log "SMTP host not configured — skipping send." "WARNING"
+        Write-Log "SMTP host not configured - skipping send." "WARNING"
         return $false
     }
 
@@ -699,7 +699,7 @@ while ($true) {
         $recipient = Select-Recipient -Sender $sender
 
         if (-not $recipient) {
-            Write-Log "Could not select recipient — skipping email $($e+1)." "WARNING"
+            Write-Log "Could not select recipient - skipping email $($e+1)." "WARNING"
             continue
         }
 
@@ -728,7 +728,7 @@ while ($true) {
             Write-Log "Send failed (consecutive failures: $consecutiveFailures; total failed: $totalFailed)" "WARNING"
 
             if ($consecutiveFailures -ge 3) {
-                Write-Log "3 consecutive SMTP failures — reloading credentials and waiting 60 s." "WARNING"
+                Write-Log "3 consecutive SMTP failures - reloading credentials and waiting 60 s." "WARNING"
                 Import-CredentialFile | Out-Null
                 Start-Sleep -Seconds 60
                 $consecutiveFailures = 0

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Phase 4 — User Session & File Operations Simulator. Runs continuously on the simulator VM.
+    Phase 4 - User Session & File Operations Simulator. Runs continuously on the simulator VM.
 
 .DESCRIPTION
     Generates realistic interactive logon events (Event ID 4624 Logon Type 2/3) and
@@ -19,7 +19,7 @@
 
     Fault tolerance:
         - If LogonUser() fails (password rotated by Blue Team), user is skipped
-          and marked "stale" — session not retried until user_passwords.json is
+          and marked "stale" - session not retried until user_passwords.json is
           re-read (every 30 minutes).
         - If the share is unreachable (firewall, SMB blocked), the session
           gracefully degrades to local-path file ops (still generates logon events).
@@ -42,8 +42,8 @@
     Max seconds to wait between starting successive sessions. Default: 90.
 
 .NOTES
-    Runs on simulator VM (WORKGROUP — NOT domain-joined).
-    Requires LogonUser P/Invoke — must run on Windows (not PowerShell Core on Linux).
+    Runs on simulator VM (WORKGROUP - NOT domain-joined).
+    Requires LogonUser P/Invoke - must run on Windows (not PowerShell Core on Linux).
     Requires network access to DC/file server on SMB (445) and LDAP (389).
 
     Context: Educational / CTF / Active Directory Lab Environment
@@ -86,8 +86,8 @@ function Write-Log {
 
 Write-Log "=================================================================" "INFO"
 Write-Log "  BadderBlood User Session Simulator" "INFO"
-Write-Log "  Phase 4 — Runs on Simulator VM" "INFO"
-Write-Log "$(if ($DryRun) { '  DRY RUN MODE — no actual file ops or logons' })" "WARNING"
+Write-Log "  Phase 4 - Runs on Simulator VM" "INFO"
+Write-Log "$(if ($DryRun) { '  DRY RUN MODE - no actual file ops or logons' })" "WARNING"
 Write-Log "=================================================================" "INFO"
 
 # ==============================================================================
@@ -126,7 +126,7 @@ try {
     Add-Type -TypeDefinition $csharpSource -ErrorAction Stop
     Write-Log "Win32 LogonUser wrapper compiled." "SUCCESS"
 } catch {
-    Write-Log "Failed to compile Win32 wrapper: $_ — session logon events will be skipped." "WARNING"
+    Write-Log "Failed to compile Win32 wrapper: $_ - session logon events will be skipped." "WARNING"
     # Continue without impersonation; file ops will still run under simulator account
 }
 
@@ -205,10 +205,10 @@ $sessionBlock = {
                 [ref]$token
             )
             if ($loggedOn) {
-                SessionLog "LogonUser() succeeded — Event 4624 generated." "SUCCESS"
+                SessionLog "LogonUser() succeeded - Event 4624 generated." "SUCCESS"
             } else {
                 $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                SessionLog "LogonUser() failed (Win32 error $err) — password may have been rotated." "WARNING"
+                SessionLog "LogonUser() failed (Win32 error $err) - password may have been rotated." "WARNING"
                 return @{ Sam = $User.Sam; Result = "LogonFailed"; Error = "Win32 error $err" }
             }
         } catch {
@@ -237,15 +237,15 @@ $sessionBlock = {
 
         function Get-SbfContent {
             $lines = @(
-                "Updated project timeline — see attached for revised milestones.",
+                "Updated project timeline - see attached for revised milestones.",
                 "Per our discussion, the Q4 targets have been adjusted accordingly.",
                 "Please review the attached draft before the Friday deadline.",
                 "Reminder: team sync moved to 3pm. Conference room B.",
                 "FYI: the supplier delivery schedule has been updated in the system.",
                 "Actioned: inventory count reconciled with warehouse scan.",
-                "Approved — budget allocation submitted to finance for processing.",
+                "Approved - budget allocation submitted to finance for processing.",
                 "Note: Legacy timesheet entries require sign-off by EOD.",
-                "See below — escalated from helpdesk (ticket $($PIDS[0])).",
+                "See below - escalated from helpdesk (ticket $($PIDS[0])).",
                 "Draft report attached. Please review sections 3 and 4.",
                 "Nail spec updated: gauge tolerance ±0.05mm per QA request.",
                 "Box order confirmed: 2,500 units, delivery ETA next Wednesday."
@@ -362,7 +362,7 @@ $sessionBlock = {
         }
 
         if (-not $script:targetRoot) {
-            SessionLog "No writable target path found — skipping file ops." "WARNING"
+            SessionLog "No writable target path found - skipping file ops." "WARNING"
             return
         }
 
@@ -387,13 +387,13 @@ $sessionBlock = {
                 & $runOps
             })
         } catch {
-            SessionLog "Impersonated file ops failed: $_ — falling back to direct ops." "WARNING"
+            SessionLog "Impersonated file ops failed: $_ - falling back to direct ops." "WARNING"
             & $runOps
         } finally {
             if ($drive) { Remove-PSDrive -Name $driveName -Force -ErrorAction SilentlyContinue }
         }
     } else {
-        # DryRun or no token — still exercise the path logic
+        # DryRun or no token - still exercise the path logic
         $usedShare = $false
         & $runOps
     }
@@ -442,7 +442,7 @@ while ($true) {
     }
 
     if ($enrolledUsers.Count -eq 0) {
-        Write-Log "No users loaded — sleeping 60s..." "WARNING"
+        Write-Log "No users loaded - sleeping 60s..." "WARNING"
         Start-Sleep -Seconds 60
         continue
     }
@@ -481,7 +481,7 @@ while ($true) {
     $deadline   = [datetime]::Now.AddSeconds($timeoutSec)
     while ($jobs | Where-Object { $_.State -eq 'Running' }) {
         if ([datetime]::Now -gt $deadline) {
-            Write-Log "Session timeout ($timeoutSec s) reached — killing lingering jobs." "WARNING"
+            Write-Log "Session timeout ($timeoutSec s) reached - killing lingering jobs." "WARNING"
             $jobs | Where-Object { $_.State -eq 'Running' } | Stop-Job
             break
         }

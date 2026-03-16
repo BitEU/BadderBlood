@@ -5,17 +5,17 @@
 .DESCRIPTION
     This script sets up the customer order simulation infrastructure:
 
-    1. SQL permissions — Grants BlackTeam_WebBot db_datareader/db_datawriter on
+    1. SQL permissions - Grants BlackTeam_WebBot db_datareader/db_datawriter on
        BoxArchive2019 (BoxArchive2019 and the ArchivedOrders table were created by
        BadSQL.ps1; this script wires up the Windows login and database user).
 
-    2. OrdersAppPool — New IIS application pool running as DOMAIN\BlackTeam_WebBot
+    2. OrdersAppPool - New IIS application pool running as DOMAIN\BlackTeam_WebBot
        with .NET CLR v4.0, Integrated pipeline, AlwaysRunning start mode.
 
     3. ASPX endpoints deployed to C:\inetpub\SpringfieldBoxFactory\apps\orders\api\:
-         POST  /apps/orders/api/submit.aspx  — insert new order, return orderId + orderNumber
-         GET   /apps/orders/api/status.aspx?id=N — return single order details
-         GET   /apps/orders/api/orders.aspx  — last 50 orders as JSON array
+         POST  /apps/orders/api/submit.aspx  - insert new order, return orderId + orderNumber
+         GET   /apps/orders/api/status.aspx?id=N - return single order details
+         GET   /apps/orders/api/orders.aspx  - last 50 orders as JSON array
 
     4. IIS Application registered at /apps/orders/api under SpringfieldBoxFactory site,
        using OrdersAppPool.
@@ -29,8 +29,8 @@
         - Invoke-BadderBlood.ps1
         - BadIIS.ps1          (SpringfieldBoxFactory IIS site must exist)
         - BadSQL.ps1          (SQL instance + BoxArchive2019 must exist)
-        - Deploy-BlackTeamAccounts.ps1 (Phase 1 — BlackTeam_WebBot must exist)
-        - Deploy-HelpdeskSystem.ps1    (Phase 3 — ASP.NET 4.5 already installed)
+        - Deploy-BlackTeamAccounts.ps1 (Phase 1 - BlackTeam_WebBot must exist)
+        - Deploy-HelpdeskSystem.ps1    (Phase 3 - ASP.NET 4.5 already installed)
 
     Must be run as local admin / Domain Admin on the IIS + SQL host.
 
@@ -99,7 +99,7 @@ if (-not $DomainNB) {
         $DomainDNS = $Domain.DNSRoot
         Write-Log "Domain: $DomainDNS | NetBIOS: $DomainNB" "SUCCESS"
     } catch {
-        Write-Log "Cannot reach AD — using environment fallback for domain name." "WARNING"
+        Write-Log "Cannot reach AD - using environment fallback for domain name." "WARNING"
         $DomainNB  = $env:USERDOMAIN
         $DomainDNS = "$($env:USERDOMAIN).local"
     }
@@ -200,7 +200,7 @@ ALTER ROLE db_datawriter ADD MEMBER [$WebBotLogin];
 if (Invoke-Sql -Query $dbGrantSql -Database "BoxArchive2019") {
     Write-Log "db_datareader / db_datawriter granted on BoxArchive2019." "SUCCESS"
 } else {
-    Write-Log "Failed to grant SQL permissions on BoxArchive2019 — continuing (may already be granted)." "WARNING"
+    Write-Log "Failed to grant SQL permissions on BoxArchive2019 - continuing (may already be granted)." "WARNING"
 }
 
 # ==============================================================================
@@ -228,7 +228,7 @@ foreach ($dir in @($ordersBase, $ordersApi)) {
 Write-Log "Deploying ASPX endpoint files..." "STEP"
 
 # ----------------------------------------------------------------------------
-# 6A. submit.aspx — POST, inserts a new order, returns orderId + orderNumber
+# 6A. submit.aspx - POST, inserts a new order, returns orderId + orderNumber
 # ----------------------------------------------------------------------------
 
 $submitAspx = @"
@@ -241,7 +241,7 @@ $submitAspx = @"
     // Body JSON: { "customer": "Acme Corp", "boxType": "Medium", "quantity": 500 }
     // Returns:   { "success": true, "orderId": 42, "orderNumber": "ORD-00042" }
     //
-    // Runs as DOMAIN\BlackTeam_WebBot via OrdersAppPool — Integrated Security=SSPI.
+    // Runs as DOMAIN\BlackTeam_WebBot via OrdersAppPool - Integrated Security=SSPI.
 
     private static readonly string ConnStr =
         @"Server=$SqlInstance;Database=BoxArchive2019;Integrated Security=SSPI;Connection Timeout=10;";
@@ -281,7 +281,7 @@ $submitAspx = @"
 
         if (Request.HttpMethod != "POST") {
             Response.StatusCode = 405;
-            Response.Write("{\"error\":\"Method not allowed — POST required\"}");
+            Response.Write("{\"error\":\"Method not allowed - POST required\"}");
             Response.End(); return;
         }
 
@@ -299,7 +299,7 @@ $submitAspx = @"
             if (quantity < 1)      quantity = 1;
             if (quantity > 999999) quantity = 999999;
 
-            // Unit price lookup — default $0.85 for unknown types
+            // Unit price lookup - default $0.85 for unknown types
             decimal unitPrice;
             if (!UnitPrices.TryGetValue(boxType.Trim(), out unitPrice))
                 unitPrice = 0.85m;
@@ -359,7 +359,7 @@ $submitAspx = @"
         }
     }
 
-    // Minimal JSON string-value extractor — no external library dependency
+    // Minimal JSON string-value extractor - no external library dependency
     private string ExtractJson(string json, string key) {
         string search = "\"" + key + "\"";
         int idx = json.IndexOf(search, StringComparison.OrdinalIgnoreCase);
@@ -394,7 +394,7 @@ $submitAspx | Out-File -FilePath "$ordersApi\submit.aspx" -Encoding UTF8 -Force
 Write-Log "Deployed: $ordersApi\submit.aspx" "SUCCESS"
 
 # ----------------------------------------------------------------------------
-# 6B. status.aspx — GET ?id=N, returns JSON with single order details
+# 6B. status.aspx - GET ?id=N, returns JSON with single order details
 # ----------------------------------------------------------------------------
 
 $statusAspx = @"
@@ -483,7 +483,7 @@ $statusAspx | Out-File -FilePath "$ordersApi\status.aspx" -Encoding UTF8 -Force
 Write-Log "Deployed: $ordersApi\status.aspx" "SUCCESS"
 
 # ----------------------------------------------------------------------------
-# 6C. orders.aspx — GET, returns last 50 orders as a JSON array
+# 6C. orders.aspx - GET, returns last 50 orders as a JSON array
 # ----------------------------------------------------------------------------
 
 $ordersAspx = @"
@@ -627,7 +627,7 @@ $webConfig | Out-File -FilePath "$ordersApi\web.config" -Encoding UTF8 -Force
 Write-Log "Deployed: $ordersApi\web.config" "SUCCESS"
 
 # ==============================================================================
-# 8. CONFIGURE IIS — APP POOL + APPLICATION
+# 8. CONFIGURE IIS - APP POOL + APPLICATION
 # ==============================================================================
 
 Write-Log "Configuring IIS application pool and application for /apps/orders/api..." "STEP"
@@ -642,7 +642,7 @@ try {
             Write-Log "-Force specified. Removing existing $poolName for recreation." "WARNING"
             Remove-WebAppPool -Name $poolName -ErrorAction SilentlyContinue
         } else {
-            Write-Log "App pool '$poolName' already exists — updating identity settings." "INFO"
+            Write-Log "App pool '$poolName' already exists - updating identity settings." "INFO"
         }
     }
 
@@ -659,7 +659,7 @@ try {
     Set-ItemProperty "IIS:\AppPools\$poolName" -Name "startMode"             -Value "AlwaysRunning"
     Set-ItemProperty "IIS:\AppPools\$poolName" -Name "autoStart"             -Value $true
 
-    # Process model — run as BlackTeam_WebBot (SpecificUser = 3)
+    # Process model - run as BlackTeam_WebBot (SpecificUser = 3)
     Set-ItemProperty "IIS:\AppPools\$poolName" -Name "processModel" -Value @{
         userName     = "$DomainNB\BlackTeam_WebBot"
         password     = $SharedPasswordPlain
@@ -679,7 +679,7 @@ try {
             Remove-WebApplication -Site $siteName -Name $appVirtPath -ErrorAction SilentlyContinue
             $existing = $null
         } else {
-            Write-Log "IIS application /$appVirtPath already exists — updating app pool assignment." "WARNING"
+            Write-Log "IIS application /$appVirtPath already exists - updating app pool assignment." "WARNING"
             Set-ItemProperty "IIS:\Sites\$siteName\$appVirtPath" -Name "applicationPool" -Value $poolName
         }
     }
@@ -690,7 +690,7 @@ try {
         Write-Log "Registered IIS application: $siteName/$appVirtPath -> $ordersApi" "SUCCESS"
     }
 
-    # ---- 8C. Authentication — Windows Auth on, Anonymous off ----
+    # ---- 8C. Authentication - Windows Auth on, Anonymous off ----
     $iisPath = "IIS:\Sites\$siteName\$appVirtPath"
 
     Set-WebConfigurationProperty `
@@ -706,7 +706,7 @@ try {
     Write-Log "Windows Auth enabled, Anonymous Auth disabled on /$appVirtPath." "SUCCESS"
 
 } catch {
-    Write-Log "IIS configuration step failed: $_ — ASPX files are deployed but you may need to register the app pool/application manually." "WARNING"
+    Write-Log "IIS configuration step failed: $_ - ASPX files are deployed but you may need to register the app pool/application manually." "WARNING"
 }
 
 # ==============================================================================
@@ -726,7 +726,7 @@ if (Test-Path $appsIndexPath) {
         Write-Log "Order Archive link already present in apps index." "INFO"
     }
 } else {
-    Write-Log "Apps index not found at $appsIndexPath — skipping link injection (run Deploy-HelpdeskSystem.ps1 first to create it)." "WARNING"
+    Write-Log "Apps index not found at $appsIndexPath - skipping link injection (run Deploy-HelpdeskSystem.ps1 first to create it)." "WARNING"
 }
 
 # ==============================================================================
@@ -735,7 +735,7 @@ if (Test-Path $appsIndexPath) {
 
 Write-Log "" "INFO"
 Write-Log "=================================================================" "INFO"
-Write-Log "  Phase 5 Complete — Customer Order Endpoint Deployed" "SUCCESS"
+Write-Log "  Phase 5 Complete - Customer Order Endpoint Deployed" "SUCCESS"
 Write-Log "=================================================================" "INFO"
 Write-Log "" "INFO"
 Write-Log "SQL grants:   BoxArchive2019 on $SqlInstance" "INFO"
@@ -745,9 +745,9 @@ Write-Log "IIS App Pool: OrdersAppPool (.NET 4.0, Integrated, AlwaysRunning)" "I
 Write-Log "              Identity: $DomainNB\BlackTeam_WebBot" "INFO"
 Write-Log "" "INFO"
 Write-Log "IIS Endpoints (Windows Auth, Anonymous disabled):" "INFO"
-Write-Log "  POST  http://[host]/apps/orders/api/submit.aspx  — Submit new order" "INFO"
-Write-Log "  GET   http://[host]/apps/orders/api/status.aspx?id=N — Order details" "INFO"
-Write-Log "  GET   http://[host]/apps/orders/api/orders.aspx  — Last 50 orders" "INFO"
+Write-Log "  POST  http://[host]/apps/orders/api/submit.aspx  - Submit new order" "INFO"
+Write-Log "  GET   http://[host]/apps/orders/api/status.aspx?id=N - Order details" "INFO"
+Write-Log "  GET   http://[host]/apps/orders/api/orders.aspx  - Last 50 orders" "INFO"
 Write-Log "" "INFO"
 Write-Log "Files deployed to: $ordersApi" "INFO"
 Write-Log "  submit.aspx" "INFO"

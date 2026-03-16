@@ -9,7 +9,7 @@
         2. Updates Inventory.QuantityOnHand (simulates goods receipt)
         3. Inserts a corresponding PurchaseOrder record with status DELIVERED
 
-    Job ownership: BlackTeam_SQLBot (Windows Auth) — NOT sa.
+    Job ownership: BlackTeam_SQLBot (Windows Auth) - NOT sa.
     This design ensures the job survives when Blue Team:
         - Disables Mixed Mode authentication
         - Changes or disables the sa account
@@ -153,7 +153,7 @@ if ($dbCheck.Rows.Count -eq 0) {
 }
 Write-Log "NailInventoryDB confirmed." "SUCCESS"
 
-# Verify BlackTeam_SQLBot login exists (warn but don't fail — Deploy-BlackTeamAccounts may not have run yet)
+# Verify BlackTeam_SQLBot login exists (warn but don't fail - Deploy-BlackTeamAccounts may not have run yet)
 $loginCheck = Invoke-Sql -Query "SELECT name FROM sys.server_principals WHERE name = N'$SqlBotLogin'" -ReturnReader
 if ($loginCheck.Rows.Count -eq 0) {
     Write-Log "WARNING: SQL login '$SqlBotLogin' not found. Run Deploy-BlackTeamAccounts.ps1 first, or the job will fail when it runs." "WARNING"
@@ -188,7 +188,7 @@ Write-Log "Creating SQL Agent job: SBF - Supplier Delivery Simulation..." "STEP"
 $deliveryJobName = "SBF - Supplier Delivery Simulation"
 $deliveryScheduleName = "SBF_SupplierDelivery_Every${DeliveryIntervalMin}Min"
 
-# The core T-SQL for supplier delivery — runs as BlackTeam_SQLBot (Windows Auth)
+# The core T-SQL for supplier delivery - runs as BlackTeam_SQLBot (Windows Auth)
 # Uses TABLOCKX intentionally to create realistic lock contention events
 $deliveryTSQL = @"
 BEGIN TRY
@@ -211,7 +211,7 @@ BEGIN TRY
     DECLARE @Qty INT = ABS(CHECKSUM(NEWID())) % 500 + 50
 
     -- Update inventory: add delivered quantity and stamp audit info
-    -- TABLOCKX is intentional — creates realistic lock contention in profiler traces
+    -- TABLOCKX is intentional - creates realistic lock contention in profiler traces
     UPDATE Inventory WITH (TABLOCKX)
     SET
         QuantityOnHand = QuantityOnHand + @Qty,
@@ -237,7 +237,7 @@ BEGIN TRY
         CAST(@Qty AS DECIMAL(12,2)) * @UnitCostUSD,
         'DELIVERED',
         'BlackTeam_SQLBot',
-        'Automated supplier delivery — Continuous Activity Simulator'
+        'Automated supplier delivery - Continuous Activity Simulator'
     )
 
     COMMIT TRANSACTION
@@ -455,7 +455,7 @@ $result = Invoke-Sql -Database "msdb" -Query $createReorderJob
 if ($result) {
     Write-Log "Reorder check job created: '$reorderJobName'" "SUCCESS"
 } else {
-    Write-Log "Failed to create reorder check job — non-fatal, supplier delivery job still active." "WARNING"
+    Write-Log "Failed to create reorder check job - non-fatal, supplier delivery job still active." "WARNING"
 }
 
 # ==============================================================================
@@ -518,7 +518,7 @@ if ($jobVerify -and $jobVerify.Rows.Count -gt 0) {
 
 Write-Log "" "INFO"
 Write-Log "=================================================================" "INFO"
-Write-Log "  Phase 2 Complete — Supplier Delivery Jobs Deployed" "SUCCESS"
+Write-Log "  Phase 2 Complete - Supplier Delivery Jobs Deployed" "SUCCESS"
 Write-Log "=================================================================" "INFO"
 Write-Log "" "INFO"
 Write-Log "JOBS CREATED:" "INFO"

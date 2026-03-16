@@ -124,7 +124,7 @@ if (-not $adminOUObj) {
 
 $blackTeamOUObj = Get-ADOrganizationalUnit -Filter { DistinguishedName -eq $BlackTeamOU } -ErrorAction SilentlyContinue
 if ($blackTeamOUObj) {
-    Write-Log "BlackTeam OU already exists — skipping creation." "WARNING"
+    Write-Log "BlackTeam OU already exists - skipping creation." "WARNING"
 } else {
     New-ADOrganizationalUnit -Name "BlackTeam" -Path $AdminOU -ProtectedFromAccidentalDeletion $true
     Write-Log "Created OU=BlackTeam,OU=Admin" "SUCCESS"
@@ -140,27 +140,27 @@ $SharedPasswordPlain = ConvertFrom-SecureStringPlain $SharedPassword
 $Accounts = @(
     @{
         Name        = "BlackTeam_Scorebot"
-        Description = "Scoring engine service account — reads AD health metrics. DO NOT MODIFY (RoE)."
+        Description = "Scoring engine service account - reads AD health metrics. DO NOT MODIFY (RoE)."
         Notes       = "AD Read"
     }
     @{
         Name        = "BlackTeam_SQLBot"
-        Description = "SQL traffic generator — supplier delivery simulation. DO NOT MODIFY (RoE)."
+        Description = "SQL traffic generator - supplier delivery simulation. DO NOT MODIFY (RoE)."
         Notes       = "SQL db_datareader/db_datawriter on NailInventoryDB, TimesheetLegacy"
     }
     @{
         Name        = "BlackTeam_WebBot"
-        Description = "IIS traffic generator — customer order simulation. DO NOT MODIFY (RoE)."
+        Description = "IIS traffic generator - customer order simulation. DO NOT MODIFY (RoE)."
         Notes       = "IIS Read on Springfield Box Factory sites"
     }
     @{
         Name        = "BlackTeam_FileBot"
-        Description = "SMB file operations generator — employee file activity. DO NOT MODIFY (RoE)."
+        Description = "SMB file operations generator - employee file activity. DO NOT MODIFY (RoE)."
         Notes       = "CorpData share Read/Write"
     }
     @{
         Name        = "BlackTeam_MailBot"
-        Description = "Email traffic generator — internal SMTP relay. DO NOT MODIFY (RoE)."
+        Description = "Email traffic generator - internal SMTP relay. DO NOT MODIFY (RoE)."
         Notes       = "SMTP Relay permission on mail relay"
     }
 )
@@ -174,7 +174,7 @@ Write-Log "Provisioning Black Team service accounts..." "STEP"
 foreach ($acct in $Accounts) {
     $existing = Get-ADUser -Filter { SamAccountName -eq $acct.Name } -ErrorAction SilentlyContinue
     if ($existing) {
-        Write-Log "$($acct.Name) already exists — ensuring enabled and password reset." "WARNING"
+        Write-Log "$($acct.Name) already exists - ensuring enabled and password reset." "WARNING"
         Set-ADUser -Identity $acct.Name -Enabled $true -Description $acct.Description `
             -PasswordNeverExpires $true -CannotChangePassword $true -ErrorAction SilentlyContinue
         Set-ADAccountPassword -Identity $acct.Name -NewPassword $SecurePass -Reset -ErrorAction SilentlyContinue
@@ -283,7 +283,7 @@ if (-not $SkipShareGrants) {
             Write-Log "Could not set ACL on CorpData: $_ (non-fatal, share may not be on this host)" "WARNING"
         }
     } else {
-        Write-Log "CorpData path not found at $corpDataPath — skipping share grant (run BadFS.ps1 first or run this on the file server)." "WARNING"
+        Write-Log "CorpData path not found at $corpDataPath - skipping share grant (run BadFS.ps1 first or run this on the file server)." "WARNING"
     }
 } else {
     Write-Log "Skipping share grants (-SkipShareGrants specified)." "WARNING"
@@ -349,7 +349,7 @@ Write-Log "Writing Rules_of_Engagement.txt..." "STEP"
 
 $roeContent = @"
 ================================================================================
-  SPRINGFIELD BOX FACTORY — BLUE TEAM EXERCISE
+  SPRINGFIELD BOX FACTORY - BLUE TEAM EXERCISE
   RULES OF ENGAGEMENT (ROE)
   Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
   Domain: $($Domain.DNSRoot)
@@ -365,7 +365,7 @@ Scoring is automated. Service uptime is measured continuously. Disrupting simula
 traffic reduces your team's score.
 
 ================================================================================
-BLACK TEAM ACCOUNTS — STRICTLY OFF-LIMITS
+BLACK TEAM ACCOUNTS - STRICTLY OFF-LIMITS
 ================================================================================
 
 The following accounts exist SOLELY to drive simulator traffic. You MUST NOT:
@@ -376,12 +376,12 @@ The following accounts exist SOLELY to drive simulator traffic. You MUST NOT:
   - Move them out of OU=BlackTeam,OU=Admin
 
 ACCOUNT LIST:
-  BlackTeam_Scorebot   — Scoring engine. Reads AD objects and service health.
-  BlackTeam_SQLBot     — SQL traffic. Requires db_datareader/db_datawriter on
+  BlackTeam_Scorebot   - Scoring engine. Reads AD objects and service health.
+  BlackTeam_SQLBot     - SQL traffic. Requires db_datareader/db_datawriter on
                          NailInventoryDB and TimesheetLegacy.
-  BlackTeam_WebBot     — Web traffic. Requires Read on IIS Springfield Box Factory sites.
-  BlackTeam_FileBot    — SMB traffic. Requires Modify on the CorpData share.
-  BlackTeam_MailBot    — Email traffic. Requires SMTP relay permission.
+  BlackTeam_WebBot     - Web traffic. Requires Read on IIS Springfield Box Factory sites.
+  BlackTeam_FileBot    - SMB traffic. Requires Modify on the CorpData share.
+  BlackTeam_MailBot    - Email traffic. Requires SMTP relay permission.
 
 OU=BlackTeam,OU=Admin is protected from accidental deletion. Attempting to remove
 the ProtectedFromAccidentalDeletion flag or delete the OU will be flagged as a
@@ -414,7 +414,7 @@ WHAT YOU CAN DO
 
   - Remediate ALL other misconfigured accounts, groups, GPOs, and ACLs
   - Change passwords on any account NOT listed above
-  - Disable weak service accounts (svc_sql, svc_webadmin, etc.) — just update
+  - Disable weak service accounts (svc_sql, svc_webadmin, etc.) - just update
     credentials.json if the simulator was using them (it shouldn't be by default)
   - Harden GPOs, remove dangerous delegations, fix ADCS templates
   - Enable SMB Signing, LDAP Signing, disable NTLM where appropriate
@@ -455,7 +455,7 @@ if (Test-Path $publicShareDir) {
     $roeContent | Out-File -FilePath $publicShareROE -Encoding UTF8 -Force
     Write-Log "Rules_of_Engagement.txt also written to $publicShareROE" "SUCCESS"
 } else {
-    Write-Log "Public_Company_Data share not found — RoE only written to $roeSimPath" "WARNING"
+    Write-Log "Public_Company_Data share not found - RoE only written to $roeSimPath" "WARNING"
 }
 
 # ==============================================================================
@@ -464,7 +464,7 @@ if (Test-Path $publicShareDir) {
 
 Write-Log "" "INFO"
 Write-Log "=================================================================" "INFO"
-Write-Log "  Phase 1 Complete — Black Team Infrastructure Deployed" "SUCCESS"
+Write-Log "  Phase 1 Complete - Black Team Infrastructure Deployed" "SUCCESS"
 Write-Log "=================================================================" "INFO"
 Write-Log "" "INFO"
 Write-Log "Accounts created in: OU=BlackTeam,OU=Admin,$DomainDN" "INFO"

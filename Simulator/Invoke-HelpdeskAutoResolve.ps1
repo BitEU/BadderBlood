@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Phase 3 — Helpdesk Auto-Resolution Engine. Runs continuously on the simulator VM.
+    Phase 3 - Helpdesk Auto-Resolution Engine. Runs continuously on the simulator VM.
 
 .DESCRIPTION
     Polls ITDeskDB.Tickets every 2–5 minutes for Open tickets and automatically
@@ -10,7 +10,7 @@
     work items for Blue Team students to complete via the helpdesk UI.
 
     Workflow per cycle:
-      1. GET /apps/helpdesk/api/tickets.aspx?status=Open — fetch open tickets
+      1. GET /apps/helpdesk/api/tickets.aspx?status=Open - fetch open tickets
       2. For each open ticket, randomly decide: auto-resolve (80%) or assign (20%)
       3. Auto-resolve path:
            a. Run Unlock-ADAccount via LDAP (using BlackTeam_Scorebot creds)
@@ -40,7 +40,7 @@
     Sleep range between polling cycles (default: 120–300 seconds = 2–5 minutes).
 
 .NOTES
-    Runs on the simulator VM (WORKGROUP — NOT domain-joined).
+    Runs on the simulator VM (WORKGROUP - NOT domain-joined).
     Must have network access to DC on LDAP (389) and IIS on HTTP (80).
 
     Context: Educational / CTF / Active Directory Lab Environment
@@ -83,8 +83,8 @@ function Write-Log {
 
 Write-Log "=================================================================" "INFO"
 Write-Log "  BadderBlood Helpdesk Auto-Resolve Engine" "INFO"
-Write-Log "  Phase 3 — Runs on Simulator VM" "INFO"
-Write-Log "$(if ($DryRun) { '  DRY RUN MODE — no actual changes made' })" "WARNING"
+Write-Log "  Phase 3 - Runs on Simulator VM" "INFO"
+Write-Log "$(if ($DryRun) { '  DRY RUN MODE - no actual changes made' })" "WARNING"
 Write-Log "=================================================================" "INFO"
 
 # ==============================================================================
@@ -138,7 +138,7 @@ Write-Log "Helpdesk resolve: $resolveUrl" "INFO"
 Write-Log "Auto-resolve rate: $AutoResolvePercent% | Cycle: $MinIntervalSec–$MaxIntervalSec sec" "INFO"
 
 # ==============================================================================
-# AD UNLOCK FUNCTION (via DirectoryServices — no AD module needed)
+# AD UNLOCK FUNCTION (via DirectoryServices - no AD module needed)
 # ==============================================================================
 
 function Invoke-UnlockAccount {
@@ -268,10 +268,10 @@ $AutoResolutions = @(
 )
 
 $L1Assignments = @(
-    "Escalated to L1 IT staff for manual verification. Possible credential stuffing — review Event ID 4625 sources."
-    "Assigned for manual follow-up. Pattern suggests compromised credentials — verify with user before unlocking."
+    "Escalated to L1 IT staff for manual verification. Possible credential stuffing - review Event ID 4625 sources."
+    "Assigned for manual follow-up. Pattern suggests compromised credentials - verify with user before unlocking."
     "Flagged for manual review. Multiple lockout events from different source IPs detected."
-    "Assigned to L1 team. User reported they did not attempt login — possible account takeover."
+    "Assigned to L1 team. User reported they did not attempt login - possible account takeover."
 )
 
 # ==============================================================================
@@ -292,7 +292,7 @@ while ($true) {
         if ($scorebotCred) {
             Write-Log "Scorebot credentials loaded: $($scorebotCred.UserName)" "INFO"
         } else {
-            Write-Log "Scorebot credentials not found — AD unlocks may fail on non-domain-joined machine." "WARNING"
+            Write-Log "Scorebot credentials not found - AD unlocks may fail on non-domain-joined machine." "WARNING"
         }
     }
 
@@ -330,7 +330,7 @@ while ($true) {
 
                 if (Resolve-Ticket -TicketId $tid -ResolvedBy "AutoResolve_Bot" `
                         -Resolution $resolution -Status "Resolved") {
-                    Write-Log "Resolved: $tnum — $sam" "SUCCESS"
+                    Write-Log "Resolved: $tnum - $sam" "SUCCESS"
                     $autoResolved++
                 } else {
                     Write-Log "API update failed for $tnum" "WARNING"
@@ -343,7 +343,7 @@ while ($true) {
 
                 if (Resolve-Ticket -TicketId $tid -ResolvedBy "L1_HelpDesk" `
                         -Resolution $note -Status "Assigned") {
-                    Write-Log "Assigned: $tnum — $sam" "SUCCESS"
+                    Write-Log "Assigned: $tnum - $sam" "SUCCESS"
                     $assigned++
                 } else {
                     $failed++

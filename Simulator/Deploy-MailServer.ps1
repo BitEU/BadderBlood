@@ -127,7 +127,7 @@ try {
     Write-Log "hMailServer registry key found: $($regKey.InstallLocation)" "SUCCESS"
     $hmsInstalled = $true
 } catch {
-    Write-Log "hMailServer registry key not found — attempting COM object check." "INFO"
+    Write-Log "hMailServer registry key not found - attempting COM object check." "INFO"
 }
 
 if (-not $hmsInstalled) {
@@ -230,7 +230,7 @@ try {
     }
 
     if ($existingDomain) {
-        Write-Log "Mail domain '$MailDomain' already exists — skipping creation." "INFO"
+        Write-Log "Mail domain '$MailDomain' already exists - skipping creation." "INFO"
         $hmsDomain = $existingDomain
     } else {
         $hmsDomain        = $domains.Add()
@@ -298,7 +298,7 @@ if ($SkipMailboxProvisioning) {
             $acct.Address   = $email
             $acct.Password  = $sharedPlain
             $acct.Active    = $true
-            $acct.MaxSize   = 256   # MB — enough for lab traffic
+            $acct.MaxSize   = 256   # MB - enough for lab traffic
             $acct.Save()
             $mailboxesCreated++
         } catch {
@@ -327,7 +327,7 @@ function Add-HmsRelayRange {
         # Check if range already exists
         for ($i = 0; $i -lt $ipRanges.Count; $i++) {
             if ($ipRanges.Item($i).Name -ieq $RangeName) {
-                Write-Log "IP range '$RangeName' already exists — skipping." "INFO"
+                Write-Log "IP range '$RangeName' already exists - skipping." "INFO"
                 return
             }
         }
@@ -371,9 +371,9 @@ try {
     $upperIP = [System.Net.IPAddress]::new($broadBytes).ToString()
 
     Add-HmsRelayRange -RangeName "LabSubnet" -LowerIP $lowerIP -UpperIP $upperIP
-    Write-Log "VULN: Relay is open to $LabSubnet — no authentication required for internal relay." "VULN"
+    Write-Log "VULN: Relay is open to $LabSubnet - no authentication required for internal relay." "VULN"
 } catch {
-    Write-Log "Could not parse LabSubnet '$LabSubnet': $_ — skipping subnet relay rule." "WARNING"
+    Write-Log "Could not parse LabSubnet '$LabSubnet': $_ - skipping subnet relay rule." "WARNING"
 }
 
 # ==============================================================================
@@ -410,7 +410,7 @@ try {
     } catch { }
 
     if ($existingMailbot) {
-        Write-Log "hMailServer account '$mailbotAddress' already exists — updating password." "INFO"
+        Write-Log "hMailServer account '$mailbotAddress' already exists - updating password." "INFO"
         $existingMailbot.Password = $sharedPlain
         $existingMailbot.Save()
         Write-Log "BlackTeam_MailBot password refreshed." "SUCCESS"
@@ -429,7 +429,7 @@ try {
 }
 
 # ==============================================================================
-# 10. UPDATE credentials.json — smtp.smtpHost
+# 10. UPDATE credentials.json - smtp.smtpHost
 # ==============================================================================
 
 Write-Log "Updating credentials.json with SMTP host..." "STEP"

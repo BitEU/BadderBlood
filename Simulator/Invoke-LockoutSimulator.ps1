@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Phase 3 — Lockout Generator. Runs continuously on the simulator VM.
+    Phase 3 - Lockout Generator. Runs continuously on the simulator VM.
 
 .DESCRIPTION
     Every 5–10 minutes, picks 1–3 random enabled AD users and generates
@@ -10,7 +10,7 @@
 
     Authentication method: DirectoryEntry LDAP bind against the DC.
     This produces AUTHENTIC Event ID 4625 (failed logon) and 4740 (lockout)
-    entries in the DC's Security log — real noise for SIEM exercises.
+    entries in the DC's Security log - real noise for SIEM exercises.
 
     The script:
       - Reads the current domain lockout policy so it always trips the
@@ -39,7 +39,7 @@
     Max users to lock out per wave. Default 3 (matches plan spec).
 
 .NOTES
-    Runs on the simulator VM (WORKGROUP — NOT domain-joined).
+    Runs on the simulator VM (WORKGROUP - NOT domain-joined).
     Requires network connectivity to DC on LDAP (389) and HTTP (80).
 
     Context: Educational / CTF / Active Directory Lab Environment
@@ -81,8 +81,8 @@ function Write-Log {
 
 Write-Log "=================================================================" "INFO"
 Write-Log "  BadderBlood Lockout Simulator" "INFO"
-Write-Log "  Phase 3 — Runs on Simulator VM" "INFO"
-Write-Log "$(if ($DryRun) { '  DRY RUN MODE — no bad passwords sent' })" "WARNING"
+Write-Log "  Phase 3 - Runs on Simulator VM" "INFO"
+Write-Log "$(if ($DryRun) { '  DRY RUN MODE - no bad passwords sent' })" "WARNING"
 Write-Log "=================================================================" "INFO"
 
 # ==============================================================================
@@ -232,7 +232,7 @@ function Get-LockoutThreshold {
         Write-Log "Current domain lockout threshold: $threshold" "INFO"
         return $threshold
     } catch {
-        Write-Log "Could not read lockout threshold — defaulting to 5." "WARNING"
+        Write-Log "Could not read lockout threshold - defaulting to 5." "WARNING"
         return 5
     }
 }
@@ -246,7 +246,7 @@ function Invoke-BadAuthAttempts {
         [string]$Sam,
         [string]$DCHost,
         [int]$Count,
-        [PSCredential]$ValidCred   # Optional — used for context if available
+        [PSCredential]$ValidCred   # Optional - used for context if available
     )
 
     if ($DryRun) {
@@ -265,7 +265,7 @@ function Invoke-BadAuthAttempts {
                 $ldapPath, "$Sam", $badPass,
                 [System.DirectoryServices.AuthenticationTypes]::Secure
             )
-            # Force the bind — this generates Event ID 4625 on the DC
+            # Force the bind - this generates Event ID 4625 on the DC
             $null = $entry.NativeObject
             $entry.Dispose()
         } catch {
@@ -298,9 +298,9 @@ function Submit-HelpdeskTicket {
     $issues = @(
         "Account locked out after $AttemptCount failed login attempts. User cannot access workstation.",
         "Locked out of domain. User reports $AttemptCount incorrect password attempts detected.",
-        "Account lockout triggered — $AttemptCount bad auth events recorded. Possible stale cached credentials.",
+        "Account lockout triggered - $AttemptCount bad auth events recorded. Possible stale cached credentials.",
         "User locked out. Automated monitoring detected $AttemptCount failed authentications.",
-        "Cannot log in — account appears locked after $AttemptCount failed attempts."
+        "Cannot log in - account appears locked after $AttemptCount failed attempts."
     )
 
     $body = @{
@@ -323,7 +323,7 @@ function Submit-HelpdeskTicket {
 
         if ($response.StatusCode -eq 200) {
             $json = $response.Content | ConvertFrom-Json
-            Write-Log "Ticket submitted for $UserSam — $($json.ticketNumber)" "SUCCESS"
+            Write-Log "Ticket submitted for $UserSam - $($json.ticketNumber)" "SUCCESS"
             return $json.ticketNumber
         }
     } catch {
@@ -349,7 +349,7 @@ while ($true) {
         $simUsers        = Get-SimUsers
         $lastUserRefresh = [datetime]::Now
         if ($simUsers.Count -eq 0) {
-            Write-Log "No users available — sleeping 60s before retry..." "WARNING"
+            Write-Log "No users available - sleeping 60s before retry..." "WARNING"
             Start-Sleep -Seconds 60
             continue
         }
@@ -358,7 +358,7 @@ while ($true) {
     # Get current lockout threshold (re-read every wave so hardening is respected)
     $threshold = Get-LockoutThreshold
     if ($threshold -eq 0) {
-        Write-Log "Lockout policy is disabled (threshold=0) — no lockouts will occur. Still generating noise..." "WARNING"
+        Write-Log "Lockout policy is disabled (threshold=0) - no lockouts will occur. Still generating noise..." "WARNING"
         $threshold = 5   # Generate some noise events even if lockouts are off
     }
 
@@ -380,7 +380,7 @@ while ($true) {
 
         $null = Invoke-BadAuthAttempts -Sam $sam -DCHost $DCHostname -Count $attempts
 
-        Write-Log "Bad auth complete for $sam — submitting helpdesk ticket..." "INFO"
+        Write-Log "Bad auth complete for $sam - submitting helpdesk ticket..." "INFO"
         $ticketNum = Submit-HelpdeskTicket -UserSam $sam -DisplayName $name `
             -Department $dept -AttemptCount $attempts
 

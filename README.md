@@ -26,8 +26,9 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
     a. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadFS.ps1```
     b. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadIIS.ps1```
     c. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadSQL.ps1```
-10. Once that is set up, download the file from this link and install the software: https://www.hmailserver.com/download_getfile?performdownload=1&downloadid=271
-11. Once hmailserver is setup, run ```powershell.exe -ExecutionPolicy Bypass -File C:\Simulator\Invoke-ContinuousActivitySimulator.ps1 -HMailAdminPassword "MyP@ssw0rd" -LabSubnet "192.168.10.0/24"```
+10. Run ```Install-WindowsFeature Net-Framework-Core```
+11. Once that is set up, download the file from this link and install the software: https://www.hmailserver.com/download_getfile?performdownload=1&downloadid=271
+12. Once hmailserver is setup, run ```powershell.exe -ExecutionPolicy Bypass -File C:\Simulator\Invoke-ContinuousActivitySimulator.ps1 -HMailAdminPassword "MyP@ssw0rd123!" -LabSubnet "10.0.2.0/24"```
 
 
 ## Instalation on QEMU

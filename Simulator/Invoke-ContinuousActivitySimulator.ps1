@@ -15,17 +15,17 @@
     Run this script after:
         1. Invoke-BadderBlood.ps1   (AD infrastructure)
         2. BadSQL.ps1               (SQL Server + NailInventoryDB + BoxArchive2019)
-        3. BadIIS.ps1               (IIS — required for Phase 3+)
-        4. BadFS.ps1                (File shares — required for Phase 4)
-        5. hMailServer installed    (required for Phase 6 — see Deploy-MailServer.ps1)
+        3. BadIIS.ps1               (IIS - required for Phase 3+)
+        4. BadFS.ps1                (File shares - required for Phase 4)
+        5. hMailServer installed    (required for Phase 6 - see Deploy-MailServer.ps1)
 
     After deployment, copy the full Simulator\ folder to C:\Simulator\ on the
     out-of-band simulator VM and start the runtime scripts:
-        Invoke-LockoutSimulator.ps1      (Phase 3 — lockout generator)
-        Invoke-HelpdeskAutoResolve.ps1   (Phase 3 — ticket auto-resolution)
-        Invoke-UserSessionSimulator.ps1  (Phase 4 — SMB file session generator)
-        Invoke-OrderSimulator.ps1        (Phase 5 — customer order HTTP POST generator)
-        Invoke-EmailSimulator.ps1        (Phase 6 — email traffic generator)
+        Invoke-LockoutSimulator.ps1      (Phase 3 - lockout generator)
+        Invoke-HelpdeskAutoResolve.ps1   (Phase 3 - ticket auto-resolution)
+        Invoke-UserSessionSimulator.ps1  (Phase 4 - SMB file session generator)
+        Invoke-OrderSimulator.ps1        (Phase 5 - customer order HTTP POST generator)
+        Invoke-EmailSimulator.ps1        (Phase 6 - email traffic generator)
 
 .PARAMETER SqlInstance
     SQL Server instance. Defaults to localhost\BADSQL (matches BadSQL.ps1).
@@ -194,7 +194,7 @@ if (-not $SkipPhase2) {
         Write-Log "BadSQL.ps1 artifact confirmed (NailInventoryDB exists on $SqlInstance)." "SUCCESS"
     } catch {
         Write-Log "Cannot connect to $SqlInstance for Phase 2 preflight check: $_" "WARNING"
-        Write-Log "Proceeding anyway — Phase 2 will fail if SQL is unreachable." "WARNING"
+        Write-Log "Proceeding anyway - Phase 2 will fail if SQL is unreachable." "WARNING"
     }
 }
 
@@ -445,12 +445,12 @@ Write-Host "  ##  Simulator Deployment Complete                     ##" -Foregro
 Write-Host "  ########################################################" -ForegroundColor Green
 Write-Host ""
 Write-Log "Phases deployed:" "INFO"
-if (-not $SkipPhase1) { Write-Log "  [x] Phase 1 — Black Team Accounts + credentials.json + RoE" "SUCCESS" }
-if (-not $SkipPhase2) { Write-Log "  [x] Phase 2 — Supplier Delivery SQL Agent Jobs" "SUCCESS" }
-if (-not $SkipPhase3) { Write-Log "  [x] Phase 3 — Helpdesk System (ITDeskDB + ASPX)" "SUCCESS" }
-if (-not $SkipPhase4) { Write-Log "  [x] Phase 4 — User Password Export (user_passwords.json)" "SUCCESS" }
-if (-not $SkipPhase5) { Write-Log "  [x] Phase 5 — Customer Order Endpoint (ASPX + OrdersAppPool)" "SUCCESS" }
-if (-not $SkipPhase6) { Write-Log "  [x] Phase 6 — Mail Server (hMailServer + mailboxes)" "SUCCESS" }
+if (-not $SkipPhase1) { Write-Log "  [x] Phase 1 - Black Team Accounts + credentials.json + RoE" "SUCCESS" }
+if (-not $SkipPhase2) { Write-Log "  [x] Phase 2 - Supplier Delivery SQL Agent Jobs" "SUCCESS" }
+if (-not $SkipPhase3) { Write-Log "  [x] Phase 3 - Helpdesk System (ITDeskDB + ASPX)" "SUCCESS" }
+if (-not $SkipPhase4) { Write-Log "  [x] Phase 4 - User Password Export (user_passwords.json)" "SUCCESS" }
+if (-not $SkipPhase5) { Write-Log "  [x] Phase 5 - Customer Order Endpoint (ASPX + OrdersAppPool)" "SUCCESS" }
+if (-not $SkipPhase6) { Write-Log "  [x] Phase 6 - Mail Server (hMailServer + mailboxes)" "SUCCESS" }
 Write-Log "" "INFO"
 Write-Log "Files created:" "INFO"
 Write-Log "  $SimulatorPath\credentials.json" "INFO"
@@ -459,10 +459,10 @@ if (-not $SkipPhase4) { Write-Log "  $SimulatorPath\user_passwords.json" "INFO" 
 Write-Log "" "INFO"
 Write-Log "Copy the entire Simulator\ folder to C:\Simulator\ on the out-of-band VM." "INFO"
 Write-Log "Then start the runtime scripts on the simulator VM:" "INFO"
-Write-Log "  Invoke-LockoutSimulator.ps1      (Phase 3 — continuous)" "INFO"
-Write-Log "  Invoke-HelpdeskAutoResolve.ps1   (Phase 3 — continuous)" "INFO"
-Write-Log "  Invoke-UserSessionSimulator.ps1  (Phase 4 — continuous)" "INFO"
-Write-Log "  Invoke-OrderSimulator.ps1        (Phase 5 — continuous)" "INFO"
-Write-Log "  Invoke-EmailSimulator.ps1        (Phase 6 — continuous)" "INFO"
+Write-Log "  Invoke-LockoutSimulator.ps1      (Phase 3 - continuous)" "INFO"
+Write-Log "  Invoke-HelpdeskAutoResolve.ps1   (Phase 3 - continuous)" "INFO"
+Write-Log "  Invoke-UserSessionSimulator.ps1  (Phase 4 - continuous)" "INFO"
+Write-Log "  Invoke-OrderSimulator.ps1        (Phase 5 - continuous)" "INFO"
+Write-Log "  Invoke-EmailSimulator.ps1        (Phase 6 - continuous)" "INFO"
 Write-Log "Distribute Rules_of_Engagement.txt to Blue Team students before the exercise starts." "INFO"
 Write-Host ""

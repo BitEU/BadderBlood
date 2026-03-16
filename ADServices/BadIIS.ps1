@@ -1121,7 +1121,7 @@ Set-WebConfigurationProperty -Filter /system.webServer/directoryBrowse -Name ena
 # Credentials sent over Port 80 are Base64 encoded, not encrypted.
 # Trivially captured via Wireshark or any MITM tool.
 Write-Log "Applying Misconfig: Enabling Basic Authentication globally over HTTP" "VULN"
-Unlock-WebConfiguration -Filter "system.webServer/security/authentication/basicAuthentication" -PSPath "MACHINE/WEBROOT/APPHOST" | Out-Null
+& "$env:windir\system32\inetsrv\appcmd.exe" unlock config -section:system.webServer/security/authentication/basicAuthentication | Out-Null
 Set-WebConfigurationProperty -Filter /system.webServer/security/authentication/basicAuthentication -Name enabled -Value True -PSPath "IIS:\Sites\$siteName"
 
 # Optional: Uncomment to force Basic Auth everywhere (no anonymous browsing at all)

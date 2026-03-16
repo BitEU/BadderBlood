@@ -5,13 +5,13 @@
 .DESCRIPTION
     This script sets up the full Level-1 helpdesk simulation infrastructure:
 
-    1. ITDeskDB — New SQL database with Tickets and TicketHistory tables
+    1. ITDeskDB - New SQL database with Tickets and TicketHistory tables
        (+ BlackTeam_SQLBot grants for scoring)
 
-    2. IIS helpdesk app — Deploys /apps/helpdesk/ with three ASPX endpoints:
-         /apps/helpdesk/api/submit  — accepts POST from Invoke-LockoutSimulator.ps1
-         /apps/helpdesk/api/status  — returns open ticket count (for scoring)
-         /apps/helpdesk/index.html  — Blue Team ticket management UI
+    2. IIS helpdesk app - Deploys /apps/helpdesk/ with three ASPX endpoints:
+         /apps/helpdesk/api/submit  - accepts POST from Invoke-LockoutSimulator.ps1
+         /apps/helpdesk/api/status  - returns open ticket count (for scoring)
+         /apps/helpdesk/index.html  - Blue Team ticket management UI
 
     3. Wires up the ASPX app pool as a Windows Auth identity
        (survives when Blue Team disables Basic Auth)
@@ -81,7 +81,7 @@ if (-not $DomainNB) {
         $DomainDNS = $Domain.DNSRoot
         Write-Log "Domain: $DomainDNS | NetBIOS: $DomainNB" "SUCCESS"
     } catch {
-        Write-Log "Cannot reach AD — using environment fallback for domain name." "WARNING"
+        Write-Log "Cannot reach AD - using environment fallback for domain name." "WARNING"
         $DomainNB  = $env:USERDOMAIN
         $DomainDNS = "$($env:USERDOMAIN).local"
     }
@@ -183,7 +183,7 @@ Write-Log "Creating ITDeskDB database..." "STEP"
 
 $dbExists = Invoke-Sql -ReturnReader -Query "SELECT COUNT(*) AS n FROM sys.databases WHERE name = 'ITDeskDB'"
 if ($dbExists.Rows[0].n -gt 0 -and -not $Force) {
-    Write-Log "ITDeskDB already exists — skipping creation (-Force to recreate)." "WARNING"
+    Write-Log "ITDeskDB already exists - skipping creation (-Force to recreate)." "WARNING"
 } else {
     if ($Force) {
         Write-Log "-Force specified. Dropping and recreating ITDeskDB..." "WARNING"
@@ -274,7 +274,7 @@ $null = Invoke-Sql -Database "ITDeskDB" -Query $grantExec
 
 Write-Log "Creating helpdesk stored procedures..." "STEP"
 
-# usp_SubmitTicket — called by the ASPX API endpoint
+# usp_SubmitTicket - called by the ASPX API endpoint
 $uspSubmit = @"
 IF OBJECT_ID('dbo.usp_SubmitTicket', 'P') IS NOT NULL DROP PROCEDURE dbo.usp_SubmitTicket;
 "@
@@ -302,7 +302,7 @@ if (Invoke-Sql -Database "ITDeskDB" -Query $uspSubmitCreate) {
     Write-Log "usp_SubmitTicket created." "SUCCESS"
 }
 
-# usp_GetOpenTickets — polled by ASPX status endpoint and auto-resolve engine
+# usp_GetOpenTickets - polled by ASPX status endpoint and auto-resolve engine
 $uspGetDrop = "IF OBJECT_ID('dbo.usp_GetOpenTickets','P') IS NOT NULL DROP PROCEDURE dbo.usp_GetOpenTickets;"
 $null = Invoke-Sql -Database "ITDeskDB" -Query $uspGetDrop
 
@@ -326,7 +326,7 @@ if (Invoke-Sql -Database "ITDeskDB" -Query $uspGetCreate) {
     Write-Log "usp_GetOpenTickets created." "SUCCESS"
 }
 
-# usp_ResolveTicket — called by auto-resolve engine
+# usp_ResolveTicket - called by auto-resolve engine
 $uspResolveDrop = "IF OBJECT_ID('dbo.usp_ResolveTicket','P') IS NOT NULL DROP PROCEDURE dbo.usp_ResolveTicket;"
 $null = Invoke-Sql -Database "ITDeskDB" -Query $uspResolveDrop
 
@@ -370,7 +370,7 @@ try {
                  Where-Object { $_.SamAccountName -notmatch "Administrator|Guest|krbtgt|BlackTeam" } |
                  Get-Random -Count 12
 } catch {
-    Write-Log "AD query for seed users failed — skipping seed." "WARNING"
+    Write-Log "AD query for seed users failed - skipping seed." "WARNING"
 }
 
 $seedIssues = @(
@@ -378,14 +378,14 @@ $seedIssues = @(
     @{Issue="Locked out of domain account. Tried resetting password but still getting lockout."; Priority="High"}
     @{Issue="Cannot log into workstation. Getting 'account locked' error message."; Priority="High"}
     @{Issue="Password reset required but account is locked first."; Priority="Medium"}
-    @{Issue="User locked out — reported via phone. Needs immediate unlock."; Priority="High"}
+    @{Issue="User locked out - reported via phone. Needs immediate unlock."; Priority="High"}
     @{Issue="Intermittent lockout issue for past 3 days. IT Director aware."; Priority="Medium"}
     @{Issue="Account locked overnight. Possibly stale cached credentials on mobile device."; Priority="Medium"}
     @{Issue="Lockout triggered by legacy application using old password."; Priority="Low"}
-    @{Issue="Cannot access VPN — account appears locked."; Priority="High"}
+    @{Issue="Cannot access VPN - account appears locked."; Priority="High"}
     @{Issue="Multiple failed auth attempts detected from this account (may be credential stuffing)."; Priority="High"}
     @{Issue="Account locked after connecting to new workstation for the first time."; Priority="Low"}
-    @{Issue="Locked out while travelling — remote unlock needed."; Priority="Medium"}
+    @{Issue="Locked out while travelling - remote unlock needed."; Priority="Medium"}
 )
 
 $insertedCount = 0
@@ -415,7 +415,7 @@ SET Status       = 'Resolved',
 WHERE TicketID % 4 != 0;   -- leave 25% open
 
 INSERT INTO TicketHistory (TicketID, Action, PerformedBy, Details)
-SELECT TicketID, 'Resolved', 'AutoResolve_Bot', 'Automatic unlock — account restored'
+SELECT TicketID, 'Resolved', 'AutoResolve_Bot', 'Automatic unlock - account restored'
 FROM Tickets
 WHERE Status = 'Resolved' AND ResolvedBy = 'AutoResolve_Bot';
 "@
@@ -440,7 +440,7 @@ foreach ($dir in @($helpdeskBase, $helpdeskApi)) {
 }
 
 # ==============================================================================
-# 10A. submit.aspx — POST endpoint for lockout simulation
+# 10A. submit.aspx - POST endpoint for lockout simulation
 # ==============================================================================
 
 $submitAspx = @"
@@ -521,7 +521,7 @@ $submitAspx = @"
         }
     }
 
-    // Minimal JSON value extractor — avoids a JSON library dependency
+    // Minimal JSON value extractor - avoids a JSON library dependency
     private string ExtractJson(string json, string key) {
         string search = "\"" + key + "\"";
         int idx = json.IndexOf(search, StringComparison.OrdinalIgnoreCase);
@@ -546,7 +546,7 @@ $submitAspx | Out-File -FilePath "$helpdeskApi\submit.aspx" -Encoding UTF8 -Forc
 Write-Log "Deployed: $helpdeskApi\submit.aspx" "SUCCESS"
 
 # ==============================================================================
-# 10B. status.aspx — JSON status endpoint for Scorebot
+# 10B. status.aspx - JSON status endpoint for Scorebot
 # ==============================================================================
 
 $statusAspx = @"
@@ -600,7 +600,7 @@ $statusAspx | Out-File -FilePath "$helpdeskApi\status.aspx" -Encoding UTF8 -Forc
 Write-Log "Deployed: $helpdeskApi\status.aspx" "SUCCESS"
 
 # ==============================================================================
-# 10C. index.html — Blue Team ticket management UI
+# 10C. index.html - Blue Team ticket management UI
 # Uses the Springfield Box Factory brown/cream CSS theme from BadIIS
 # ==============================================================================
 
@@ -642,7 +642,7 @@ $indexHtml = @"
 <body>
 <header>
     <h1>Springfield Box Factory</h1>
-    <p>IT Helpdesk &amp; Ticketing System — Internal Use Only</p>
+    <p>IT Helpdesk &amp; Ticketing System - Internal Use Only</p>
 </header>
 <nav>
     <a href="/">Home</a>
@@ -652,7 +652,7 @@ $indexHtml = @"
 </nav>
 
 <div class="container">
-    <h2>IT Helpdesk — Active Tickets</h2>
+    <h2>IT Helpdesk - Active Tickets</h2>
 
     <div class="alert-info">
         <strong>Note for IT Staff:</strong> Tickets marked <strong>Assigned</strong> require manual resolution.
@@ -661,10 +661,10 @@ $indexHtml = @"
     </div>
 
     <div class="status-bar" id="statusBar">
-        <div class="stat-block"><div class="stat-num" id="statOpen">—</div><div class="stat-label">Open</div></div>
-        <div class="stat-block"><div class="stat-num" id="statAssigned">—</div><div class="stat-label">Assigned (Manual)</div></div>
-        <div class="stat-block"><div class="stat-num" id="statResolved">—</div><div class="stat-label">Resolved Today</div></div>
-        <div class="stat-block"><div class="stat-num" id="statTotal">—</div><div class="stat-label">Total</div></div>
+        <div class="stat-block"><div class="stat-num" id="statOpen">-</div><div class="stat-label">Open</div></div>
+        <div class="stat-block"><div class="stat-num" id="statAssigned">-</div><div class="stat-label">Assigned (Manual)</div></div>
+        <div class="stat-block"><div class="stat-num" id="statResolved">-</div><div class="stat-label">Resolved Today</div></div>
+        <div class="stat-block"><div class="stat-num" id="statTotal">-</div><div class="stat-label">Total</div></div>
         <div class="stat-block" style="margin-left:auto;">
             <button onclick="refreshAll()" style="padding:6px 14px;background:#5c4033;color:#fff;border:none;cursor:pointer;border-radius:3px;">Refresh</button>
         </div>
@@ -785,11 +785,11 @@ function renderTickets() {
         var canResolve = (t.status === 'Open' || t.status === 'Assigned');
         var btn = canResolve
             ? '<button class="resolve-btn" onclick="openResolve(' + t.ticketId + ',\'' + esc(t.ticketNumber) + '\',\'' + esc(t.userSam) + '\')">Resolve</button>'
-            : '<span style="color:#999;font-size:12px;">' + (t.resolvedBy || '—') + '</span>';
+            : '<span style="color:#999;font-size:12px;">' + (t.resolvedBy || '-') + '</span>';
         html += '<tr>' +
             '<td><strong>' + esc(t.ticketNumber) + '</strong></td>' +
             '<td>' + esc(t.displayName || t.userSam) + '<br><small style="color:#888;">' + esc(t.userSam) + '</small></td>' +
-            '<td style="font-size:12px;">' + esc(t.department || '—') + '</td>' +
+            '<td style="font-size:12px;">' + esc(t.department || '-') + '</td>' +
             '<td style="max-width:280px;">' + esc(t.issue) + '</td>' +
             '<td>' + pBadge + '</td>' +
             '<td>' + sBadge + '</td>' +
@@ -840,7 +840,7 @@ $indexHtml | Out-File -FilePath "$helpdeskBase\index.html" -Encoding UTF8 -Force
 Write-Log "Deployed: $helpdeskBase\index.html" "SUCCESS"
 
 # ==============================================================================
-# 10D. tickets.aspx — returns all tickets as JSON (for the UI)
+# 10D. tickets.aspx - returns all tickets as JSON (for the UI)
 # ==============================================================================
 
 $ticketsAspx = @"
@@ -926,7 +926,7 @@ $ticketsAspx | Out-File -FilePath "$helpdeskApi\tickets.aspx" -Encoding UTF8 -Fo
 Write-Log "Deployed: $helpdeskApi\tickets.aspx" "SUCCESS"
 
 # ==============================================================================
-# 10E. resolve.aspx — POST endpoint for Blue Team manual resolution
+# 10E. resolve.aspx - POST endpoint for Blue Team manual resolution
 # ==============================================================================
 
 $resolveAspx = @"
@@ -1036,7 +1036,7 @@ try {
     Write-Log "Windows Auth enabled, Anonymous Auth disabled on /apps/helpdesk." "SUCCESS"
 
 } catch {
-    Write-Log "IIS application registration failed: $_ — ASPX files are deployed, but you may need to register the app pool manually." "WARNING"
+    Write-Log "IIS application registration failed: $_ - ASPX files are deployed, but you may need to register the app pool manually." "WARNING"
 }
 
 # ==============================================================================
@@ -1087,7 +1087,7 @@ if (-not (Test-Path $appsIndexPath)) {
 
 Write-Log "" "INFO"
 Write-Log "=================================================================" "INFO"
-Write-Log "  Phase 3 Complete — Helpdesk System Deployed" "SUCCESS"
+Write-Log "  Phase 3 Complete - Helpdesk System Deployed" "SUCCESS"
 Write-Log "=================================================================" "INFO"
 Write-Log "" "INFO"
 Write-Log "Database:   ITDeskDB on $SqlInstance" "INFO"
@@ -1095,11 +1095,11 @@ Write-Log "Tables:     Tickets, TicketHistory" "INFO"
 Write-Log "Procs:      usp_SubmitTicket, usp_GetOpenTickets, usp_ResolveTicket" "INFO"
 Write-Log "" "INFO"
 Write-Log "IIS Endpoints:" "INFO"
-Write-Log "  GET/POST  http://[host]/apps/helpdesk/               — Ticket management UI" "INFO"
-Write-Log "  POST      http://[host]/apps/helpdesk/api/submit.aspx  — Submit ticket" "INFO"
-Write-Log "  GET       http://[host]/apps/helpdesk/api/status.aspx  — JSON status (Scorebot)" "INFO"
-Write-Log "  GET       http://[host]/apps/helpdesk/api/tickets.aspx — JSON ticket list" "INFO"
-Write-Log "  POST      http://[host]/apps/helpdesk/api/resolve.aspx — Resolve ticket" "INFO"
+Write-Log "  GET/POST  http://[host]/apps/helpdesk/               - Ticket management UI" "INFO"
+Write-Log "  POST      http://[host]/apps/helpdesk/api/submit.aspx  - Submit ticket" "INFO"
+Write-Log "  GET       http://[host]/apps/helpdesk/api/status.aspx  - JSON status (Scorebot)" "INFO"
+Write-Log "  GET       http://[host]/apps/helpdesk/api/tickets.aspx - JSON ticket list" "INFO"
+Write-Log "  POST      http://[host]/apps/helpdesk/api/resolve.aspx - Resolve ticket" "INFO"
 Write-Log "" "INFO"
 Write-Log "NEXT STEPS:" "INFO"
 Write-Log "  1. Copy Invoke-LockoutSimulator.ps1 to C:\Simulator\ on the simulator VM" "INFO"

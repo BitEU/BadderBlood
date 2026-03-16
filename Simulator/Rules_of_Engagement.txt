@@ -1,5 +1,5 @@
 ================================================================================
-  SPRINGFIELD BOX FACTORY — BLUE TEAM EXERCISE
+  SPRINGFIELD BOX FACTORY - BLUE TEAM EXERCISE
   RULES OF ENGAGEMENT (ROE)
   Domain: [Populated at runtime by Deploy-BlackTeamAccounts.ps1]
 ================================================================================
@@ -16,7 +16,7 @@ reduces your team's score. You are being measured on BOTH your ability to harden
 the environment AND keep legitimate services running.
 
 ================================================================================
-BLACK TEAM ACCOUNTS — STRICTLY OFF-LIMITS
+BLACK TEAM ACCOUNTS - STRICTLY OFF-LIMITS
 ================================================================================
 
 The following five accounts exist SOLELY to drive simulator traffic.
@@ -41,7 +41,7 @@ The BlackTeam OU is protected from accidental deletion. Attempting to remove
 ProtectedFromAccidentalDeletion or delete the OU will be flagged as a violation.
 
 ================================================================================
-CREDENTIAL ROTATION SLA — 5 MINUTE WINDOW
+CREDENTIAL ROTATION SLA - 5 MINUTE WINDOW
 ================================================================================
 
 If your team rotates a service account password that a simulator account depends
@@ -108,7 +108,7 @@ Scores are updated every 15 minutes.
 Total available points depend on exercise duration. Ask your instructor.
 
 ================================================================================
-FLAG LIST (PARTIAL — FULL LIST DISTRIBUTED MID-EXERCISE)
+FLAG LIST (PARTIAL - FULL LIST DISTRIBUTED MID-EXERCISE)
 ================================================================================
 
   FLAG-SQL-01  Remove xp_cmdshell from SQL Server

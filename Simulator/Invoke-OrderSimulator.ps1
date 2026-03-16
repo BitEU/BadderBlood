@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Phase 5 — Customer Order Simulator. Runs continuously on the simulator VM.
+    Phase 5 - Customer Order Simulator. Runs continuously on the simulator VM.
 
 .DESCRIPTION
     Generates realistic customer order HTTP POST requests to the Springfield Box
@@ -13,7 +13,7 @@
         3. POST JSON payload to the orders API using Windows Auth (NTLM)
            via System.Net.WebClient with NetworkCredential
         4. Log each successful OrderId + order details to the daily log
-        5. On HTTP error: log warning, continue — do not crash
+        5. On HTTP error: log warning, continue - do not crash
         6. After 3 consecutive failures: reload credentials.json, wait 60 s
 
     Credentials are refreshed from credentials.json every 5 minutes so that
@@ -35,7 +35,7 @@
     HTTP port for the IIS endpoint. Default: 80
 
 .NOTES
-    Runs on the simulator VM (WORKGROUP — NOT domain-joined).
+    Runs on the simulator VM (WORKGROUP - NOT domain-joined).
     Does NOT require -RunAsAdministrator.
     Requires network access to the IIS host on the specified port (default 80).
 
@@ -79,7 +79,7 @@ $script:LogFile = Join-Path $LogPath "OrderSimulator_$(Get-Date -Format 'yyyyMMd
 
 Write-Log "=================================================================" "INFO"
 Write-Log "  BadderBlood Order Simulator" "INFO"
-Write-Log "  Phase 5 — Springfield Box Factory Customer Orders" "INFO"
+Write-Log "  Phase 5 - Springfield Box Factory Customer Orders" "INFO"
 Write-Log "  Runs on Simulator VM (non-domain-joined)" "INFO"
 Write-Log "=================================================================" "INFO"
 
@@ -235,7 +235,7 @@ function Send-Order {
         } catch {}
 
         if (-not $orderId) {
-            # No JSON / no orderId field — treat as success but no ID
+            # No JSON / no orderId field - treat as success but no ID
             $orderId = "N/A"
         }
 
@@ -290,14 +290,14 @@ while ($true) {
             if (-not $resolvedHost) {
                 $resolvedHost = Resolve-IisHost -Cred $cred
                 if (-not $resolvedHost) {
-                    Write-Log "IIS host unknown — sleeping 60 s before retry." "WARNING"
+                    Write-Log "IIS host unknown - sleeping 60 s before retry." "WARNING"
                     Start-Sleep -Seconds 60
                     continue
                 }
                 Write-Log "IIS host resolved: $resolvedHost" "SUCCESS"
             }
         } else {
-            Write-Log "Credential load failed — sleeping 30 s before retry." "WARNING"
+            Write-Log "Credential load failed - sleeping 30 s before retry." "WARNING"
             Start-Sleep -Seconds 30
             continue
         }
@@ -325,7 +325,7 @@ while ($true) {
         $quantity = Get-Random -Minimum 10 -Maximum 501   # 10–500
         $region   = $Regions   | Get-Random
 
-        Write-Log "Order $i/$orderCount — Customer: '$customer' | BoxType: '$boxType' | Qty: $quantity | Region: $region" "INFO"
+        Write-Log "Order $i/$orderCount - Customer: '$customer' | BoxType: '$boxType' | Qty: $quantity | Region: $region" "INFO"
 
         $result = Send-Order -Url      $orderUrl `
                              -Cred     $cred     `
@@ -335,17 +335,17 @@ while ($true) {
                              -Region   $region
 
         if ($result.Success) {
-            Write-Log "Order accepted — OrderId: $($result.OrderId) | Customer: '$customer' | BoxType: '$boxType' | Qty: $quantity | Region: $region" "SUCCESS"
+            Write-Log "Order accepted - OrderId: $($result.OrderId) | Customer: '$customer' | BoxType: '$boxType' | Qty: $quantity | Region: $region" "SUCCESS"
             $waveSuccess++
             $consecutiveFails = 0
         } else {
-            Write-Log "Order failed (HTTP $($result.StatusCode)) — $($result.Error) | Customer: '$customer' | BoxType: '$boxType' | Qty: $quantity" "WARNING"
+            Write-Log "Order failed (HTTP $($result.StatusCode)) - $($result.Error) | Customer: '$customer' | BoxType: '$boxType' | Qty: $quantity" "WARNING"
             $waveFail++
             $consecutiveFails++
 
             # After 3 consecutive failures: reload creds and pause
             if ($consecutiveFails -ge $maxConsecFails) {
-                Write-Log "3 consecutive order failures — reloading credentials and waiting 60 s." "WARNING"
+                Write-Log "3 consecutive order failures - reloading credentials and waiting 60 s." "WARNING"
                 $newCred = Import-IisCredential
                 if ($newCred) {
                     $cred         = $newCred
@@ -364,7 +364,7 @@ while ($true) {
         }
     }
 
-    Write-Log "Wave $waveCount complete — Sent: $($waveSuccess + $waveFail) | Success: $waveSuccess | Failed: $waveFail" "INFO"
+    Write-Log "Wave $waveCount complete - Sent: $($waveSuccess + $waveFail) | Success: $waveSuccess | Failed: $waveFail" "INFO"
     Write-Log "Next wave in $sleepSec seconds." "INFO"
 
     Start-Sleep -Seconds $sleepSec
