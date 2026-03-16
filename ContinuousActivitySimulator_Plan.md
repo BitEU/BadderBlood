@@ -40,13 +40,13 @@ A **Continuous Activity Simulator** running on a dedicated out-of-band VM that g
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                  BADDERBLOOD LAB NETWORK                      │
+│                  BADDERBLOOD LAB NETWORK                     │
 │                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌───────────────┐  │
-│  │  DC01         │    │  DC01 (IIS)  │    │  DC01 (SQL)   │  │
-│  │  AD / DNS     │    │  Port 80     │    │  Port 1433    │  │
-│  │  LDAP / Kerb  │    │  /apps/*     │    │  BADSQL inst  │  │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬────────┘  │
+│  ┌──────────────┐    ┌──────────────┐    ┌───────────────┐   │
+│  │  DC01        │    │  DC01 (IIS)  │    │  DC01 (SQL)   │   │
+│  │  AD / DNS    │    │  Port 80     │    │  Port 1433    │   │
+│  │  LDAP / Kerb │    │  /apps/*     │    │  BADSQL inst  │   │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬────────┘   │
 │         │                   │                   │            │
 │         └───────────┬───────┴───────────────────┘            │
 │                     │                                        │
@@ -56,13 +56,13 @@ A **Continuous Activity Simulator** running on a dedicated out-of-band VM that g
 │                     │                                        │
 │         ┌───────────┴───────────┐                            │
 │         │                       │                            │
-│  ┌──────┴──────┐    ┌──────────┴──────────┐                 │
-│  │ Client VMs  │    │ SIMULATOR VM         │                 │
-│  │ (Students)  │    │ (WORKGROUP - Win10)  │                 │
-│  │ Blue Team   │    │ Black Team Scripts   │                 │
-│  └─────────────┘    │ Out-of-Band Scoring  │                 │
-│                     │ MailEnable Server    │                 │
-│                     └─────────────────────┘                 │
+│  ┌──────┴──────┐    ┌──────────┴──────────┐                  │
+│  │ Client VMs  │    │ SIMULATOR VM        │                  │
+│  │ (Students)  │    │ (WORKGROUP - Win10) │                  │
+│  │ Blue Team   │    │ Black Team Scripts  │                  │
+│  └─────────────┘    │ Out-of-Band Scoring │                  │
+│                     │ MailEnable Server   │                  │
+│                     └─────────────────────┘                  │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
