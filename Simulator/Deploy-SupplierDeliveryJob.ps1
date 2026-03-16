@@ -184,10 +184,41 @@ if (-not $agentSvc) {
             Write-Log "SQL Server engine '$sqlSvcName' is not running - starting it first..." "WARNING"
             Set-Service -Name $sqlSvcName -StartupType Automatic -ErrorAction SilentlyContinue
             Start-Service -Name $sqlSvcName -ErrorAction Stop
-            # Wait for SQL engine to be fully ready
             $sqlSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
             Write-Log "SQL Server engine started." "SUCCESS"
         }
+
+        # Grant the Agent service account the required msdb roles.
+        # SQL Agent running as NT AUTHORITY\NETWORKSERVICE maps to the machine account
+        # (DOMAIN\MACHINENAME$) which needs SQLAgentOperatorRole on msdb to start.
+        try {
+            $wmiAgent = Get-WmiObject Win32_Service -Filter "Name='$agentSvcName'" -ErrorAction SilentlyContinue
+            $agentLogon = if ($wmiAgent) { $wmiAgent.StartName } else { $null }
+            Write-Log "SQL Agent service logon account: $agentLogon" "INFO"
+
+            # Determine the SQL login name for the Agent service account
+            $agentSqlLogin = $agentLogon
+            if ($agentLogon -match 'NT AUTHORITY\\(NETWORK\s*SERVICE|LOCAL\s*SERVICE|SYSTEM)') {
+                # These map to DOMAIN\MACHINENAME$ inside SQL Server
+                $agentSqlLogin = "$DomainNB\$env:COMPUTERNAME`$"
+            }
+
+            $grantAgentPerms = @"
+-- Ensure the Agent service account has a SQL login
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$agentSqlLogin')
+    CREATE LOGIN [$agentSqlLogin] FROM WINDOWS;
+
+-- Grant sysadmin role (required for SQL Agent to fully start and manage jobs)
+IF IS_SRVROLEMEMBER('sysadmin', '$agentSqlLogin') = 0
+    ALTER SERVER ROLE sysadmin ADD MEMBER [$agentSqlLogin];
+"@
+            if (Invoke-Sql -Query $grantAgentPerms) {
+                Write-Log "Granted sysadmin to '$agentSqlLogin' (SQL Agent service account)." "SUCCESS"
+            }
+        } catch {
+            Write-Log "Could not grant Agent service account permissions: $_ (non-fatal, will attempt start anyway)" "WARNING"
+        }
+
         Set-Service -Name $agentSvcName -StartupType Automatic -ErrorAction SilentlyContinue
         Start-Service -Name $agentSvcName -ErrorAction Stop
         # Wait for Agent to reach Running state (up to 30 seconds)

@@ -315,24 +315,41 @@ if ($SkipMailboxProvisioning) {
 
 Write-Log "Configuring SMTP relay IP ranges..." "STEP"
 
+# Cache the IP/Security ranges COM object once.
+# hMailServer 5.6+ uses SecurityRanges; older versions used IPRanges.
+$hmsIPRanges = $null
+try {
+    $hmsIPRanges = $hms.Settings.SecurityRanges
+} catch { }
+if ($null -eq $hmsIPRanges) {
+    try {
+        $hmsIPRanges = $hms.Settings.IPRanges
+    } catch { }
+}
+if ($null -eq $hmsIPRanges) {
+    Write-Log "Could not access hMailServer SecurityRanges or IPRanges - relay IP ranges will not be configured." "WARNING"
+}
+
 function Add-HmsRelayRange {
     param(
         [string]$RangeName,
         [string]$LowerIP,
         [string]$UpperIP
     )
+    if ($null -eq $hmsIPRanges) {
+        Write-Log "Skipping relay range '$RangeName' - IPRanges object not available." "WARNING"
+        return
+    }
     try {
-        $ipRanges = $hms.Settings.IPRanges
-
         # Check if range already exists
-        for ($i = 0; $i -lt $ipRanges.Count; $i++) {
-            if ($ipRanges.Item($i).Name -ieq $RangeName) {
+        for ($i = 0; $i -lt $hmsIPRanges.Count; $i++) {
+            if ($hmsIPRanges.Item($i).Name -ieq $RangeName) {
                 Write-Log "IP range '$RangeName' already exists - skipping." "INFO"
                 return
             }
         }
 
-        $range             = $ipRanges.Add()
+        $range             = $hmsIPRanges.Add()
         $range.Name        = $RangeName
         $range.LowerIP     = $LowerIP
         $range.UpperIP     = $UpperIP
@@ -358,9 +375,13 @@ try {
     [Array]::Reverse($ipBytes)
     $ipInt      = [System.BitConverter]::ToUInt32($ipBytes, 0)
 
-    $mask       = [uint32](0xFFFFFFFF -shl (32 - $prefixLen))
+    # PowerShell 5.1 parses 0xFFFFFFFF as Int32 (-1), causing overflow in shift/cast.
+    # Build the mask safely from host bits using XOR with UInt32.MaxValue.
+    $hostBits   = 32 - $prefixLen
+    $hostMask   = [uint32]((1 -shl $hostBits) - 1)              # e.g. /24 -> 0x000000FF (255)
+    $mask       = [uint32]::MaxValue -bxor $hostMask             # e.g. /24 -> 0xFFFFFF00
     $networkInt = $ipInt -band $mask
-    $broadInt   = $networkInt -bor (-bnot $mask -band 0xFFFFFFFF)
+    $broadInt   = $networkInt -bor $hostMask
 
     $networkBytes = [System.BitConverter]::GetBytes([uint32]$networkInt)
     [Array]::Reverse($networkBytes)

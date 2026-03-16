@@ -435,7 +435,7 @@ foreach ($u in $seedUsers) {
     $sam  = $u.SamAccountName
     $name = if ($u.DisplayName) { $u.DisplayName.Replace("'","''") } else { $sam }
     $dept = if ($u.Department)  { $u.Department.Replace("'","''") }  else { "Unknown" }
-    $iss  = $issueData.Issue
+    $iss  = $issueData.Issue.Replace("'","''")   # escape single quotes for SQL
     $pri  = $issueData.Priority
 
     $seedSql = @"

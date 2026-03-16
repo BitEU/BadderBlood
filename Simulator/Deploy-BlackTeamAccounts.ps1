@@ -266,7 +266,8 @@ ALTER ROLE db_datawriter ADD MEMBER [$sqlBotLogin];
 if (-not $SkipShareGrants) {
     Write-Log "Granting CorpData share permissions to BlackTeam_FileBot..." "STEP"
 
-    $corpDataPath = Join-Path $CorpSharePath "CorpData"
+    # BadFS.ps1 shares $CorpSharePath directly as "CorpData" (no subfolder).
+    $corpDataPath = $CorpSharePath
     if (Test-Path $corpDataPath) {
         try {
             $fileBotAccount = "$DomainNB\BlackTeam_FileBot"
