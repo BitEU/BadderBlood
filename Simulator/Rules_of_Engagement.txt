@@ -1,0 +1,135 @@
+================================================================================
+  SPRINGFIELD BOX FACTORY — BLUE TEAM EXERCISE
+  RULES OF ENGAGEMENT (ROE)
+  Domain: [Populated at runtime by Deploy-BlackTeamAccounts.ps1]
+================================================================================
+
+OVERVIEW
+--------
+This lab simulates a live enterprise environment. A Continuous Activity Simulator
+runs from an out-of-band VM (NOT domain-joined) and generates realistic background
+traffic: SQL transactions, SMB file operations, web requests, helpdesk tickets,
+and internal email.
+
+Scoring is fully automated and runs continuously. Disrupting simulator traffic
+reduces your team's score. You are being measured on BOTH your ability to harden
+the environment AND keep legitimate services running.
+
+================================================================================
+BLACK TEAM ACCOUNTS — STRICTLY OFF-LIMITS
+================================================================================
+
+The following five accounts exist SOLELY to drive simulator traffic.
+
+You MUST NOT:
+  [ ] Disable them
+  [ ] Delete them
+  [ ] Change their passwords without immediately updating credentials.json
+  [ ] Remove them from required groups or revoke their minimum permissions
+  [ ] Move them out of OU=BlackTeam,OU=Admin
+
+ACCOUNT          ROLE                          MINIMUM PERMISSIONS REQUIRED
+---------------  ----------------------------  --------------------------------
+BlackTeam_Scorebot  Scoring engine             AD Read (no write needed)
+BlackTeam_SQLBot    SQL traffic generator      db_datareader + db_datawriter
+                                               on NailInventoryDB, TimesheetLegacy
+BlackTeam_WebBot    IIS traffic generator      Read on IIS Springfield Box Factory sites
+BlackTeam_FileBot   SMB file operations        Modify on \\[SERVER]\CorpData
+BlackTeam_MailBot   Email traffic generator    SMTP relay permission
+
+The BlackTeam OU is protected from accidental deletion. Attempting to remove
+ProtectedFromAccidentalDeletion or delete the OU will be flagged as a violation.
+
+================================================================================
+CREDENTIAL ROTATION SLA — 5 MINUTE WINDOW
+================================================================================
+
+If your team rotates a service account password that a simulator account depends
+on (e.g., svc_sql, svc_webadmin), you MUST update credentials.json on the
+simulator VM within 5 MINUTES of the rotation.
+
+  Simulator VM credentials.json path: C:\Simulator\credentials.json
+
+  NOTE: The simulator VM is NOT domain-joined. You do not have RDP access to it.
+  Your instructor will provide a method to update credentials.json (shared folder,
+  web form, or direct instructor relay).
+
+Failing to update credentials.json = simulator traffic fails = uptime points lost
+until the simulator successfully reconnects.
+
+================================================================================
+WHAT YOU ARE EXPECTED TO DO
+================================================================================
+
+This exercise tests your ability to harden a misconfigured AD environment while
+keeping legitimate services running. You are expected to:
+
+  [+] Remediate misconfigured accounts, groups, GPOs, and ACLs
+  [+] Change passwords on weak service accounts (svc_sql, svc_webadmin, etc.)
+  [+] Remove dangerous delegations and over-privileged ACEs
+  [+] Fix ADCS template misconfigurations
+  [+] Enable SMB Signing and LDAP Signing
+  [+] Disable NTLM where appropriate
+  [+] Patch or remove xp_cmdshell, fix SQL misconfigurations
+  [+] Respond to incidents announced by the Black Team during the exercise
+
+The simulator is designed to survive all of the above hardening steps.
+BlackTeam accounts use Windows Authentication (not SQL Mixed Mode), so they
+survive sa password changes and Mixed Mode disablement.
+
+================================================================================
+WHAT YOU ARE NOT ALLOWED TO DO
+================================================================================
+
+  [-] Disable, delete, or modify the five BlackTeam accounts (listed above)
+  [-] Shut down or restart the DC, SQL server, IIS server, or file server without
+      a declared maintenance window (5-minute warning to instructor)
+  [-] Access or tamper with the simulator VM (you don't have credentials for it)
+  [-] Disable the SQL Server Agent service
+  [-] Remove the SQL Agent job: "SBF - Supplier Delivery Simulation"
+  [-] Block the simulator VM's IP at the firewall without instructor approval
+
+================================================================================
+SCORING OVERVIEW
+================================================================================
+
+Scores are updated every 15 minutes.
+
+  Category              Points   Measurement
+  --------------------  -------  -------------------------------------------
+  SQL Uptime            25 pts   Agent running, job ran within last 30 min,
+                                 PurchaseOrders row count increasing
+  IIS Uptime            20 pts   HTTP 200 from internal web request bot
+  SMB Uptime            20 pts   File read/write on CorpData succeeds
+  AD Health             15 pts   BlackTeam_Scorebot can enumerate AD
+  Remediation Flags     Variable Each confirmed fix earns points (see flag list)
+  Incident Response     Variable Announced events during the exercise
+
+Total available points depend on exercise duration. Ask your instructor.
+
+================================================================================
+FLAG LIST (PARTIAL — FULL LIST DISTRIBUTED MID-EXERCISE)
+================================================================================
+
+  FLAG-SQL-01  Remove xp_cmdshell from SQL Server
+  FLAG-SQL-02  Disable sa account or change to strong password
+  FLAG-SQL-03  Revoke PUBLIC role grants on HRConfidential tables
+  FLAG-GPO-01  Remove plaintext passwords from GPO Preferences (cpassword)
+  FLAG-ACL-01  Remove GenericAll from non-admin accounts on sensitive OUs
+  FLAG-ADCS-01 Fix ESC1 template misconfiguration
+  FLAG-LAPS-01 Enable and enforce LAPS on workstations OU
+  ... (additional flags announced during exercise)
+
+================================================================================
+QUESTIONS / ISSUES
+================================================================================
+
+  Contact your instructor immediately if:
+  - You believe a BlackTeam account was accidentally modified
+  - The scoring portal is unreachable
+  - You need to perform a maintenance window (server restart, etc.)
+  - You need to update credentials.json but cannot reach the simulator VM
+
+Instructor contact: [INSTRUCTOR WILL PROVIDE BEFORE EXERCISE STARTS]
+
+================================================================================

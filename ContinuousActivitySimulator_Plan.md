@@ -557,8 +557,9 @@ The simulator needs passwords for real AD users to call `LogonUser`. Options:
 | **A. Use Black Team account for all sessions** | Simple, no password management | All logon events show same account — unrealistic |
 | **B. Set known passwords on a subset of users** | Realistic per-user logons | Must coordinate with BadderBlood's password creation |
 | **C. Use `BlackTeam_FileBot` with delegation** | Single account, but realistic SMB events | Requires constrained delegation setup |
+| **D. Randomly generate and export all user passwords on AD entity creation** | Allows most realistic activity | Kinda annoying to implement |
 
-**Recommended: Approach B** — During `Invoke-BadderBlood.ps1` execution, track passwords for a random 10–15% of users in an encrypted file on the simulator VM. The simulator reads this file to impersonate those specific users.
+**Recommended: Approach D** — Realism is the name of the game, per user logons, it's just Option B on steroids.
 
 ### 5.6 Scoring Criteria
 
