@@ -170,19 +170,35 @@ if ($loginCheck.Rows.Count -eq 0) {
 
 # Verify SQL Agent service
 $agentSvcName = if ($SqlInstance -like '*\*') { "SQLAGENT`$$($SqlInstance.Split('\')[1])" } else { "SQLSERVERAGENT" }
+$sqlSvcName   = if ($SqlInstance -like '*\*') { "MSSQL`$$($SqlInstance.Split('\')[1])" } else { "MSSQLSERVER" }
 $agentSvc = Get-Service -Name $agentSvcName -ErrorAction SilentlyContinue
+$script:SqlAgentRunning = $false
 if (-not $agentSvc) {
     Write-Log "SQL Agent service '$agentSvcName' not found. SQL Agent may use a different name on this instance." "WARNING"
 } elseif ($agentSvc.Status -ne 'Running') {
     Write-Log "SQL Agent is not running. Starting it..." "WARNING"
     try {
-        Set-Service -Name $agentSvcName -StartupType Automatic
-        Start-Service -Name $agentSvcName
+        # Ensure the SQL Server engine itself is running first (Agent depends on it)
+        $sqlSvc = Get-Service -Name $sqlSvcName -ErrorAction SilentlyContinue
+        if ($sqlSvc -and $sqlSvc.Status -ne 'Running') {
+            Write-Log "SQL Server engine '$sqlSvcName' is not running - starting it first..." "WARNING"
+            Set-Service -Name $sqlSvcName -StartupType Automatic -ErrorAction SilentlyContinue
+            Start-Service -Name $sqlSvcName -ErrorAction Stop
+            # Wait for SQL engine to be fully ready
+            $sqlSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+            Write-Log "SQL Server engine started." "SUCCESS"
+        }
+        Set-Service -Name $agentSvcName -StartupType Automatic -ErrorAction SilentlyContinue
+        Start-Service -Name $agentSvcName -ErrorAction Stop
+        # Wait for Agent to reach Running state (up to 30 seconds)
+        $agentSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+        $script:SqlAgentRunning = $true
         Write-Log "SQL Agent started." "SUCCESS"
     } catch {
-        Write-Log "Could not start SQL Agent: $_" "WARNING"
+        Write-Log "Could not start SQL Agent: $_ - SQL Agent jobs will be created but cannot run until the Agent service is started." "WARNING"
     }
 } else {
+    $script:SqlAgentRunning = $true
     Write-Log "SQL Agent is running." "SUCCESS"
 }
 
@@ -471,23 +487,27 @@ if ($result) {
 
 Write-Log "Starting jobs for initial execution..." "STEP"
 
-$startDelivery = @"
+if (-not $script:SqlAgentRunning) {
+    Write-Log "SQL Agent is not running - skipping initial job start. Jobs will execute on schedule once SQL Agent is started." "WARNING"
+} else {
+    $startDelivery = @"
 USE [msdb];
 EXEC sp_start_job @job_name = N'$deliveryJobName'
 "@
 
-$startReorder = @"
+    $startReorder = @"
 USE [msdb];
 EXEC sp_start_job @job_name = N'$reorderJobName'
 "@
 
-Start-Sleep -Seconds 2  # Brief pause to ensure job registration completes
+    Start-Sleep -Seconds 2  # Brief pause to ensure job registration completes
 
-if (Invoke-Sql -Database "msdb" -Query $startDelivery) {
-    Write-Log "Supplier delivery job started (initial run)." "SUCCESS"
-}
-if (Invoke-Sql -Database "msdb" -Query $startReorder) {
-    Write-Log "Reorder check job started (initial run)." "SUCCESS"
+    if (Invoke-Sql -Database "msdb" -Query $startDelivery) {
+        Write-Log "Supplier delivery job started (initial run)." "SUCCESS"
+    }
+    if (Invoke-Sql -Database "msdb" -Query $startReorder) {
+        Write-Log "Reorder check job started (initial run)." "SUCCESS"
+    }
 }
 
 # ==============================================================================

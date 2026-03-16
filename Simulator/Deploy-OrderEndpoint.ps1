@@ -618,12 +618,6 @@ $webConfig = @"
     <identity impersonate="false" />
   </system.web>
   <system.webServer>
-    <security>
-      <authentication>
-        <anonymousAuthentication enabled="false" />
-        <windowsAuthentication enabled="true" />
-      </authentication>
-    </security>
     <defaultDocument enabled="false" />
     <httpErrors errorMode="Custom" existingResponse="PassThrough" />
   </system.webServer>
@@ -698,6 +692,15 @@ try {
     }
 
     # ---- 8C. Authentication - Windows Auth on, Anonymous off ----
+    # First, unlock the authentication sections at the server level so they can be overridden per-app
+    try {
+        $appcmd = "$env:SystemRoot\System32\inetsrv\appcmd.exe"
+        & $appcmd unlock config -section:system.webServer/security/authentication/windowsAuthentication 2>$null
+        & $appcmd unlock config -section:system.webServer/security/authentication/anonymousAuthentication 2>$null
+    } catch {
+        Write-Log "Could not unlock IIS auth sections via appcmd (non-fatal): $_" "WARNING"
+    }
+
     $iisPath = "IIS:\Sites\$siteName\$appVirtPath"
 
     Set-WebConfigurationProperty `

@@ -203,6 +203,39 @@ CREATE DATABASE [ITDeskDB];
 "@
     if (Invoke-Sql -Query $createDB) {
         Write-Log "ITDeskDB created." "SUCCESS"
+
+        # Ensure the current Windows login has dbo access to the new database.
+        # On some SQL configurations the creator login is not auto-mapped as dbo.
+        Start-Sleep -Seconds 2  # Brief pause for DB to come fully online
+        $currentLogin = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $ensureAccess = @"
+USE [ITDeskDB];
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$currentLogin')
+BEGIN
+    CREATE USER [$currentLogin] FOR LOGIN [$currentLogin];
+END
+ALTER ROLE db_owner ADD MEMBER [$currentLogin];
+"@
+        $null = Invoke-Sql -Query $ensureAccess
+        # Also try setting ownership at the server level (works if we have sysadmin)
+        $null = Invoke-Sql -Query "ALTER AUTHORIZATION ON DATABASE::[ITDeskDB] TO [$currentLogin]"
+
+        # Verify connectivity to the new database (retry up to 3 times)
+        $retries = 3
+        $connected = $false
+        for ($i = 1; $i -le $retries; $i++) {
+            $testConn = Invoke-Sql -Database "ITDeskDB" -Query "SELECT 1" -ReturnReader
+            if ($testConn) {
+                $connected = $true
+                break
+            }
+            Write-Log "Waiting for ITDeskDB to become accessible (attempt $i/$retries)..." "WARNING"
+            Start-Sleep -Seconds 3
+        }
+        if (-not $connected) {
+            Write-Log "Cannot connect to ITDeskDB after creation. Check that '$currentLogin' has access to the BADSQL instance." "ERROR"
+            exit 1
+        }
     } else {
         Write-Log "Failed to create ITDeskDB." "ERROR"
         exit 1
@@ -1035,6 +1068,14 @@ try {
 
     # Enable Windows Authentication, disable Anonymous for /apps/helpdesk
     # (survives Blue Team disabling Basic Auth globally)
+    # First, unlock the authentication sections at the server level so they can be overridden per-app
+    try {
+        $appcmd = "$env:SystemRoot\System32\inetsrv\appcmd.exe"
+        & $appcmd unlock config -section:system.webServer/security/authentication/windowsAuthentication 2>$null
+        & $appcmd unlock config -section:system.webServer/security/authentication/anonymousAuthentication 2>$null
+    } catch {
+        Write-Log "Could not unlock IIS auth sections via appcmd (non-fatal): $_" "WARNING"
+    }
     Set-WebConfigurationProperty -Filter "system.webServer/security/authentication/windowsAuthentication" `
         -Name "enabled" -Value $true `
         -PSPath "IIS:\Sites\$siteName\apps\helpdesk" -ErrorAction SilentlyContinue
