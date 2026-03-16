@@ -74,7 +74,6 @@ if (Test-Path (Join-Path $NamesDir "familynames-usa-top1000.txt")) {
 $DeptsCSVPath = Join-Path $PSScriptRoot "..\AD_Data\AD_Departments.csv"
 $JobTitlesCSVPath = Join-Path $PSScriptRoot "..\AD_Data\jobtitles.csv"
 $OfficesCSVPath = Join-Path $PSScriptRoot "..\AD_Data\offices.csv"
-$OrgHierarchyCSVPath = Join-Path $PSScriptRoot "..\AD_Data\org_hierarchy.csv"
 
 # Try to load CSVs if available (fallback method)
 $csvDepts = @()
@@ -97,8 +96,51 @@ if (Test-Path $OfficesCSVPath) {
     )
 }
 
-$global:OrgHierarchy = @()
-if (Test-Path $OrgHierarchyCSVPath) { $global:OrgHierarchy = Import-Csv $OrgHierarchyCSVPath }
+# 1B2. Build title-to-level lookup and level-based salary/bonus helper
+# Levels 1-8 map to realistic corporate compensation bands
+$global:TitleLevelMap = @{}
+foreach ($j in $csvJobs) { $global:TitleLevelMap[$j.Title] = [int]$j.Level }
+
+function Get-LevelCompensation {
+    param([int]$Level)
+    # Realistic corporate salary bands by level (annual USD)
+    #   Level 1: C-suite (CEO)           350k-500k
+    #   Level 2: C-suite (CxO)           250k-400k
+    #   Level 3: VP                       190k-300k
+    #   Level 4: Director                 150k-230k
+    #   Level 5: Manager                  115k-175k
+    #   Level 6: Senior IC                90k-140k
+    #   Level 7: Team Lead / Mid IC       72k-110k
+    #   Level 8: Individual Contributor   50k-80k
+    $bands = @{
+        1 = @{ Min = 350000; Max = 500000; BonusMin = 25; BonusMax = 50; StockMin = 8000;  StockMax = 25000 }
+        2 = @{ Min = 250000; Max = 400000; BonusMin = 20; BonusMax = 40; StockMin = 5000;  StockMax = 15000 }
+        3 = @{ Min = 190000; Max = 300000; BonusMin = 15; BonusMax = 30; StockMin = 3000;  StockMax = 10000 }
+        4 = @{ Min = 150000; Max = 230000; BonusMin = 12; BonusMax = 25; StockMin = 2000;  StockMax = 7000  }
+        5 = @{ Min = 115000; Max = 175000; BonusMin = 8;  BonusMax = 20; StockMin = 1000;  StockMax = 4000  }
+        6 = @{ Min = 90000;  Max = 140000; BonusMin = 5;  BonusMax = 15; StockMin = 500;   StockMax = 2500  }
+        7 = @{ Min = 72000;  Max = 110000; BonusMin = 3;  BonusMax = 10; StockMin = 100;   StockMax = 1500  }
+        8 = @{ Min = 50000;  Max = 80000;  BonusMin = 0;  BonusMax = 8;  StockMin = 0;     StockMax = 500   }
+    }
+    $band = if ($bands.ContainsKey($Level)) { $bands[$Level] } else { $bands[8] }
+    $salary = Get-Random -Minimum $band.Min -Maximum ($band.Max + 1)
+    $bonus  = Get-Random -Minimum $band.BonusMin -Maximum ($band.BonusMax + 1)
+    $stock  = Get-Random -Minimum $band.StockMin -Maximum ($band.StockMax + 1)
+    return @{ Salary = $salary; BonusPct = $bonus; Stock = $stock }
+}
+
+function Get-TitleLevel {
+    param([string]$Title)
+    if ($global:TitleLevelMap.ContainsKey($Title)) { return $global:TitleLevelMap[$Title] }
+    # Heuristic fallback for titles not in CSV
+    if ($Title -match '^Chief ')       { return 2 }
+    if ($Title -match '^VP ')          { return 3 }
+    if ($Title -match '^Director ')    { return 4 }
+    if ($Title -match '^Manager |Manager$') { return 5 }
+    if ($Title -match '^Senior ')      { return 6 }
+    if ($Title -match 'Lead')          { return 7 }
+    return 8
+}
 
 # 1C. Build Dynamic Department Contexts - PREFER AD DATA OVER CSVs
 $global:DepartmentContexts = @{}
@@ -707,7 +749,9 @@ function New-PerformanceReviewContent {
     )
 
     $score = Get-Random -Minimum 3 -Maximum 6 # 3 to 5 out of 5
-    $salary = Get-Random -Minimum 65000 -Maximum 145000
+    $lvl = Get-TitleLevel -Title $User.Title
+    $comp = Get-LevelCompensation -Level $lvl
+    $salary = $comp.Salary
 
     $content = @"
 ======================================================================
@@ -720,7 +764,7 @@ Job Title: $($User.Title)
 Review Date: $(Get-RandomDate -DaysBack 60)
 Reviewing Manager: $ManagerName
 Current Base Salary: $("{0:C0}" -f $salary)
-Recommended Bonus: $("{0:C0}" -f ($salary * (Get-Random -Min 4 -Max 15) / 100))
+Recommended Bonus: $("{0:C0}" -f ($salary * $comp.BonusPct / 100))
 
 ----------------------------------------------------------------------
 PERFORMANCE RATING: $score / 5
@@ -858,9 +902,11 @@ function New-EmployeeRosterCSV {
         }
         
         $hire = Get-RandomDate -DaysBack 3000
-        $sal = Get-Random -Minimum 45000 -Maximum 185000
-        $bonus = Get-Random -Minimum 0 -Maximum 25
-        $stock = Get-Random -Minimum 0 -Maximum 5000 # Added Equity/Options for realism
+        $lvl = Get-TitleLevel -Title $title
+        $comp = Get-LevelCompensation -Level $lvl
+        $sal = $comp.Salary
+        $bonus = $comp.BonusPct
+        $stock = $comp.Stock
         $ssn = Get-RandomSSN
         $phone = "(555) $(Get-Random -Min 100 -Max 999)-$(Get-Random -Min 1000 -Max 9999)"
         
@@ -2362,7 +2408,10 @@ if (Test-Path $netlogonPath) {
 
 Add-Type -AssemblyName System.Drawing
 
-$netlogon  = "\\$env:LOGONSERVER\NETLOGON"
+# prefer LOGONSERVER but fall back to local machine name if unset (e.g. on a DC logon)
+# LOGONSERVER is normally a UNC (\\DCNAME), so strip any leading backslashes
+$logonSrv = if ($env:LOGONSERVER) { $env:LOGONSERVER.TrimStart('\') } else { $env:COMPUTERNAME }
+$netlogon  = "\\$logonSrv\NETLOGON"
 $bgSource  = "$netlogon\Background.png"
 $outDir    = "$env:APPDATA\Microsoft\Wallpaper"
 $outFile   = "$outDir\desktop.bmp"
@@ -2381,11 +2430,28 @@ try {
                    Select-Object -ExpandProperty IPAddress) -join ', '
     if (-not $ipAddrs) { $ipAddrs = (ipconfig | Select-String 'IPv4' | ForEach-Object { ($_ -split ':')[1].Trim() }) -join ', ' }
 
-    $adUser = $null
-    try { $adUser = Get-ADUser $username -Properties DisplayName,Title,Department -ErrorAction Stop } catch {}
-    $displayName = if ($adUser.DisplayName) { $adUser.DisplayName } else { $username }
-    $title       = if ($adUser.Title)       { $adUser.Title }       else { '' }
-    $dept        = if ($adUser.Department)  { $adUser.Department }  else { '' }
+    $displayName = $username
+    $title       = ''
+    $dept        = ''
+    # Bind directly to the DC via ADSI using the logon server name - far more
+    # reliable than serverless DirectorySearcher during early logon.
+    try {
+        $root = [ADSI]"LDAP://$logonSrv/RootDSE"
+        $base = $root.defaultNamingContext
+        $searcher = New-Object DirectoryServices.DirectorySearcher(
+            [ADSI]"LDAP://$logonSrv/$base",
+            "(&(objectClass=user)(sAMAccountName=$username))",
+            @('displayName','title','department'),
+            [System.DirectoryServices.SearchScope]::Subtree
+        )
+        $result = $searcher.FindOne()
+        if ($result) {
+            $p = $result.Properties
+            if ($p['displayName'])  { $displayName = $p['displayName'][0] }
+            if ($p['title'])        { $title       = $p['title'][0] }
+            if ($p['department'])   { $dept        = $p['department'][0] }
+        }
+    } catch {}
 
     $lines = @(
         "User:        $displayName ($username)"
@@ -2460,8 +2526,15 @@ public class Wallpaper {
     $logonBat = Join-Path $netlogonPath 'logon.bat'
     $logonContent = @'
 @echo off
-net use H: \\%LOGONSERVER%\CorpData\Users\%USERNAME% /persistent:yes >nul 2>&1
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\\%LOGONSERVER%\NETLOGON\Set-Wallpaper.ps1" >nul 2>&1
+:: ensure we have a server name; some sessions (notably local DC logons)
+:: may not set LOGONSERVER, so fall back to COMPUTERNAME.
+set "LOGONSRV=%LOGONSERVER%"
+if "%LOGONSRV%"=="" set "LOGONSRV=%COMPUTERNAME%"
+:: strip leading \\ if present (LOGONSERVER comes in as \\\NAME)
+if "%LOGONSRV:~0,2%"=="\\" set "LOGONSRV=%LOGONSRV:~2%"
+
+net use H: \\\%LOGONSRV%\CorpData\Users\%USERNAME% /persistent:yes >nul 2>&1
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\\%LOGONSRV%\NETLOGON\Set-Wallpaper.ps1" >nul 2>&1
 '@
     Set-Content -Path $logonBat -Value $logonContent -Encoding ASCII
     Write-Host "[+] logon.bat deployed to NETLOGON" -ForegroundColor Green

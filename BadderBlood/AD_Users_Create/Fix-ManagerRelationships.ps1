@@ -1,13 +1,13 @@
 ################################
 # Fix-ManagerRelationships.ps1 - BadderBlood Manager Relationship Fixer
 # Runs after user creation to ensure all manager relationships are properly set
-# based on the org_hierarchy.csv, particularly for high-level executives.
+# based on jobtitles.csv (ReportsTo column), particularly for high-level executives.
 ################################
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string]$OrgHierarchyPath,
+    [string]$JobTitlesPath,
     
     [Parameter(Mandatory = $false)]
     [switch]$WhatIf
@@ -21,20 +21,20 @@ try {
     exit 1
 }
 
-# Load org hierarchy
-if (-not $OrgHierarchyPath) {
+# Load job titles (contains ReportsTo hierarchy column)
+if (-not $JobTitlesPath) {
     $scriptPath = Split-Path -Parent $PSCommandPath
     $scriptParent = (Get-Item $scriptPath).Parent.FullName
-    $OrgHierarchyPath = Join-Path $scriptParent "AD_Data\org_hierarchy.csv"
+    $JobTitlesPath = Join-Path $scriptParent "AD_Data\jobtitles.csv"
 }
 
-if (-not (Test-Path $OrgHierarchyPath)) {
-    Write-Error "Org hierarchy file not found: $OrgHierarchyPath"
+if (-not (Test-Path $JobTitlesPath)) {
+    Write-Error "Job titles file not found: $JobTitlesPath"
     exit 1
 }
 
-$orgHierarchy = Import-Csv $OrgHierarchyPath
-Write-Host "[*] Loaded org hierarchy with $($orgHierarchy.Count) titles" -ForegroundColor Cyan
+$orgHierarchy = Import-Csv $JobTitlesPath
+Write-Host "[*] Loaded job titles (with hierarchy) - $($orgHierarchy.Count) titles" -ForegroundColor Cyan
 
 # Get all enabled users
 Write-Host "[*] Querying all enabled users from $setDC ..." -ForegroundColor Cyan
