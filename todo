@@ -1,3 +1,5 @@
 - Invoke-BadderBlood should run Generate-OrgChart and the modularized answer key script all in one go
 - Enable Anonymous Access for SMB
 - People's compensation for the Corp CSV and SQL system should probably be based on a range based on their 1-8 corporate level
+- No AD user should have two or more resumes in their FS
+- Meeting notes and other stuff BadFS generates can and often does not include the actual user whose folder we're in (like in Alice's folder, it will says bob and john discussed XYZ in a meeting but then why does Alice have the meeting file in her folder???)

@@ -162,7 +162,7 @@ Stored procedures: `usp_SubmitTicket`, `usp_GetOpenTickets`, `usp_ResolveTicket`
 ---
 
 ### Phase 6 — Email Simulation
-**Pre-requisite:** Install **hMailServer** (free) manually on the DC/mail host before running Deploy-MailServer.ps1
+**Pre-requisite:** Install **hMailServer** (free) manually on the DC/mail host before running Deploy-MailServer.ps1 from https://www.hmailserver.com/download_getfile?performdownload=1&downloadid=271
 **Deploy script:** `Deploy-MailServer.ps1` | **Runs on:** DC / mail host (Domain Admin)
 **Runtime script:** `Invoke-EmailSimulator.ps1` | **Runs on:** Simulator VM
 
