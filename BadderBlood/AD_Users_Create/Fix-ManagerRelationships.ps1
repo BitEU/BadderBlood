@@ -36,6 +36,14 @@ if (-not (Test-Path $JobTitlesPath)) {
 $orgHierarchy = Import-Csv $JobTitlesPath
 Write-Host "[*] Loaded job titles (with hierarchy) - $($orgHierarchy.Count) titles" -ForegroundColor Cyan
 
+# Build hierarchy map: title -> ReportsTo (for ancestor walking)
+$hierarchyMap = @{}
+foreach ($entry in $orgHierarchy) {
+    if (-not [string]::IsNullOrEmpty($entry.ReportsTo)) {
+        $hierarchyMap[$entry.Title] = $entry.ReportsTo
+    }
+}
+
 # Get all enabled users
 Write-Host "[*] Querying all enabled users from $setDC ..." -ForegroundColor Cyan
 $allUsers = Get-ADUser -Filter { Enabled -eq $true } -Properties Title,Manager,DistinguishedName,DisplayName -Server $setDC
@@ -71,14 +79,35 @@ foreach ($entry in $orgHierarchy) {
         continue
     }
     
-    # Find potential managers (users with the ReportsTo title)
-    if (-not $usersByTitle.ContainsKey($reportsTo)) {
-        Write-Warning "No manager found for title '$title' (should report to '$reportsTo')"
+    # Find potential managers - walk up the hierarchy if direct manager title has no users
+    $resolvedManagerTitle = $reportsTo
+    $potentialManagers = $null
+    $ancestorDepth = 0
+    $maxAncestors = 5
+
+    while ($ancestorDepth -lt $maxAncestors) {
+        if ($usersByTitle.ContainsKey($resolvedManagerTitle)) {
+            $potentialManagers = $usersByTitle[$resolvedManagerTitle]
+            break
+        }
+        # Walk up: check if this title itself has a parent
+        if ($hierarchyMap.ContainsKey($resolvedManagerTitle)) {
+            $nextUp = $hierarchyMap[$resolvedManagerTitle]
+            if ([string]::IsNullOrEmpty($nextUp)) { break }
+            Write-Warning "No users with title '$resolvedManagerTitle' for '$title' - trying '$nextUp'"
+            $resolvedManagerTitle = $nextUp
+            $ancestorDepth++
+        } else {
+            break
+        }
+    }
+
+    if (-not $potentialManagers -or $potentialManagers.Count -eq 0) {
+        Write-Warning "No manager found for title '$title' (exhausted hierarchy from '$reportsTo')"
         continue
     }
-    
+
     $usersToFix = $usersByTitle[$title]
-    $potentialManagers = $usersByTitle[$reportsTo]
     
     foreach ($user in $usersToFix) {
         # If user already has a manager set, skip
@@ -90,13 +119,15 @@ foreach ($entry in $orgHierarchy) {
         # Assign a random manager from the pool with the correct title
         $manager = $potentialManagers | Get-Random
         
+        $fallbackNote = if ($resolvedManagerTitle -ne $reportsTo) { " [fallback from '$reportsTo']" } else { "" }
+
         if ($WhatIf) {
-            Write-Host "  [WHATIF] Would set manager for $($user.DisplayName) ($title) -> $($manager.DisplayName) ($reportsTo)" -ForegroundColor Yellow
+            Write-Host "  [WHATIF] Would set manager for $($user.DisplayName) ($title) -> $($manager.DisplayName) ($resolvedManagerTitle)$fallbackNote" -ForegroundColor Yellow
             $fixed++
         } else {
             try {
                 Set-ADUser -Identity $user.DistinguishedName -Manager $manager.DistinguishedName -Server $setDC -ErrorAction Stop
-                Write-Host "  [+] Set manager: $($user.DisplayName) ($title) -> $($manager.DisplayName) ($reportsTo)" -ForegroundColor Green
+                Write-Host "  [+] Set manager: $($user.DisplayName) ($title) -> $($manager.DisplayName) ($resolvedManagerTitle)$fallbackNote" -ForegroundColor Green
                 $fixed++
             } catch {
                 Write-Warning "Failed to set manager for $($user.DisplayName): $_"

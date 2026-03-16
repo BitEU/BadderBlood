@@ -21,7 +21,13 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 5. Download this repo, extract it to the C drive with a path of ```C:\BadderBlood```
 6. Run ```Get-ChildItem -Path C:\BadderBlood -Recurse | Unblock-File```
 7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\Invoke-BadderBlood.ps1```
-8. Once BadderBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\BadderBlood\BadderBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
+8. Once BadderBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\content\BadderBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
+9. Once the core AD/GPO stuff is run, you can move on to the three services. Run, in this order, these commands:
+    a. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadFS.ps1```
+    b. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadIIS.ps1```
+    c. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadSQL.ps1```
+10. Once that is set up, download the file from this link and install the software: https://www.hmailserver.com/download_getfile?performdownload=1&downloadid=271
+11. Once hmailserver is setup, run ```powershell.exe -ExecutionPolicy Bypass -File C:\Simulator\Invoke-ContinuousActivitySimulator.ps1 -HMailAdminPassword "MyP@ssw0rd" -LabSubnet "192.168.10.0/24"```
 
 
 ## Instalation on QEMU
