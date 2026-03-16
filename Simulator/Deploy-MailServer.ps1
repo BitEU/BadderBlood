@@ -61,7 +61,7 @@
 
 param(
     [string]$SqlInstance                  = "localhost\BADSQL",
-    [SecureString]$HMailAdminPassword     = $null,
+    [string]$HMailAdminPassword            = "",
     [SecureString]$SharedPassword         = $null,
     [string]$SimulatorPath                = "C:\Simulator",
     [string]$LabSubnet                    = "192.168.0.0/16",
@@ -159,16 +159,16 @@ if (-not $hmsInstalled) {
 
 Write-Log "Resolving hMailServer admin credential..." "STEP"
 
-if (-not $HMailAdminPassword) {
+if ([string]::IsNullOrEmpty($HMailAdminPassword)) {
     if ($NonInteractive) {
         Write-Log "-HMailAdminPassword is required in NonInteractive mode." "ERROR"
         exit 1
     }
     Write-Log "Prompting for hMailServer administrator password (set during install)." "INFO"
-    $HMailAdminPassword = Read-Host "hMailServer admin password" -AsSecureString
+    $HMailAdminPassword = Read-Host "hMailServer admin password"
 }
 
-$hmsAdminPlain = ConvertFrom-SecureStringPlain $HMailAdminPassword
+$hmsAdminPlain = $HMailAdminPassword
 $sharedPlain   = ConvertFrom-SecureStringPlain $SharedPassword
 
 # ==============================================================================

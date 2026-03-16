@@ -101,7 +101,7 @@ param(
     [string]$SimulatorPath            = "C:\Simulator",
     [string]$IisBasePath              = "C:\inetpub\SpringfieldBoxFactory",
     [int]$Phase4UserCount             = 40,
-    [SecureString]$HMailAdminPassword  = $null,  # Required for Phase 6
+    [string]$HMailAdminPassword        = "",      # Required for Phase 6
     [string]$LabSubnet                = "192.168.0.0/16",
     [switch]$SkipPhase1,
     [switch]$SkipPhase2,
@@ -399,10 +399,10 @@ if (-not $SkipPhase6) {
     }
 
     # Phase 6 requires hMailAdminPassword
-    if (-not $HMailAdminPassword) {
+    if ([string]::IsNullOrEmpty($HMailAdminPassword)) {
         if (-not $NonInteractive) {
             Write-Log "hMailServer admin password required for Phase 6." "WARNING"
-            $HMailAdminPassword = Read-Host "Enter hMailServer administrator password" -AsSecureString
+            $HMailAdminPassword = Read-Host "Enter hMailServer administrator password"
         } else {
             Write-Log "Phase 6 requires -HMailAdminPassword. Skipping in NonInteractive mode." "WARNING"
             $SkipPhase6 = $true
