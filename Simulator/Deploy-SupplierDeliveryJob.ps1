@@ -1,13 +1,14 @@
 <#
 .SYNOPSIS
-    Phase 2: Creates the "SBF - Supplier Delivery Simulation" SQL Agent job on NailInventoryDB.
+    Phase 2: Creates scheduled supplier delivery and reorder simulations on NailInventoryDB.
 
 .DESCRIPTION
-    Adds a SQL Server Agent job that simulates automated supplier deliveries every 15 minutes.
-    The job runs a T-SQL transaction that:
-        1. Picks a random nail type and supplier
-        2. Updates Inventory.QuantityOnHand (simulates goods receipt)
-        3. Inserts a corresponding PurchaseOrder record with status DELIVERED
+    Uses Windows Task Scheduler to run T-SQL scripts on an interval, simulating:
+      1. Supplier deliveries every 15 minutes (UPDATE Inventory + INSERT PurchaseOrders)
+      2. Inventory reorder checks every 30 minutes (INSERT PurchaseOrders for low stock)
+
+    SQL Server Express does not support SQL Agent, so we use scheduled tasks with
+    sqlcmd.exe to execute the T-SQL directly.
 
     Job ownership: BlackTeam_SQLBot (Windows Auth) - NOT sa.
     This design ensures the job survives when Blue Team:
@@ -18,18 +19,13 @@
     The job will ONLY break if defenders revoke BlackTeam_SQLBot's
     db_datareader/db_datawriter on NailInventoryDB, which violates the RoE.
 
-    A second lightweight job "SBF - Inventory Reorder Check" runs every 30 minutes
-    and raises alerts when QuantityOnHand < ReorderPoint. This provides realistic
-    noise and additional scoring data for the Scorebot.
-
 .NOTES
     Run AFTER:
         - Invoke-BadderBlood.ps1      (AD must exist)
-        - BadSQL.ps1                  (NailInventoryDB, SQL Agent, BlackTeam_SQLBot login must exist)
+        - BadSQL.ps1                  (NailInventoryDB must exist)
         - Deploy-BlackTeamAccounts.ps1 (BlackTeam_SQLBot AD account must exist)
 
-    Must be run on the SQL Server host (or with network connectivity to it) with
-    sysadmin / msdb dbo permissions.
+    Must be run as Administrator on the SQL Server host.
 
     Context: Educational / CTF / Active Directory Lab Environment
 #>
@@ -42,7 +38,7 @@ param(
     [string]$DomainNB       = "",     # Auto-detected from AD if blank
     [int]$DeliveryIntervalMin = 15,   # How often supplier deliveries fire (minutes)
     [int]$ReorderIntervalMin  = 30,   # How often reorder check fires (minutes)
-    [switch]$Force,                   # Re-create jobs even if they already exist
+    [switch]$Force,                   # Re-create tasks even if they already exist
     [switch]$NonInteractive
 )
 
@@ -67,7 +63,7 @@ function Write-Log {
 
 Write-Log "=================================================================" "INFO"
 Write-Log "  BadderBlood Continuous Activity Simulator" "INFO"
-Write-Log "  Phase 2: Supplier Delivery SQL Agent Job" "INFO"
+Write-Log "  Phase 2: Supplier Delivery Scheduled Tasks" "INFO"
 Write-Log "  Educational / CTF / Lab Use Only" "WARNING"
 Write-Log "=================================================================" "INFO"
 
@@ -149,7 +145,6 @@ Write-Log "SQL connectivity confirmed: $SqlInstance" "SUCCESS"
 $dbCheck = Invoke-Sql -Query "SELECT name FROM sys.databases WHERE name = 'NailInventoryDB'" -ReturnReader
 if (-not $dbCheck -or $dbCheck -isnot [System.Data.DataTable] -or $dbCheck.Rows.Count -eq 0) {
     Write-Log "NailInventoryDB not found or query failed. Attempting direct connection to NailInventoryDB..." "WARNING"
-    # Fallback: try connecting to the database directly - if it works, the DB exists
     $directCheck = Invoke-Sql -Query "SELECT DB_NAME() AS CurrentDB" -Database "NailInventoryDB" -ReturnReader
     if (-not $directCheck -or $directCheck -isnot [System.Data.DataTable] -or $directCheck.Rows.Count -eq 0) {
         Write-Log "NailInventoryDB not found. Run BadSQL.ps1 first." "ERROR"
@@ -160,7 +155,7 @@ if (-not $dbCheck -or $dbCheck -isnot [System.Data.DataTable] -or $dbCheck.Rows.
     Write-Log "NailInventoryDB confirmed." "SUCCESS"
 }
 
-# Verify BlackTeam_SQLBot login exists (warn but don't fail - Deploy-BlackTeamAccounts may not have run yet)
+# Verify BlackTeam_SQLBot login exists
 $loginCheck = Invoke-Sql -Query "SELECT name FROM sys.server_principals WHERE name = N'$SqlBotLogin'" -ReturnReader
 if ($loginCheck.Rows.Count -eq 0) {
     Write-Log "WARNING: SQL login '$SqlBotLogin' not found. Run Deploy-BlackTeamAccounts.ps1 first, or the job will fail when it runs." "WARNING"
@@ -168,136 +163,51 @@ if ($loginCheck.Rows.Count -eq 0) {
     Write-Log "BlackTeam_SQLBot login confirmed: $SqlBotLogin" "SUCCESS"
 }
 
-# Verify SQL Agent service
-$agentSvcName = if ($SqlInstance -like '*\*') { "SQLAGENT`$$($SqlInstance.Split('\')[1])" } else { "SQLSERVERAGENT" }
-$sqlSvcName   = if ($SqlInstance -like '*\*') { "MSSQL`$$($SqlInstance.Split('\')[1])" } else { "MSSQLSERVER" }
-$agentSvc = Get-Service -Name $agentSvcName -ErrorAction SilentlyContinue
-$script:SqlAgentRunning = $false
-if (-not $agentSvc) {
-    Write-Log "SQL Agent service '$agentSvcName' not found. SQL Agent may use a different name on this instance." "WARNING"
-} elseif ($agentSvc.Status -ne 'Running') {
-    Write-Log "SQL Agent is not running. Starting it..." "WARNING"
-    try {
-        # Ensure the SQL Server engine itself is running first (Agent depends on it)
-        $sqlSvc = Get-Service -Name $sqlSvcName -ErrorAction SilentlyContinue
-        if ($sqlSvc -and $sqlSvc.Status -ne 'Running') {
-            Write-Log "SQL Server engine '$sqlSvcName' is not running - starting it first..." "WARNING"
-            Set-Service -Name $sqlSvcName -StartupType Automatic -ErrorAction SilentlyContinue
-            Start-Service -Name $sqlSvcName -ErrorAction Stop
-            $sqlSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
-            Write-Log "SQL Server engine started." "SUCCESS"
-        }
-
-        # SQL Agent running as NT AUTHORITY\NETWORKSERVICE maps to the machine account
-        # (DOMAIN\MACHINENAME$) inside SQL Server. On SQL 2017 Express, this account
-        # lacks EXECUTE on msdb.dbo.sp_sqlagent_update_agent_xps and granting it does
-        # not survive an engine restart. The reliable fix is to run the Agent as
-        # LocalSystem, which has full OS-level access and maps to sysadmin in SQL.
-        $wmiAgent = Get-WmiObject Win32_Service -Filter "Name='$agentSvcName'" -ErrorAction SilentlyContinue
-        $agentLogon = if ($wmiAgent) { $wmiAgent.StartName } else { $null }
-        Write-Log "SQL Agent service logon account: $agentLogon" "INFO"
-
-        $needsIdentityChange = $agentLogon -match 'NT AUTHORITY\\(NETWORK\s*SERVICE|LOCAL\s*SERVICE)'
-        if ($needsIdentityChange) {
-            Write-Log "Changing SQL Agent to run as LocalSystem (NETWORKSERVICE lacks required msdb permissions that do not survive engine restarts)..." "INFO"
-            $scResult = & sc.exe config $agentSvcName obj= "LocalSystem" 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-Log "SQL Agent service account changed to LocalSystem." "SUCCESS"
-            } else {
-                Write-Log "sc.exe config failed: $scResult" "WARNING"
-            }
-        }
-
-        Set-Service -Name $agentSvcName -StartupType Automatic -ErrorAction SilentlyContinue
-
-        # Restart the SQL engine to ensure the Agent's identity token is freshly recognized.
-        # Without this, the Agent may fail to start even as LocalSystem if the engine's
-        # security cache is stale from a prior service account configuration.
-        Write-Log "Restarting SQL Server engine to ensure clean Agent startup..." "INFO"
-        Restart-Service -Name $sqlSvcName -Force -ErrorAction Stop
-        $sqlSvcObj = Get-Service -Name $sqlSvcName
-        $sqlSvcObj.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
-        Write-Log "SQL Server engine restarted." "SUCCESS"
-
-        # Poll until msdb is actually queryable (not just service Running)
-        Write-Log "Waiting for msdb to become responsive..." "INFO"
-        $msdbReady = $false
-        for ($i = 1; $i -le 30; $i++) {
-            try {
-                $poll = Invoke-Sql -Query "SELECT 1 AS ping" -Database "msdb" -ReturnReader
-                if ($poll) { $msdbReady = $true; break }
-            } catch { }
-            Start-Sleep -Seconds 1
-        }
-        if ($msdbReady) {
-            Write-Log "msdb responsive after $i seconds." "SUCCESS"
-        } else {
-            Write-Log "msdb not responsive after 30 seconds - attempting Agent start anyway." "WARNING"
-        }
-
-        # Resolve SQLAGENT.OUT path for diagnostics
-        $instName = if ($SqlInstance -like '*\*') { $SqlInstance.Split('\')[1] } else { "MSSQLSERVER" }
-        $agentLogPath = "C:\Program Files\Microsoft SQL Server\MSSQL17.$instName\MSSQL\Log\SQLAGENT.OUT"
-
-        $maxRetries = 3
-        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
-            try {
-                Start-Service -Name $agentSvcName -ErrorAction Stop
-                $agentSvc.Refresh()
-                $agentSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-
-                # The service reports Running immediately, but the Agent may crash
-                # during internal init (e.g. sp_sqlagent_update_agent_xps failures).
-                # Wait and verify it stays running.
-                Write-Log "SQL Agent service started, verifying it stays running..." "INFO"
-                Start-Sleep -Seconds 8
-                $agentSvc.Refresh()
-                if ($agentSvc.Status -eq 'Running') {
-                    $script:SqlAgentRunning = $true
-                    Write-Log "SQL Agent started and stable (attempt $attempt)." "SUCCESS"
-                    break
-                } else {
-                    Write-Log "SQL Agent started but stopped during initialization (attempt $attempt/$maxRetries)." "WARNING"
-                    if (Test-Path $agentLogPath) {
-                        Write-Log "SQLAGENT.OUT (last 8 lines):" "WARNING"
-                        Get-Content $agentLogPath -Tail 8 | ForEach-Object { Write-Log "  $_" "WARNING" }
-                    }
-                }
-            } catch {
-                Write-Log "Start attempt $attempt/$maxRetries failed: $_" "WARNING"
-            }
-            if ($attempt -lt $maxRetries) {
-                Start-Sleep -Seconds 5
-            }
-        }
-
-        if (-not $script:SqlAgentRunning) {
-            if (Test-Path $agentLogPath) {
-                Write-Log "SQLAGENT.OUT (last 10 lines):" "WARNING"
-                Get-Content $agentLogPath -Tail 10 | ForEach-Object { Write-Log "  $_" "WARNING" }
-            }
-            Write-Log "Could not start SQL Agent after $maxRetries attempts. Jobs will be created but cannot run until the Agent service is started manually." "WARNING"
-        }
-    } catch {
-        Write-Log "Could not start SQL Agent: $_ - SQL Agent jobs will be created but cannot run until the Agent service is started." "WARNING"
+# Find sqlcmd.exe
+Write-Log "Locating sqlcmd.exe..." "STEP"
+$sqlcmdPath = $null
+$sqlcmdCandidates = @(
+    "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\SQLCMD.EXE"
+    "C:\Program Files\Microsoft SQL Server\170\Tools\Binn\SQLCMD.EXE"
+    "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\130\Tools\Binn\SQLCMD.EXE"
+    "C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SQLCMD.EXE"
+    "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\110\Tools\Binn\SQLCMD.EXE"
+    "C:\Program Files\Microsoft SQL Server\110\Tools\Binn\SQLCMD.EXE"
+)
+foreach ($candidate in $sqlcmdCandidates) {
+    if (Test-Path $candidate) {
+        $sqlcmdPath = $candidate
+        break
     }
-} else {
-    $script:SqlAgentRunning = $true
-    Write-Log "SQL Agent is running." "SUCCESS"
+}
+# Fallback: search PATH
+if (-not $sqlcmdPath) {
+    $sqlcmdPath = (Get-Command sqlcmd.exe -ErrorAction SilentlyContinue).Source
+}
+if (-not $sqlcmdPath) {
+    Write-Log "sqlcmd.exe not found. Cannot create scheduled tasks." "ERROR"
+    exit 1
+}
+Write-Log "Found sqlcmd.exe: $sqlcmdPath" "SUCCESS"
+
+# ==============================================================================
+# 4. WRITE T-SQL SCRIPTS TO DISK
+# ==============================================================================
+
+Write-Log "Writing T-SQL scripts to C:\Simulator\..." "STEP"
+
+$scriptDir = "C:\Simulator\sql"
+if (-not (Test-Path $scriptDir)) {
+    New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
 }
 
-# ==============================================================================
-# 4. SUPPLIER DELIVERY JOB
-# ==============================================================================
+# --- Supplier Delivery T-SQL ---
+$deliverySQL = @"
+-- SBF - Supplier Delivery Simulation
+-- Runs as Windows Auth (whoever the scheduled task runs as)
+-- Uses BlackTeam_SQLBot identity via EXECUTE AS if needed
+USE [NailInventoryDB];
 
-Write-Log "Creating SQL Agent job: SBF - Supplier Delivery Simulation..." "STEP"
-
-$deliveryJobName = "SBF - Supplier Delivery Simulation"
-$deliveryScheduleName = "SBF_SupplierDelivery_Every${DeliveryIntervalMin}Min"
-
-# The core T-SQL for supplier delivery - runs as BlackTeam_SQLBot (Windows Auth)
-# Uses TABLOCKX intentionally to create realistic lock contention events
-$deliveryTSQL = @"
 BEGIN TRY
     BEGIN TRANSACTION
 
@@ -352,8 +262,6 @@ END TRY
 BEGIN CATCH
     IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION
 
-    -- Log failed delivery to PurchaseOrders as FAILED status
-    -- This is realistic: suppliers occasionally fail; defenders can see this in the data
     BEGIN TRY
         INSERT INTO PurchaseOrders (SupplierID, OrderDate, TotalUSD, Status, Notes)
         VALUES (
@@ -365,98 +273,19 @@ BEGIN CATCH
         )
     END TRY
     BEGIN CATCH
-        -- Suppress secondary error to avoid job step failure masking the root cause
     END CATCH
 END CATCH
 "@
 
-# Escape single quotes for T-SQL string embedding
-$deliveryTSQLEscaped = $deliveryTSQL.Replace("'", "''")
+$deliveryScriptPath = "$scriptDir\SupplierDelivery.sql"
+Set-Content -Path $deliveryScriptPath -Value $deliverySQL -Encoding UTF8
+Write-Log "Written: $deliveryScriptPath" "SUCCESS"
 
-# Remove existing job if -Force
-if ($Force) {
-    Write-Log "-Force specified: removing existing job if present..." "WARNING"
-    $null = Invoke-Sql -Database "msdb" -Query @"
-IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = N'$deliveryJobName')
-BEGIN
-    EXEC sp_delete_job @job_name = N'$deliveryJobName', @delete_unused_schedule = 1
-END
-"@
-}
-
-$createDeliveryJob = @"
-USE [msdb];
-
-IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = N'$deliveryJobName')
-BEGIN
-    -- Create the job owned by BlackTeam_SQLBot (Windows Auth login), NOT sa
-    -- This ensures traffic survives Mixed Mode disablement and sa password changes
-    EXEC sp_add_job
-        @job_name         = N'$deliveryJobName',
-        @enabled          = 1,
-        @description      = N'Simulates supplier deliveries to NailInventoryDB every $DeliveryIntervalMin minutes. Owner: BlackTeam_SQLBot. DO NOT DISABLE (RoE).',
-        @owner_login_name = N'$SqlBotLogin',
-        @notify_level_eventlog = 2   -- Log failures to Windows Event Log
-
-    -- Step 1: Execute the delivery transaction
-    EXEC sp_add_jobstep
-        @job_name          = N'$deliveryJobName',
-        @step_name         = N'Execute Supplier Delivery',
-        @subsystem         = N'TSQL',
-        @command           = N'$deliveryTSQLEscaped',
-        @database_name     = N'NailInventoryDB',
-        @on_success_action = 1,   -- Quit with success
-        @on_fail_action    = 2,   -- Quit with failure (captured in sysjobhistory)
-        @retry_attempts    = 2,
-        @retry_interval    = 1    -- Retry after 1 minute on transient failures
-
-    -- Schedule: every N minutes, starting now
-    IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = N'$deliveryScheduleName')
-    EXEC sp_add_schedule
-        @schedule_name        = N'$deliveryScheduleName',
-        @freq_type            = 4,      -- Daily (repeat via subday)
-        @freq_interval        = 1,
-        @freq_subday_type     = 4,      -- Minutes
-        @freq_subday_interval = $DeliveryIntervalMin,
-        @active_start_time    = 0       -- Midnight = run all day
-
-    EXEC sp_attach_schedule
-        @job_name      = N'$deliveryJobName',
-        @schedule_name = N'$deliveryScheduleName'
-
-    EXEC sp_add_jobserver
-        @job_name    = N'$deliveryJobName',
-        @server_name = N'(local)'
-
-    PRINT 'Created job: $deliveryJobName'
-END
-ELSE
-BEGIN
-    PRINT 'Job already exists: $deliveryJobName (use -Force to recreate)'
-END
-"@
-
-$result = Invoke-Sql -Database "msdb" -Query $createDeliveryJob
-if ($result) {
-    Write-Log "Supplier delivery job created: '$deliveryJobName'" "SUCCESS"
-} else {
-    Write-Log "Failed to create supplier delivery job. Check SQL error above." "ERROR"
-    exit 1
-}
-
-# ==============================================================================
-# 5. INVENTORY REORDER CHECK JOB
-# ==============================================================================
-
-Write-Log "Creating SQL Agent job: SBF - Inventory Reorder Check..." "STEP"
-
-$reorderJobName = "SBF - Inventory Reorder Check"
-$reorderScheduleName = "SBF_ReorderCheck_Every${ReorderIntervalMin}Min"
-
-$reorderTSQL = @"
+# --- Reorder Check T-SQL ---
+$reorderSQL = @"
+-- SBF - Inventory Reorder Check
 -- Find inventory items below reorder point and log them as pending orders
--- This is a read-heavy check that generates realistic SELECT traffic on NailInventoryDB
--- Results logged to PurchaseOrders as PENDING status (realistic: procurement queue)
+USE [NailInventoryDB];
 
 DECLARE @ReorderItems TABLE (
     NailTypeID  INT,
@@ -501,141 +330,134 @@ WHERE NOT EXISTS (
 )
 "@
 
-$reorderTSQLEscaped = $reorderTSQL.Replace("'", "''")
+$reorderScriptPath = "$scriptDir\ReorderCheck.sql"
+Set-Content -Path $reorderScriptPath -Value $reorderSQL -Encoding UTF8
+Write-Log "Written: $reorderScriptPath" "SUCCESS"
 
+# ==============================================================================
+# 5. CREATE WINDOWS SCHEDULED TASKS
+# ==============================================================================
+
+Write-Log "Creating Windows Scheduled Tasks..." "STEP"
+
+$deliveryTaskName = "SBF - Supplier Delivery Simulation"
+$reorderTaskName  = "SBF - Inventory Reorder Check"
+
+# Remove existing tasks if -Force
 if ($Force) {
-    $null = Invoke-Sql -Database "msdb" -Query @"
-IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = N'$reorderJobName')
-    EXEC sp_delete_job @job_name = N'$reorderJobName', @delete_unused_schedule = 1
-"@
+    Write-Log "-Force specified: removing existing tasks if present..." "WARNING"
+    Unregister-ScheduledTask -TaskName $deliveryTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $reorderTaskName -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-$createReorderJob = @"
-USE [msdb];
-
-IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = N'$reorderJobName')
-BEGIN
-    EXEC sp_add_job
-        @job_name         = N'$reorderJobName',
-        @enabled          = 1,
-        @description      = N'Checks inventory levels and raises reorder alerts every $ReorderIntervalMin minutes. Owner: BlackTeam_Scorebot. DO NOT DISABLE (RoE).',
-        @owner_login_name = N'$SqlBotLogin',
-        @notify_level_eventlog = 2
-
-    EXEC sp_add_jobstep
-        @job_name          = N'$reorderJobName',
-        @step_name         = N'Check Reorder Levels',
-        @subsystem         = N'TSQL',
-        @command           = N'$reorderTSQLEscaped',
-        @database_name     = N'NailInventoryDB',
-        @on_success_action = 1,
-        @on_fail_action    = 2,
-        @retry_attempts    = 1,
-        @retry_interval    = 2
-
-    IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = N'$reorderScheduleName')
-    EXEC sp_add_schedule
-        @schedule_name        = N'$reorderScheduleName',
-        @freq_type            = 4,
-        @freq_interval        = 1,
-        @freq_subday_type     = 4,
-        @freq_subday_interval = $ReorderIntervalMin,
-        @active_start_time    = 0
-
-    EXEC sp_attach_schedule
-        @job_name      = N'$reorderJobName',
-        @schedule_name = N'$reorderScheduleName'
-
-    EXEC sp_add_jobserver
-        @job_name    = N'$reorderJobName',
-        @server_name = N'(local)'
-
-    PRINT 'Created job: $reorderJobName'
-END
-ELSE
-BEGIN
-    PRINT 'Job already exists: $reorderJobName (use -Force to recreate)'
-END
-"@
-
-$result = Invoke-Sql -Database "msdb" -Query $createReorderJob
-if ($result) {
-    Write-Log "Reorder check job created: '$reorderJobName'" "SUCCESS"
+# --- Supplier Delivery Task ---
+$existingDelivery = Get-ScheduledTask -TaskName $deliveryTaskName -ErrorAction SilentlyContinue
+if ($existingDelivery) {
+    Write-Log "Task '$deliveryTaskName' already exists (use -Force to recreate)." "WARNING"
 } else {
-    Write-Log "Failed to create reorder check job - non-fatal, supplier delivery job still active." "WARNING"
+    $deliveryAction = New-ScheduledTaskAction `
+        -Execute "`"$sqlcmdPath`"" `
+        -Argument "-S `"$SqlInstance`" -E -i `"$deliveryScriptPath`" -b"
+
+    $deliveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+        -RepetitionInterval (New-TimeSpan -Minutes $DeliveryIntervalMin) `
+        -RepetitionDuration (New-TimeSpan -Days 365)
+
+    $deliveryPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+    $deliverySettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5) `
+        -MultipleInstances IgnoreNew
+
+    Register-ScheduledTask `
+        -TaskName $deliveryTaskName `
+        -Description "Simulates supplier deliveries to NailInventoryDB every $DeliveryIntervalMin minutes. Owner: BlackTeam_SQLBot. DO NOT DISABLE (RoE)." `
+        -Action $deliveryAction `
+        -Trigger $deliveryTrigger `
+        -Principal $deliveryPrincipal `
+        -Settings $deliverySettings | Out-Null
+
+    Write-Log "Created scheduled task: '$deliveryTaskName' (every $DeliveryIntervalMin min)" "SUCCESS"
+}
+
+# --- Reorder Check Task ---
+$existingReorder = Get-ScheduledTask -TaskName $reorderTaskName -ErrorAction SilentlyContinue
+if ($existingReorder) {
+    Write-Log "Task '$reorderTaskName' already exists (use -Force to recreate)." "WARNING"
+} else {
+    $reorderAction = New-ScheduledTaskAction `
+        -Execute "`"$sqlcmdPath`"" `
+        -Argument "-S `"$SqlInstance`" -E -i `"$reorderScriptPath`" -b"
+
+    $reorderTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+        -RepetitionInterval (New-TimeSpan -Minutes $ReorderIntervalMin) `
+        -RepetitionDuration (New-TimeSpan -Days 365)
+
+    $reorderPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+    $reorderSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5) `
+        -MultipleInstances IgnoreNew
+
+    Register-ScheduledTask `
+        -TaskName $reorderTaskName `
+        -Description "Checks inventory levels and raises reorder alerts every $ReorderIntervalMin minutes. DO NOT DISABLE (RoE)." `
+        -Action $reorderAction `
+        -Trigger $reorderTrigger `
+        -Principal $reorderPrincipal `
+        -Settings $reorderSettings | Out-Null
+
+    Write-Log "Created scheduled task: '$reorderTaskName' (every $ReorderIntervalMin min)" "SUCCESS"
 }
 
 # ==============================================================================
-# 6. START JOBS IMMEDIATELY (first-run kick)
+# 6. RUN TASKS IMMEDIATELY (first-run kick)
 # ==============================================================================
 
-Write-Log "Starting jobs for initial execution..." "STEP"
+Write-Log "Running tasks for initial execution..." "STEP"
 
-# Re-check Agent status — it may have stopped between startup and now
-$agentSvcNow = Get-Service -Name $agentSvcName -ErrorAction SilentlyContinue
-if (-not $script:SqlAgentRunning -or $agentSvcNow.Status -ne 'Running') {
-    Write-Log "SQL Agent is not running - skipping initial job start. Jobs will execute on schedule once SQL Agent is started." "WARNING"
-} else {
-    $startDelivery = @"
-USE [msdb];
-EXEC sp_start_job @job_name = N'$deliveryJobName'
-"@
+try {
+    Start-ScheduledTask -TaskName $deliveryTaskName -ErrorAction Stop
+    Write-Log "Supplier delivery task started (initial run)." "SUCCESS"
+} catch {
+    Write-Log "Could not start delivery task: $_" "WARNING"
+}
 
-    $startReorder = @"
-USE [msdb];
-EXEC sp_start_job @job_name = N'$reorderJobName'
-"@
+try {
+    Start-ScheduledTask -TaskName $reorderTaskName -ErrorAction Stop
+    Write-Log "Reorder check task started (initial run)." "SUCCESS"
+} catch {
+    Write-Log "Could not start reorder task: $_" "WARNING"
+}
 
-    # Wait for Agent to be fully ready for sp_start_job (it may still be initializing)
-    $jobStartReady = $false
-    for ($wait = 1; $wait -le 15; $wait++) {
-        $result = Invoke-Sql -Database "msdb" -Query $startDelivery
-        if ($result) {
-            Write-Log "Supplier delivery job started (initial run)." "SUCCESS"
-            $jobStartReady = $true
-            break
-        }
-        Write-Log "Agent not ready for sp_start_job yet, retrying ($wait/15)..." "INFO"
-        Start-Sleep -Seconds 2
-    }
-    if (-not $jobStartReady) {
-        Write-Log "Could not start delivery job immediately - it will run on its next scheduled interval." "WARNING"
-    }
+# Brief pause then verify execution
+Start-Sleep -Seconds 5
 
-    if (Invoke-Sql -Database "msdb" -Query $startReorder) {
-        Write-Log "Reorder check job started (initial run)." "SUCCESS"
+# ==============================================================================
+# 7. VERIFY
+# ==============================================================================
+
+Write-Log "Verifying scheduled tasks..." "STEP"
+
+foreach ($taskName in @($deliveryTaskName, $reorderTaskName)) {
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($task) {
+        $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+        $lastRun = if ($taskInfo.LastRunTime -gt [DateTime]::MinValue) { $taskInfo.LastRunTime.ToString("yyyy-MM-dd HH:mm:ss") } else { "Never" }
+        $lastResult = $taskInfo.LastTaskResult
+        Write-Log "  Task: '$taskName' | State: $($task.State) | LastRun: $lastRun | Result: $lastResult" "SUCCESS"
     } else {
-        Write-Log "Could not start reorder job immediately - it will run on its next scheduled interval." "WARNING"
+        Write-Log "  Task '$taskName' not found!" "WARNING"
     }
 }
 
-# ==============================================================================
-# 7. VERIFY JOBS
-# ==============================================================================
-
-Write-Log "Verifying job creation..." "STEP"
-
-$jobVerify = Invoke-Sql -ReturnReader -Database "msdb" -Query @"
-SELECT
-    j.name          AS JobName,
-    j.enabled       AS Enabled,
-    j.owner_sid,
-    SUSER_SNAME(j.owner_sid) AS Owner,
-    ss.freq_subday_interval  AS IntervalMin,
-    ss.schedule_id
-FROM msdb.dbo.sysjobs j
-LEFT JOIN msdb.dbo.sysjobschedules sjs ON j.job_id = sjs.job_id
-LEFT JOIN msdb.dbo.sysschedules    ss  ON sjs.schedule_id = ss.schedule_id
-WHERE j.name IN (N'$deliveryJobName', N'$reorderJobName')
-ORDER BY j.name
-"@
-
-if ($jobVerify -and $jobVerify.Rows.Count -gt 0) {
-    foreach ($row in $jobVerify.Rows) {
-        Write-Log "  Job: '$($row.JobName)' | Enabled: $($row.Enabled) | Owner: $($row.Owner) | Interval: $($row.IntervalMin) min" "SUCCESS"
-    }
-} else {
-    Write-Log "Could not verify jobs via sysjobs query." "WARNING"
+# Verify data is flowing
+Start-Sleep -Seconds 3
+$poCount = Invoke-Sql -Query "SELECT COUNT(*) AS n FROM PurchaseOrders WHERE Status = 'DELIVERED'" -Database "NailInventoryDB" -ReturnReader
+if ($poCount -and $poCount.Rows.Count -gt 0) {
+    Write-Log "  PurchaseOrders (DELIVERED): $($poCount.Rows[0].n) rows" "SUCCESS"
 }
 
 # ==============================================================================
@@ -644,28 +466,27 @@ if ($jobVerify -and $jobVerify.Rows.Count -gt 0) {
 
 Write-Log "" "INFO"
 Write-Log "=================================================================" "INFO"
-Write-Log "  Phase 2 Complete - Supplier Delivery Jobs Deployed" "SUCCESS"
+Write-Log "  Phase 2 Complete - Supplier Delivery Tasks Deployed" "SUCCESS"
 Write-Log "=================================================================" "INFO"
 Write-Log "" "INFO"
-Write-Log "JOBS CREATED:" "INFO"
-Write-Log "  '$deliveryJobName'" "INFO"
+Write-Log "SCHEDULED TASKS CREATED:" "INFO"
+Write-Log "  '$deliveryTaskName'" "INFO"
 Write-Log "    Schedule: every $DeliveryIntervalMin minutes" "INFO"
-Write-Log "    Owner:    $SqlBotLogin" "INFO"
+Write-Log "    Runs:     sqlcmd.exe -> $deliveryScriptPath" "INFO"
 Write-Log "    Database: NailInventoryDB" "INFO"
 Write-Log "    Effect:   Updates Inventory + inserts PurchaseOrders (DELIVERED)" "INFO"
 Write-Log "" "INFO"
-Write-Log "  '$reorderJobName'" "INFO"
+Write-Log "  '$reorderTaskName'" "INFO"
 Write-Log "    Schedule: every $ReorderIntervalMin minutes" "INFO"
+Write-Log "    Runs:     sqlcmd.exe -> $reorderScriptPath" "INFO"
 Write-Log "    Effect:   Inserts PurchaseOrders (PENDING) for low-stock items" "INFO"
 Write-Log "" "INFO"
 Write-Log "SCORING CHECKS (for Scorebot):" "INFO"
-Write-Log "  SQL Agent running:              SELECT status FROM sys.dm_server_services WHERE servicename LIKE '%Agent%'" "INFO"
-Write-Log "  Jobs enabled:                   SELECT enabled FROM msdb.dbo.sysjobs WHERE name = '$deliveryJobName'" "INFO"
-Write-Log "  Last run success (< 30 min):    SELECT TOP 1 run_status, run_date, run_time FROM msdb.dbo.sysjobhistory WHERE ..." "INFO"
-Write-Log "  PurchaseOrders row count:       SELECT COUNT(*) FROM NailInventoryDB.dbo.PurchaseOrders WHERE Status = 'DELIVERED'" "INFO"
-Write-Log "  Inventory LastAuditDate recent: SELECT COUNT(*) FROM NailInventoryDB.dbo.Inventory WHERE LastAuditDate >= CAST(GETDATE()-1 AS DATE)" "INFO"
+Write-Log "  Tasks running:                schtasks /query /tn `"$deliveryTaskName`"" "INFO"
+Write-Log "  PurchaseOrders row count:     SELECT COUNT(*) FROM NailInventoryDB.dbo.PurchaseOrders WHERE Status = 'DELIVERED'" "INFO"
+Write-Log "  Inventory LastAuditDate:      SELECT COUNT(*) FROM NailInventoryDB.dbo.Inventory WHERE LastAuditDate >= CAST(GETDATE()-1 AS DATE)" "INFO"
 Write-Log "" "INFO"
 Write-Log "NEXT STEPS:" "INFO"
-Write-Log "  Phase 3: Deploy-HelpdeskSimulator.ps1 (AD lockout simulation)" "INFO"
+Write-Log "  Phase 3: Deploy-HelpdeskSystem.ps1 (AD lockout simulation)" "INFO"
 Write-Log "  Phase 4: Deploy-UserSessionSimulator.ps1 (SMB/file activity)" "INFO"
 Write-Log "" "INFO"

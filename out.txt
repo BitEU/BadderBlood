@@ -1,0 +1,277 @@
+PS C:\Users\Administrator> powershell.exe -ExecutionPolicy Bypass -File C:\Simulator\Invoke-ContinuousActivitySimulator.ps1 -HMailAdminPassword "MyP@ssw0rd123!" -LabSubnet "10.0.2.0/24"                                                       
+  ########################################################
+  ##  BadderBlood Continuous Activity Simulator         ##
+  ##  Master Deployment Orchestrator                    ##
+  ##  Educational / CTF / Lab Use Only                  ##
+  ########################################################
+
+
+  =====================================================
+  Running preflight checks...
+  =====================================================
+[2026-03-16 20:08:44] [SUCCESS] Active Directory reachable. Domain: spboxfactory.com
+[2026-03-16 20:08:44] [SUCCESS] Invoke-BadderBlood.ps1 artifact confirmed (OU=Admin exists).
+[2026-03-16 20:08:44] [SUCCESS] BadSQL.ps1 artifact confirmed (NailInventoryDB exists on localhost\BADSQL).
+
+  =====================================================
+  PHASE 1: Black Team Account Provisioning
+  =====================================================
+[2026-03-16 20:08:45] [INFO]    =================================================================
+[2026-03-16 20:08:45] [INFO]      BadderBlood Continuous Activity Simulator
+[2026-03-16 20:08:45] [INFO]      Phase 1: Black Team Account Provisioning
+[2026-03-16 20:08:45] [WARNING]   Educational / CTF / Lab Use Only
+[2026-03-16 20:08:45] [INFO]    =================================================================
+
+[2026-03-16 20:08:45] >>> Resolving Active Directory domain...
+[2026-03-16 20:08:45] [SUCCESS] Domain: spboxfactory.com | DN: DC=spboxfactory,DC=com
+
+[2026-03-16 20:08:45] >>> Creating BlackTeam OU...
+[2026-03-16 20:08:45] [SUCCESS] Created OU=BlackTeam,OU=Admin
+
+[2026-03-16 20:08:45] >>> Provisioning Black Team service accounts...
+[2026-03-16 20:08:45] [SUCCESS] Created: BlackTeam_Scorebot
+[2026-03-16 20:08:45] [SUCCESS] Created: BlackTeam_SQLBot
+[2026-03-16 20:08:45] [SUCCESS] Created: BlackTeam_WebBot
+[2026-03-16 20:08:45] [SUCCESS] Created: BlackTeam_FileBot
+[2026-03-16 20:08:45] [SUCCESS] Created: BlackTeam_MailBot
+
+[2026-03-16 20:08:45] >>> Granting SQL permissions to BlackTeam_SQLBot...
+[2026-03-16 20:08:45] [SUCCESS] Created Windows login for SPBOXFACTORY\BlackTeam_SQLBot
+[2026-03-16 20:08:46] [SUCCESS] Granted db_datareader/db_datawriter on NailInventoryDB
+[2026-03-16 20:08:46] [SUCCESS] Granted db_datareader/db_datawriter on TimesheetLegacy
+
+[2026-03-16 20:08:46] >>> Granting CorpData share permissions to BlackTeam_FileBot...
+[2026-03-16 20:08:55] [SUCCESS] Granted Modify on C:\CorpShares to SPBOXFACTORY\BlackTeam_FileBot
+
+[2026-03-16 20:08:55] >>> Writing credentials.json to C:\Simulator...
+[2026-03-16 20:08:55] [SUCCESS] credentials.json written to C:\Simulator\credentials.json
+
+[2026-03-16 20:08:55] >>> Writing Rules_of_Engagement.txt...
+[2026-03-16 20:08:55] [SUCCESS] Rules_of_Engagement.txt written to C:\Simulator\Rules_of_Engagement.txt
+[2026-03-16 20:08:55] [SUCCESS] Rules_of_Engagement.txt also written to C:\CorpShares\Public_Company_Data\Rules_of_Engagement.txt
+[2026-03-16 20:08:55] [INFO]
+[2026-03-16 20:08:55] [INFO]    =================================================================
+[2026-03-16 20:08:55] [SUCCESS]   Phase 1 Complete - Black Team Infrastructure Deployed
+[2026-03-16 20:08:55] [INFO]    =================================================================
+[2026-03-16 20:08:55] [INFO]
+[2026-03-16 20:08:55] [INFO]    Accounts created in: OU=BlackTeam,OU=Admin,DC=spboxfactory,DC=com
+[2026-03-16 20:08:55] [INFO]    credentials.json:    C:\Simulator\credentials.json
+[2026-03-16 20:08:55] [INFO]    Rules of Engagement: C:\Simulator\Rules_of_Engagement.txt
+[2026-03-16 20:08:55] [INFO]
+[2026-03-16 20:08:55] [INFO]    NEXT STEPS:
+[2026-03-16 20:08:55] [INFO]      1. Run Deploy-SupplierDeliveryJob.ps1 (Phase 2) on the SQL host
+[2026-03-16 20:08:55] [INFO]      2. Distribute Rules_of_Engagement.txt to Blue Team students
+[2026-03-16 20:08:55] [INFO]      3. Copy the Simulator\ folder to the out-of-band simulator VM
+[2026-03-16 20:08:55] [INFO]
+[2026-03-16 20:08:55] [SUCCESS] Phase 1 completed successfully.
+
+  =====================================================
+  PHASE 2: Supplier Delivery SQL Agent Job
+  =====================================================
+[2026-03-16 20:08:55] [INFO]    =================================================================
+[2026-03-16 20:08:55] [INFO]      BadderBlood Continuous Activity Simulator
+[2026-03-16 20:08:55] [INFO]      Phase 2: Supplier Delivery Scheduled Tasks
+[2026-03-16 20:08:55] [WARNING]   Educational / CTF / Lab Use Only
+[2026-03-16 20:08:55] [INFO]    =================================================================
+
+[2026-03-16 20:08:55] >>> Resolving domain NetBIOS name...
+[2026-03-16 20:08:55] [SUCCESS] Domain NetBIOS: SPBOXFACTORY
+
+[2026-03-16 20:08:55] >>> Verifying prerequisites...
+[2026-03-16 20:08:56] [SUCCESS] SQL connectivity confirmed: localhost\BADSQL
+[2026-03-16 20:08:56] [SUCCESS] NailInventoryDB confirmed.
+[2026-03-16 20:08:56] [SUCCESS] BlackTeam_SQLBot login confirmed: SPBOXFACTORY\BlackTeam_SQLBot
+
+[2026-03-16 20:08:56] >>> Locating sqlcmd.exe...
+[2026-03-16 20:08:56] [SUCCESS] Found sqlcmd.exe: C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\180\Tools\Binn\SQLCMD.EXE
+
+[2026-03-16 20:08:56] >>> Writing T-SQL scripts to C:\Simulator\...
+[2026-03-16 20:08:56] [SUCCESS] Written: C:\Simulator\sql\SupplierDelivery.sql
+[2026-03-16 20:08:56] [SUCCESS] Written: C:\Simulator\sql\ReorderCheck.sql
+
+[2026-03-16 20:08:56] >>> Creating Windows Scheduled Tasks...
+[2026-03-16 20:08:57] [SUCCESS] Created scheduled task: 'SBF - Supplier Delivery Simulation' (every 15 min)
+[2026-03-16 20:08:57] [SUCCESS] Created scheduled task: 'SBF - Inventory Reorder Check' (every 30 min)
+
+[2026-03-16 20:08:57] >>> Running tasks for initial execution...
+[2026-03-16 20:08:57] [SUCCESS] Supplier delivery task started (initial run).
+[2026-03-16 20:08:58] [SUCCESS] Reorder check task started (initial run).
+
+[2026-03-16 20:09:03] >>> Verifying scheduled tasks...
+[2026-03-16 20:09:03] [SUCCESS]   Task: 'SBF - Supplier Delivery Simulation' | State: Ready | LastRun: 2026-03-16 20:08:08 | Result: 1
+[2026-03-16 20:09:03] [SUCCESS]   Task: 'SBF - Inventory Reorder Check' | State: Ready | LastRun: 2026-03-16 20:08:08 | Result: 1
+[2026-03-16 20:09:06] [SUCCESS]   PurchaseOrders (DELIVERED): 0 rows
+[2026-03-16 20:09:06] [INFO]                                                                                            [2026-03-16 20:09:06] [INFO]    =================================================================                       [2026-03-16 20:09:06] [SUCCESS]   Phase 2 Complete - Supplier Delivery Tasks Deployed                                   [2026-03-16 20:09:06] [INFO]    =================================================================                       [2026-03-16 20:09:06] [INFO]                                                                                            [2026-03-16 20:09:06] [INFO]    SCHEDULED TASKS CREATED:                                                                [2026-03-16 20:09:06] [INFO]      'SBF - Supplier Delivery Simulation'                                                  [2026-03-16 20:09:06] [INFO]        Schedule: every 15 minutes                                                          [2026-03-16 20:09:06] [INFO]        Runs:     sqlcmd.exe -> C:\Simulator\sql\SupplierDelivery.sql                       [2026-03-16 20:09:06] [INFO]        Database: NailInventoryDB                                                           [2026-03-16 20:09:07] [INFO]        Effect:   Updates Inventory + inserts PurchaseOrders (DELIVERED)                    [2026-03-16 20:09:07] [INFO]
+[2026-03-16 20:09:07] [INFO]      'SBF - Inventory Reorder Check'
+[2026-03-16 20:09:07] [INFO]        Schedule: every 30 minutes
+[2026-03-16 20:09:07] [INFO]        Runs:     sqlcmd.exe -> C:\Simulator\sql\ReorderCheck.sql
+[2026-03-16 20:09:07] [INFO]        Effect:   Inserts PurchaseOrders (PENDING) for low-stock items
+[2026-03-16 20:09:07] [INFO]
+[2026-03-16 20:09:07] [INFO]    SCORING CHECKS (for Scorebot):
+[2026-03-16 20:09:07] [INFO]      Tasks running:                schtasks /query /tn "SBF - Supplier Delivery Simulation"
+[2026-03-16 20:09:07] [INFO]      PurchaseOrders row count:     SELECT COUNT(*) FROM NailInventoryDB.dbo.PurchaseOrders WHERE Status = 'DELIVERED'
+[2026-03-16 20:09:07] [INFO]      Inventory LastAuditDate:      SELECT COUNT(*) FROM NailInventoryDB.dbo.Inventory WHERE LastAuditDate >= CAST(GETDATE()-1 AS DATE)
+[2026-03-16 20:09:07] [INFO]
+[2026-03-16 20:09:07] [INFO]    NEXT STEPS:
+[2026-03-16 20:09:07] [INFO]      Phase 3: Deploy-HelpdeskSystem.ps1 (AD lockout simulation)
+[2026-03-16 20:09:07] [INFO]      Phase 4: Deploy-UserSessionSimulator.ps1 (SMB/file activity)
+[2026-03-16 20:09:07] [INFO]
+[2026-03-16 20:09:07] [SUCCESS] Phase 2 completed successfully.
+
+  =====================================================
+  PHASE 3: Helpdesk System (ITDeskDB + ASPX API + UI)
+  =====================================================
+[2026-03-16 20:09:07] [INFO]    =================================================================
+[2026-03-16 20:09:07] [INFO]      BadderBlood Continuous Activity Simulator
+[2026-03-16 20:09:07] [INFO]      Phase 3: Helpdesk System Deployment
+[2026-03-16 20:09:07] [WARNING]   Educational / CTF / Lab Use Only
+[2026-03-16 20:09:07] [INFO]    =================================================================
+
+[2026-03-16 20:09:07] >>> Resolving domain...
+[2026-03-16 20:09:07] [SUCCESS] Domain: spboxfactory.com | NetBIOS: SPBOXFACTORY
+
+[2026-03-16 20:09:07] >>> Verifying prerequisites...
+[2026-03-16 20:09:07] [SUCCESS] SQL connectivity confirmed.
+[2026-03-16 20:09:07] [SUCCESS] SpringfieldBoxFactory IIS path confirmed.
+
+[2026-03-16 20:09:07] >>> Installing IIS ASP.NET 4.5 and Windows Auth features...
+[2026-03-16 20:09:08] [INFO]    Installing Web-Asp-Net45...
+[2026-03-16 20:12:11] [SUCCESS] Web-Asp-Net45 installed.
+[2026-03-16 20:12:12] [INFO]    Web-Net-Ext45 already present.
+[2026-03-16 20:12:14] [INFO]    Web-ISAPI-Ext already present.
+[2026-03-16 20:12:15] [INFO]    Web-ISAPI-Filter already present.
+[2026-03-16 20:12:16] [INFO]    Installing Web-Windows-Auth...
+[2026-03-16 20:12:44] [SUCCESS] Web-Windows-Auth installed.
+
+[2026-03-16 20:12:44] >>> Creating ITDeskDB database...
+[2026-03-16 20:12:57] [WARNING] SQL Error (DB=ITDeskDB): Exception calling "Open" with "0" argument(s): "Cannot open database "ITDeskDB" requested by the login. The login failed.
+Login failed for user 'SPBOXFACTORY\Administrator'."
+[2026-03-16 20:12:58] [SUCCESS] ITDeskDB created.
+[2026-03-16 20:13:01] [WARNING] SQL Error (DB=master): Exception calling "ExecuteNonQuery" with "0" argument(s): "The login already has an account with the user name 'dbo'.
+Cannot add the principal 'SPBOXFACTORY\Administrator', because it does not exist or you do not have permission.
+Changed database context to 'ITDeskDB'."
+
+[2026-03-16 20:13:01] >>> Creating Tickets and TicketHistory tables...
+[2026-03-16 20:13:02] [SUCCESS] Tables created.
+
+[2026-03-16 20:13:02] >>> Granting ITDeskDB permissions to BlackTeam_SQLBot...
+[2026-03-16 20:13:02] [SUCCESS] db_datareader/db_datawriter granted on ITDeskDB.
+
+[2026-03-16 20:13:02] >>> Creating helpdesk stored procedures...
+[2026-03-16 20:13:02] [SUCCESS] usp_SubmitTicket created.
+[2026-03-16 20:13:02] [SUCCESS] usp_GetOpenTickets created.
+[2026-03-16 20:13:02] [SUCCESS] usp_ResolveTicket created.
+
+[2026-03-16 20:13:02] >>> Seeding initial ticket data...
+[2026-03-16 20:13:03] [SUCCESS] Seeded 12 tickets (9 auto-resolved, 3 open).
+
+[2026-03-16 20:13:03] >>> Deploying helpdesk IIS application to C:\inetpub\SpringfieldBoxFactory\apps\helpdesk...
+[2026-03-16 20:13:03] [INFO]    Created: C:\inetpub\SpringfieldBoxFactory\apps\helpdesk
+[2026-03-16 20:13:03] [INFO]    Created: C:\inetpub\SpringfieldBoxFactory\apps\helpdesk\api
+[2026-03-16 20:13:03] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\helpdesk\api\submit.aspx
+[2026-03-16 20:13:03] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\helpdesk\api\status.aspx
+[2026-03-16 20:13:03] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\helpdesk\index.html
+[2026-03-16 20:13:03] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\helpdesk\api\tickets.aspx
+[2026-03-16 20:13:03] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\helpdesk\api\resolve.aspx
+
+[2026-03-16 20:13:03] >>> Configuring IIS application for /apps/helpdesk...
+[2026-03-16 20:13:04] [SUCCESS] Created app pool: HelpdeskAppPool
+[2026-03-16 20:13:05] [SUCCESS] App pool 'HelpdeskAppPool' configured (identity: SPBOXFACTORY\BlackTeam_SQLBot).
+[2026-03-16 20:13:06] [SUCCESS] Registered IIS application: SpringfieldBoxFactory/apps/helpdesk
+Unlocked section "system.webServer/security/authentication/windowsAuthentication" at configuration path "MACHINE/WEBROOT/APPHOST".
+Unlocked section "system.webServer/security/authentication/anonymousAuthentication" at configuration path "MACHINE/WEBROOT/APPHOST".
+[2026-03-16 20:13:13] [SUCCESS] Windows Auth enabled, Anonymous Auth disabled on /apps/helpdesk.
+
+[2026-03-16 20:13:13] >>> Adding helpdesk link to /apps/ index...
+[2026-03-16 20:13:13] [SUCCESS] Injected helpdesk link into existing apps index.
+[2026-03-16 20:13:13] [INFO]
+[2026-03-16 20:13:13] [INFO]    =================================================================
+[2026-03-16 20:13:13] [SUCCESS]   Phase 3 Complete - Helpdesk System Deployed
+[2026-03-16 20:13:13] [INFO]    =================================================================
+[2026-03-16 20:13:13] [INFO]
+[2026-03-16 20:13:13] [INFO]    Database:   ITDeskDB on localhost\BADSQL
+[2026-03-16 20:13:13] [INFO]    Tables:     Tickets, TicketHistory
+[2026-03-16 20:13:13] [INFO]    Procs:      usp_SubmitTicket, usp_GetOpenTickets, usp_ResolveTicket
+[2026-03-16 20:13:13] [INFO]
+[2026-03-16 20:13:13] [INFO]    IIS Endpoints:
+[2026-03-16 20:13:13] [INFO]      GET/POST  http://[host]/apps/helpdesk/               - Ticket management UI
+[2026-03-16 20:13:13] [INFO]      POST      http://[host]/apps/helpdesk/api/submit.aspx  - Submit ticket
+[2026-03-16 20:13:13] [INFO]      GET       http://[host]/apps/helpdesk/api/status.aspx  - JSON status (Scorebot)
+[2026-03-16 20:13:13] [INFO]      GET       http://[host]/apps/helpdesk/api/tickets.aspx - JSON ticket list
+[2026-03-16 20:13:13] [INFO]      POST      http://[host]/apps/helpdesk/api/resolve.aspx - Resolve ticket
+[2026-03-16 20:13:13] [INFO]
+[2026-03-16 20:13:13] [INFO]    NEXT STEPS:
+[2026-03-16 20:13:13] [INFO]      1. Copy Invoke-LockoutSimulator.ps1 to C:\Simulator\ on the simulator VM
+[2026-03-16 20:13:13] [INFO]      2. Copy Invoke-HelpdeskAutoResolve.ps1 to C:\Simulator\ on the simulator VM
+[2026-03-16 20:13:13] [INFO]      3. Start both scripts (or add them to Invoke-ContinuousActivitySimulator.ps1)
+[2026-03-16 20:13:13] [INFO]
+[2026-03-16 20:13:13] [SUCCESS] Phase 3 completed successfully.
+
+  =====================================================
+  PHASE 4: User Password Export (file session simulation prep)
+  =====================================================
+
+  =====================================================
+  PHASE 5: Customer Order Endpoint (ASPX API + OrdersAppPool)
+  =====================================================
+[2026-03-16 20:13:13] [INFO]    =================================================================
+[2026-03-16 20:13:13] [INFO]      BadderBlood Continuous Activity Simulator
+[2026-03-16 20:13:13] [INFO]      Phase 5: Customer Order Endpoint Deployment
+[2026-03-16 20:13:13] [WARNING]   Educational / CTF / Lab Use Only
+[2026-03-16 20:13:13] [INFO]    =================================================================
+
+[2026-03-16 20:13:13] >>> Resolving domain...
+[2026-03-16 20:13:14] [SUCCESS] Domain: spboxfactory.com | NetBIOS: SPBOXFACTORY
+
+[2026-03-16 20:13:14] >>> Verifying prerequisites...
+[2026-03-16 20:13:14] [SUCCESS] SQL connectivity confirmed.
+[2026-03-16 20:13:14] [SUCCESS] BoxArchive2019 confirmed.
+[2026-03-16 20:13:14] [SUCCESS] SpringfieldBoxFactory IIS path confirmed.
+
+[2026-03-16 20:13:14] >>> Granting BoxArchive2019 permissions to BlackTeam_WebBot (SPBOXFACTORY\BlackTeam_WebBot)...
+[2026-03-16 20:13:14] [SUCCESS] Windows login confirmed/created: SPBOXFACTORY\BlackTeam_WebBot
+[2026-03-16 20:13:15] [SUCCESS] db_datareader / db_datawriter granted on BoxArchive2019.
+
+[2026-03-16 20:13:15] >>> Creating orders directory structure under C:\inetpub\SpringfieldBoxFactory...
+[2026-03-16 20:13:15] [INFO]    Directory already exists: C:\inetpub\SpringfieldBoxFactory\apps\orders
+[2026-03-16 20:13:15] [INFO]    Created: C:\inetpub\SpringfieldBoxFactory\apps\orders\api
+
+[2026-03-16 20:13:15] >>> Deploying ASPX endpoint files...
+[2026-03-16 20:13:15] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\orders\api\submit.aspx
+[2026-03-16 20:13:15] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\orders\api\status.aspx
+[2026-03-16 20:13:15] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\orders\api\orders.aspx
+
+[2026-03-16 20:13:15] >>> Deploying web.config to C:\inetpub\SpringfieldBoxFactory\apps\orders\api...
+[2026-03-16 20:13:15] [SUCCESS] Deployed: C:\inetpub\SpringfieldBoxFactory\apps\orders\api\web.config
+
+[2026-03-16 20:13:15] >>> Configuring IIS application pool and application for /apps/orders/api...
+[2026-03-16 20:13:15] [SUCCESS] Created app pool: OrdersAppPool
+[2026-03-16 20:13:20] [SUCCESS] App pool 'OrdersAppPool' configured (identity: SPBOXFACTORY\BlackTeam_WebBot).
+[2026-03-16 20:13:21] [SUCCESS] Registered IIS application: SpringfieldBoxFactory/apps/orders/api -> C:\inetpub\SpringfieldBoxFactory\apps\orders\api
+Unlocked section "system.webServer/security/authentication/windowsAuthentication" at configuration path "MACHINE/WEBROOT/APPHOST".
+Unlocked section "system.webServer/security/authentication/anonymousAuthentication" at configuration path "MACHINE/WEBROOT/APPHOST".
+[2026-03-16 20:13:26] [SUCCESS] Windows Auth enabled, Anonymous Auth disabled on /apps/orders/api.
+
+[2026-03-16 20:13:26] >>> Checking /apps/ index for orders link...
+[2026-03-16 20:13:26] [INFO]    Order Archive link already present in apps index.
+[2026-03-16 20:13:26] [INFO]
+[2026-03-16 20:13:26] [INFO]    =================================================================
+[2026-03-16 20:13:26] [SUCCESS]   Phase 5 Complete - Customer Order Endpoint Deployed
+[2026-03-16 20:13:26] [INFO]    =================================================================
+[2026-03-16 20:13:26] [INFO]
+[2026-03-16 20:13:26] [INFO]    SQL grants:   BoxArchive2019 on localhost\BADSQL
+[2026-03-16 20:13:26] [INFO]                  db_datareader + db_datawriter -> SPBOXFACTORY\BlackTeam_WebBot
+[2026-03-16 20:13:26] [INFO]
+[2026-03-16 20:13:26] [INFO]    IIS App Pool: OrdersAppPool (.NET 4.0, Integrated, AlwaysRunning)
+[2026-03-16 20:13:26] [INFO]                  Identity: SPBOXFACTORY\BlackTeam_WebBot
+[2026-03-16 20:13:26] [INFO]
+[2026-03-16 20:13:26] [INFO]    IIS Endpoints (Windows Auth, Anonymous disabled):
+[2026-03-16 20:13:26] [INFO]      POST  http://[host]/apps/orders/api/submit.aspx  - Submit new order
+[2026-03-16 20:13:26] [INFO]      GET   http://[host]/apps/orders/api/status.aspx?id=N - Order details
+[2026-03-16 20:13:26] [INFO]      GET   http://[host]/apps/orders/api/orders.aspx  - Last 50 orders
+[2026-03-16 20:13:26] [INFO]
+[2026-03-16 20:13:26] [INFO]    Files deployed to: C:\inetpub\SpringfieldBoxFactory\apps\orders\api
+[2026-03-16 20:13:26] [INFO]      submit.aspx
+[2026-03-16 20:13:26] [INFO]      status.aspx
+[2026-03-16 20:13:26] [INFO]      orders.aspx
+[2026-03-16 20:13:26] [INFO]      web.config                                                                            [2026-03-16 20:13:26] [INFO]                                                                                            [2026-03-16 20:13:26] [INFO]    NEXT STEPS:                                                                             [2026-03-16 20:13:26] [INFO]      1. Deploy Invoke-OrderSimulator.ps1 to the simulator VM (Phase 5 runtime)             [2026-03-16 20:13:26] [INFO]      2. Add order simulation to Invoke-ContinuousActivitySimulator.ps1                     [2026-03-16 20:13:26] [INFO]      3. Verify endpoint with: Invoke-WebRequest -UseDefaultCredentials http://localhost/apps/orders/api/orders.aspx                                                                                                [2026-03-16 20:13:26] [INFO]                                                                                            [2026-03-16 20:13:26] [SUCCESS] Phase 5 completed successfully.                                                                                                                                                                                   =====================================================                                                                   PHASE 6: Mail Server (hMailServer + Mailbox Provisioning)                                                               =====================================================                                                                 [2026-03-16 20:13:26] [INFO]    =================================================================                       [2026-03-16 20:13:26] [INFO]      BadderBlood Continuous Activity Simulator                                             [2026-03-16 20:13:26] [INFO]      Phase 6: Mail Server Deployment (hMailServer)                                         [2026-03-16 20:13:26] [WARNING]   Educational / CTF / Lab Use Only                                                      [2026-03-16 20:13:26] [INFO]    =================================================================                                                                                                                                               [2026-03-16 20:13:26] >>> Checking for hMailServer installation...                                                      [2026-03-16 20:13:26] [INFO]    hMailServer registry key not found - attempting COM object check.                       [2026-03-16 20:13:26] [SUCCESS] hMailServer COM object found.                                                                                                                                                                                   [2026-03-16 20:13:26] >>> Resolving hMailServer admin credential...                                                                                                                                                                             [2026-03-16 20:13:26] >>> Resolving Active Directory domain...                                                          [2026-03-16 20:13:27] [SUCCESS] AD domain: spboxfactory.com | NetBIOS: SPBOXFACTORY | DC: WIN-F79HFE3CM37               [2026-03-16 20:13:27] [INFO]    Mail domain: spboxfactory.com                                                                                                          
