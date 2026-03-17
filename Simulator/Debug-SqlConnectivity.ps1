@@ -45,6 +45,45 @@ Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Magent
 Write-Host $divider -ForegroundColor Magenta
 
 # ============================================================================
+# SQL HELPER  (used throughout - returns DataTable or $null)
+# ============================================================================
+
+function Test-SqlQuery {
+    param([string]$Query, [string]$Database = "master", [string]$Label = "")
+    try {
+        $conn = New-Object System.Data.SqlClient.SqlConnection
+        $conn.ConnectionString = "Server=$SqlInstance;Database=$Database;Integrated Security=SSPI;Connection Timeout=10;"
+        $conn.Open()
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandText = $Query
+        $cmd.CommandTimeout = 15
+        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
+        $table = New-Object System.Data.DataTable
+        $null = $adapter.Fill($table)
+        $conn.Close()
+        return $table
+    } catch {
+        Write-FAIL "${Label}: $_"
+        return $null
+    }
+}
+
+# Helper: safely read a DataTable cell (avoids null-array and DBNull issues)
+function Get-Cell {
+    param($Table, [int]$Row = 0, [string]$Column)
+    if ($null -eq $Table) { return $null }
+    if ($Table -isnot [System.Data.DataTable]) { return $null }
+    if ($Table.Rows.Count -le $Row) { return $null }
+    try {
+        $val = $Table.Rows[$Row][$Column]
+        if ($val -is [System.DBNull]) { return $null }
+        return $val
+    } catch {
+        return $null
+    }
+}
+
+# ============================================================================
 # 1. ENVIRONMENT
 # ============================================================================
 Write-Section "1. Environment"
@@ -93,7 +132,7 @@ if (-not $sqlSvc) {
 # ============================================================================
 # 3. SQL SERVER AGENT SERVICE  (simout line 86)
 # ============================================================================
-Write-Section "3. SQL Server Agent Service (simout line 86: 'Could not start SQL Agent')"
+Write-Section "3. SQL Server Agent Service"
 
 $agentSvc = Get-Service -Name $agentSvcName -ErrorAction SilentlyContinue
 if (-not $agentSvc) {
@@ -102,9 +141,11 @@ if (-not $agentSvc) {
     Write-INFO "Agent status:     $($agentSvc.Status)"
     Write-INFO "Agent start type: $($agentSvc.StartType)"
 
+    $agentLogon = $null
     try {
         $wmiAgent = Get-WmiObject Win32_Service -Filter "Name='$agentSvcName'" -ErrorAction Stop
-        Write-INFO "Agent logon as:   $($wmiAgent.StartName)"
+        $agentLogon = $wmiAgent.StartName
+        Write-INFO "Agent logon as:   $agentLogon"
         Write-INFO "Agent binary:     $($wmiAgent.PathName)"
         Write-INFO "Agent exit code:  $($wmiAgent.ExitCode)"
         Write-INFO "Agent win32 exit: $($wmiAgent.Win32ExitCode)"
@@ -125,8 +166,97 @@ if (-not $agentSvc) {
         }
     }
 
+    # --- Deep-dive: What SQL login does the Agent map to? ---
+    Write-INFO ""
+    Write-INFO "--- SQL Agent Service Account Analysis ---"
+
+    $agentSqlLogin = $agentLogon
+    if ($agentLogon -match 'NT AUTHORITY\\(NETWORK\s*SERVICE|LOCAL\s*SERVICE|SYSTEM)') {
+        $agentSqlLogin = "$env:USERDOMAIN\$env:COMPUTERNAME`$"
+        Write-INFO "Agent runs as '$agentLogon' which maps to SQL login: $agentSqlLogin"
+    } else {
+        Write-INFO "Agent runs as '$agentLogon' -> SQL login: $agentSqlLogin"
+    }
+
+    # Check if that login exists in SQL and has sysadmin
+    $loginInfo = Test-SqlQuery "
+        SELECT
+            sp.name                             AS LoginName,
+            sp.type_desc                        AS LoginType,
+            sp.is_disabled                      AS IsDisabled,
+            IS_SRVROLEMEMBER('sysadmin', sp.name) AS IsSysadmin
+        FROM sys.server_principals sp
+        WHERE sp.name = N'$agentSqlLogin'
+    " -Label "Agent login lookup"
+
+    $loginName = Get-Cell $loginInfo -Column "LoginName"
+    if ($loginName) {
+        $isSA = Get-Cell $loginInfo -Column "IsSysadmin"
+        $isDisabled = Get-Cell $loginInfo -Column "IsDisabled"
+        Write-OK "SQL login '$agentSqlLogin' exists. sysadmin=$isSA disabled=$isDisabled"
+        if ($isSA -ne 1) {
+            Write-FAIL "Agent login does NOT have sysadmin. SQL Agent requires sysadmin to start."
+            Write-FIX "ALTER SERVER ROLE sysadmin ADD MEMBER [$agentSqlLogin]"
+        }
+        if ($isDisabled -eq $true) {
+            Write-FAIL "Agent login is DISABLED."
+            Write-FIX "ALTER LOGIN [$agentSqlLogin] ENABLE"
+        }
+    } else {
+        Write-FAIL "SQL login '$agentSqlLogin' NOT FOUND in sys.server_principals."
+        Write-FIX "CREATE LOGIN [$agentSqlLogin] FROM WINDOWS; ALTER SERVER ROLE sysadmin ADD MEMBER [$agentSqlLogin]"
+    }
+
+    # Check sp_sqlagent_update_agent_xps EXECUTE permission specifically
+    Write-INFO ""
+    Write-INFO "--- sp_sqlagent_update_agent_xps Permission Check ---"
+    $xpsCheck = Test-SqlQuery "
+        SELECT
+            dp.name AS GranteeName,
+            dp.type_desc AS GranteeType,
+            perm.permission_name,
+            perm.state_desc
+        FROM msdb.sys.database_permissions perm
+        INNER JOIN msdb.sys.database_principals dp ON perm.grantee_principal_id = dp.principal_id
+        INNER JOIN msdb.sys.objects obj ON perm.major_id = obj.object_id
+        WHERE obj.name = 'sp_sqlagent_update_agent_xps'
+    " -Label "sp_sqlagent_update_agent_xps permissions"
+
+    if ($xpsCheck -and $xpsCheck.Rows.Count -gt 0) {
+        Write-INFO "Explicit permissions on sp_sqlagent_update_agent_xps:"
+        foreach ($row in $xpsCheck.Rows) {
+            Write-INFO "  $($row['GranteeName']) ($($row['GranteeType'])): $($row['state_desc']) $($row['permission_name'])"
+        }
+    } else {
+        Write-WARN "No explicit permissions found on sp_sqlagent_update_agent_xps."
+        Write-INFO "The Agent relies on sysadmin role to EXECUTE this proc."
+    }
+
+    # Check if the Agent login is mapped as a user in msdb
+    $msdbUser = Test-SqlQuery "
+        SELECT
+            dp.name         AS DbUser,
+            dp.type_desc    AS UserType,
+            STRING_AGG(r.name, ', ') AS Roles
+        FROM msdb.sys.database_principals dp
+        LEFT JOIN msdb.sys.database_role_members drm ON dp.principal_id = drm.member_principal_id
+        LEFT JOIN msdb.sys.database_principals r ON drm.role_principal_id = r.principal_id
+        WHERE dp.name = N'$agentSqlLogin'
+           OR dp.sid  = SUSER_SID(N'$agentSqlLogin')
+        GROUP BY dp.name, dp.type_desc
+    " -Label "msdb user check"
+
+    $msdbUserName = Get-Cell $msdbUser -Column "DbUser"
+    if ($msdbUserName) {
+        $roles = Get-Cell $msdbUser -Column "Roles"
+        Write-OK "Login '$agentSqlLogin' is mapped in msdb as '$msdbUserName'. Roles: $roles"
+    } else {
+        Write-WARN "Login '$agentSqlLogin' has NO user mapping in msdb."
+        Write-INFO "With sysadmin, this should map to dbo. If it doesn't, the token may be stale."
+    }
+
+    # Try to start it if not running
     if ($agentSvc.Status -ne 'Running') {
-        # Try to start it and capture the exact error
         Write-INFO ""
         Write-INFO "Attempting to start SQL Agent..."
         try {
@@ -153,7 +283,8 @@ if (-not $agentSvc) {
             Select-Object -First 10
             if ($events) {
                 foreach ($ev in $events) {
-                    Write-WARN "  [$($ev.TimeCreated)] ID=$($ev.Id): $($ev.Message.Substring(0, [Math]::Min(300, $ev.Message.Length)))..."
+                    $msgSnip = $ev.Message.Substring(0, [Math]::Min(300, $ev.Message.Length))
+                    Write-WARN "  [$($ev.TimeCreated)] ID=$($ev.Id): $msgSnip..."
                 }
             } else {
                 Write-INFO "  No recent SQL Agent error events found."
@@ -175,7 +306,8 @@ if (-not $agentSvc) {
             Select-Object -First 10
             if ($sysEvents) {
                 foreach ($ev in $sysEvents) {
-                    Write-WARN "  [$($ev.TimeCreated)] ID=$($ev.Id) Source=$($ev.ProviderName): $($ev.Message.Substring(0, [Math]::Min(300, $ev.Message.Length)))..."
+                    $msgSnip = $ev.Message.Substring(0, [Math]::Min(300, $ev.Message.Length))
+                    Write-WARN "  [$($ev.TimeCreated)] ID=$($ev.Id) Source=$($ev.ProviderName): $msgSnip..."
                 }
             } else {
                 Write-INFO "  No recent service control errors for SQL Agent."
@@ -194,14 +326,14 @@ if (-not $agentSvc) {
         if ($agentLogPaths) {
             foreach ($logPath in $agentLogPaths) {
                 Write-INFO "  Found: $($logPath.FullName) (Modified: $($logPath.LastWriteTime))"
-                Write-INFO "  Last 20 lines:"
-                Get-Content $logPath.FullName -Tail 20 | ForEach-Object { Write-INFO "    $_" }
+                Write-INFO "  Last 30 lines:"
+                Get-Content $logPath.FullName -Tail 30 | ForEach-Object { Write-INFO "    $_" }
             }
         } else {
             Write-WARN "  SQLAGENT.OUT not found in standard locations."
         }
 
-        # Also check SQL Server error log for Agent clues
+        # SQL Server error log for Agent clues
         Write-INFO ""
         Write-INFO "SQL Server error log entries mentioning 'Agent':"
         try {
@@ -233,33 +365,15 @@ if (-not $agentSvc) {
 # ============================================================================
 Write-Section "4. SQL Connectivity & Login Permissions"
 
-function Test-SqlQuery {
-    param([string]$Query, [string]$Database = "master", [string]$Label = "")
-    try {
-        $conn = New-Object System.Data.SqlClient.SqlConnection
-        $conn.ConnectionString = "Server=$SqlInstance;Database=$Database;Integrated Security=SSPI;Connection Timeout=10;"
-        $conn.Open()
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $Query
-        $cmd.CommandTimeout = 15
-        $adapter = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
-        $table = New-Object System.Data.DataTable
-        $null = $adapter.Fill($table)
-        $conn.Close()
-        return $table
-    } catch {
-        Write-FAIL "${Label}: $_"
-        return $null
-    }
-}
-
 $currentLogin = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 Write-INFO "Current Windows login: $currentLogin"
 
 $ping = Test-SqlQuery "SELECT SUSER_SNAME() AS [Login], IS_SRVROLEMEMBER('sysadmin') AS IsSA" -Label "Basic connectivity"
-if ($ping) {
-    Write-OK "Connected to $SqlInstance as $($ping.Rows[0].Login)"
-    if ($ping.Rows[0].IsSA -eq 1) {
+if ($ping -and $ping.Rows.Count -gt 0) {
+    $loginVal = Get-Cell $ping -Column "Login"
+    $isSAVal  = Get-Cell $ping -Column "IsSA"
+    Write-OK "Connected to $SqlInstance as $loginVal"
+    if ($isSAVal -eq 1) {
         Write-OK "Login has sysadmin role."
     } else {
         Write-WARN "Login does NOT have sysadmin. This may cause ITDeskDB/Agent permission issues."
@@ -270,24 +384,60 @@ if ($ping) {
 
 # Database list
 $dbs = Test-SqlQuery "SELECT name, state_desc FROM sys.databases ORDER BY name" -Label "Database list"
-if ($dbs) {
+if ($dbs -and $dbs.Rows.Count -gt 0) {
     Write-INFO "Databases on $SqlInstance :"
     $expected = @('NailInventoryDB','ITDeskDB','BoxArchive2019','TimesheetLegacy','msdb')
     foreach ($row in $dbs.Rows) {
-        $marker = if ($row.name -in $expected) { " <<<" } else { "" }
-        Write-INFO "  $($row.name) ($($row.state_desc))$marker"
+        $dbName = $row["name"]
+        $dbState = $row["state_desc"]
+        $marker = if ($dbName -in $expected) { " <<<" } else { "" }
+        Write-INFO "  $dbName ($dbState)$marker"
     }
+} else {
+    Write-FAIL "Could not retrieve database list."
 }
 
 # ITDeskDB direct test
 Write-INFO ""
 Write-INFO "Testing direct ITDeskDB connectivity (the Phase 3 failure point):"
 $itTest = Test-SqlQuery "SELECT DB_NAME() AS DB, USER_NAME() AS DbUser, IS_MEMBER('db_owner') AS IsOwner" -Database "ITDeskDB" -Label "ITDeskDB direct connect"
-if ($itTest) {
-    Write-OK "Connected to ITDeskDB as $($itTest.Rows[0].DbUser) (db_owner=$($itTest.Rows[0].IsOwner))"
+if ($itTest -and $itTest.Rows.Count -gt 0) {
+    $dbUser = Get-Cell $itTest -Column "DbUser"
+    $isOwner = Get-Cell $itTest -Column "IsOwner"
+    Write-OK "Connected to ITDeskDB as $dbUser (db_owner=$isOwner)"
 } else {
     Write-FAIL "Cannot connect to ITDeskDB."
     Write-FIX "Grant access: USE [ITDeskDB]; CREATE USER [$currentLogin] FOR LOGIN [$currentLogin]; ALTER ROLE db_owner ADD MEMBER [$currentLogin]"
+}
+
+# ITDeskDB table check
+Write-INFO ""
+Write-INFO "ITDeskDB table and row counts:"
+$tableCheck = Test-SqlQuery "
+    SELECT t.name AS TableName, p.rows AS RowCount
+    FROM sys.tables t
+    INNER JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0,1)
+    ORDER BY t.name
+" -Database "ITDeskDB" -Label "ITDeskDB tables"
+if ($tableCheck -and $tableCheck.Rows.Count -gt 0) {
+    foreach ($row in $tableCheck.Rows) {
+        Write-INFO "  $($row['TableName']): $($row['RowCount']) rows"
+    }
+} else {
+    Write-WARN "No tables found in ITDeskDB (or cannot access)."
+}
+
+# ITDeskDB stored procedures
+$procCheck = Test-SqlQuery "
+    SELECT name FROM sys.procedures WHERE name LIKE 'usp_%' ORDER BY name
+" -Database "ITDeskDB" -Label "ITDeskDB procs"
+if ($procCheck -and $procCheck.Rows.Count -gt 0) {
+    Write-INFO "Stored procedures:"
+    foreach ($row in $procCheck.Rows) {
+        Write-INFO "  $($row['name'])"
+    }
+} else {
+    Write-WARN "No stored procedures found in ITDeskDB."
 }
 
 # BlackTeam logins
@@ -296,62 +446,114 @@ $logins = Test-SqlQuery "SELECT name, type_desc, is_disabled FROM sys.server_pri
 if ($logins -and $logins.Rows.Count -gt 0) {
     Write-INFO "BlackTeam SQL logins:"
     foreach ($row in $logins.Rows) {
-        $status = if ($row.is_disabled) { "DISABLED" } else { "enabled" }
-        Write-INFO "  $($row.name) ($($row.type_desc)) - $status"
+        $status = if ($row["is_disabled"]) { "DISABLED" } else { "enabled" }
+        Write-INFO "  $($row['name']) ($($row['type_desc'])) - $status"
     }
 } else {
     Write-WARN "No BlackTeam SQL logins found."
 }
 
-# ============================================================================
-# 5. SEED DATA SQL QUOTING  (simout lines 156-158)
-# ============================================================================
-Write-Section "5. Seed Data SQL Quoting (simout lines 156-158: 'Incorrect syntax near account')"
-
-Write-INFO "Deploy-HelpdeskSystem.ps1 seed issues contain unescaped single quotes."
-Write-INFO "These strings go into SQL VALUES('...') without escaping:"
+# BlackTeam DB-level permissions across all expected databases
 Write-INFO ""
-
-$seedIssues = @(
-    "Account locked out after multiple failed login attempts. User cannot access email."
-    "Locked out of domain account. Tried resetting password but still getting lockout."
-    "Cannot log into workstation. Getting 'account locked' error message."
-    "Password reset required but account is locked first."
-    "User locked out - reported via phone. Needs immediate unlock."
-    "Intermittent lockout issue for past 3 days. IT Director aware."
-    "Account locked overnight. Possibly stale cached credentials on mobile device."
-    "Lockout triggered by legacy application using old password."
-    "Cannot access VPN - account appears locked."
-    "Multiple failed auth attempts detected from this account (may be credential stuffing)."
-    "Account locked after connecting to new workstation for the first time."
-    "Locked out while travelling - remote unlock needed."
-)
-
-$foundQuotes = $false
-foreach ($iss in $seedIssues) {
-    if ($iss -match "'") {
-        Write-FAIL "Contains unescaped single quote: $iss"
-        $foundQuotes = $true
-        # Show what the broken SQL looks like
-        $brokenSql = "VALUES ('testuser', 'Test User', 'IT', '$iss', 'High', 'Automated', GETDATE())"
-        Write-INFO "  Broken SQL: $brokenSql"
-        $fixedIss = $iss.Replace("'","''")
-        $fixedSql = "VALUES ('testuser', 'Test User', 'IT', '$fixedIss', 'High', 'Automated', GETDATE())"
-        Write-FIX "  Fixed SQL:  $fixedSql"
+Write-INFO "BlackTeam DB permissions:"
+foreach ($dbName in @('NailInventoryDB','ITDeskDB','BoxArchive2019','TimesheetLegacy')) {
+    $dbPerms = Test-SqlQuery "
+        SELECT dp.name AS DbUser, STRING_AGG(r.name, ', ') AS Roles
+        FROM sys.database_principals dp
+        LEFT JOIN sys.database_role_members drm ON dp.principal_id = drm.member_principal_id
+        LEFT JOIN sys.database_principals r ON drm.role_principal_id = r.principal_id
+        WHERE dp.name LIKE '%BlackTeam%'
+        GROUP BY dp.name
+    " -Database $dbName -Label "$dbName BlackTeam perms"
+    if ($dbPerms -and $dbPerms.Rows.Count -gt 0) {
+        foreach ($row in $dbPerms.Rows) {
+            Write-OK "  [$dbName] $($row['DbUser']): $($row['Roles'])"
+        }
+    } else {
+        Write-WARN "  [$dbName] No BlackTeam users mapped."
     }
 }
-if (-not $foundQuotes) {
-    Write-OK "No unescaped single quotes found in seed data."
+
+# ============================================================================
+# 5. SQL AGENT JOBS (verify they exist and last run status)
+# ============================================================================
+Write-Section "5. SQL Agent Jobs"
+
+$jobs = Test-SqlQuery "
+    SELECT
+        j.name          AS JobName,
+        j.enabled       AS Enabled,
+        SUSER_SNAME(j.owner_sid) AS Owner,
+        ss.freq_subday_interval  AS IntervalMin,
+        (SELECT TOP 1 h.run_status FROM msdb.dbo.sysjobhistory h WHERE h.job_id = j.job_id ORDER BY h.instance_id DESC) AS LastRunStatus,
+        (SELECT TOP 1 h.message FROM msdb.dbo.sysjobhistory h WHERE h.job_id = j.job_id AND h.step_id = 0 ORDER BY h.instance_id DESC) AS LastMessage
+    FROM msdb.dbo.sysjobs j
+    LEFT JOIN msdb.dbo.sysjobschedules sjs ON j.job_id = sjs.job_id
+    LEFT JOIN msdb.dbo.sysschedules    ss  ON sjs.schedule_id = ss.schedule_id
+    WHERE j.name LIKE 'SBF%'
+    ORDER BY j.name
+" -Database "msdb" -Label "SQL Agent jobs"
+
+if ($jobs -and $jobs.Rows.Count -gt 0) {
+    foreach ($row in $jobs.Rows) {
+        $jobName = $row['JobName']
+        $enabled = $row['Enabled']
+        $owner   = Get-Cell -Table $jobs -Column "Owner"
+        $interval = $row['IntervalMin']
+        $lastStatus = $row['LastRunStatus']
+        $lastMsg = $row['LastMessage']
+        $statusStr = switch ($lastStatus) { 0 {"FAILED"} 1 {"Succeeded"} 2 {"Retry"} 3 {"Canceled"} default {"Never run"} }
+        if ($lastStatus -eq 1) {
+            Write-OK "  $jobName | Enabled=$enabled | Owner=$owner | Every ${interval}m | Last=$statusStr"
+        } elseif ($null -eq $lastStatus -or $lastStatus -is [System.DBNull]) {
+            Write-WARN "  $jobName | Enabled=$enabled | Owner=$owner | Every ${interval}m | Never run (Agent not started?)"
+        } else {
+            Write-FAIL "  $jobName | Enabled=$enabled | Owner=$owner | Every ${interval}m | Last=$statusStr"
+            if ($lastMsg -and $lastMsg -isnot [System.DBNull]) {
+                $msgSnip = if ($lastMsg.Length -gt 200) { $lastMsg.Substring(0,200) + "..." } else { $lastMsg }
+                Write-INFO "    Message: $msgSnip"
+            }
+        }
+    }
+} else {
+    Write-WARN "No SBF* jobs found in msdb.dbo.sysjobs."
 }
 
-Write-INFO ""
-Write-FIX "Add this line after `$iss assignment (Deploy-HelpdeskSystem.ps1 ~line 438):"
-Write-FIX '  $iss = $issueData.Issue.Replace("''","''''")    # escape single quotes for SQL'
+# ============================================================================
+# 6. SEED DATA SQL QUOTING  (simout lines 156-158)
+# ============================================================================
+Write-Section "6. Seed Data SQL Quoting"
+
+Write-INFO "Checking Deploy-HelpdeskSystem.ps1 for unescaped single quotes in seed data..."
+
+# Read the actual script to verify the fix is in place
+$helpdeskScript = "$PSScriptRoot\Deploy-HelpdeskSystem.ps1"
+if (Test-Path $helpdeskScript) {
+    $content = Get-Content $helpdeskScript -Raw
+    if ($content -match '\$iss\s*=\s*\$issueData\.Issue\.Replace\(' ) {
+        Write-OK "Deploy-HelpdeskSystem.ps1 already escapes single quotes in seed data (line ~438)."
+    } else {
+        Write-FAIL "Deploy-HelpdeskSystem.ps1 does NOT escape single quotes in `$iss."
+        Write-FIX 'Add: $iss = $issueData.Issue.Replace("''","''''")  after $iss assignment.'
+    }
+} else {
+    Write-WARN "Deploy-HelpdeskSystem.ps1 not found at $helpdeskScript - cannot check."
+}
+
+# Also verify the actual data in ITDeskDB for evidence of the problem
+$badTickets = Test-SqlQuery "
+    SELECT TOP 5 TicketID, Issue FROM Tickets WHERE Issue LIKE '%''%' ORDER BY TicketID
+" -Database "ITDeskDB" -Label "Tickets with quotes"
+if ($badTickets -and $badTickets.Rows.Count -gt 0) {
+    Write-OK "Found $($badTickets.Rows.Count) ticket(s) with apostrophes - they were inserted correctly."
+} else {
+    Write-INFO "No tickets with apostrophes found (seed data may not have included them, or insert failed)."
+}
 
 # ============================================================================
-# 6. CORPDATA / CORPSHARES  (simout line 45)
+# 7. CORPDATA / CORPSHARES  (simout line 45)
 # ============================================================================
-Write-Section "6. CorpData / CorpShares (simout line 45: 'CorpData path not found')"
+Write-Section "7. CorpData / CorpShares"
 
 Write-INFO "Expected: $CorpSharePath"
 if (Test-Path $CorpSharePath) {
@@ -390,9 +592,9 @@ try {
 }
 
 # ============================================================================
-# 7. IIS LOCKED SECTIONS  (simout lines 170-172)
+# 8. IIS LOCKED SECTIONS  (simout lines 170-172)
 # ============================================================================
-Write-Section "7. IIS Authentication Sections (simout: 'Unlocked section' messages)"
+Write-Section "8. IIS Authentication Sections"
 
 $appcmd = "$env:SystemRoot\System32\inetsrv\appcmd.exe"
 if (-not (Test-Path $appcmd)) {
@@ -415,17 +617,6 @@ if (-not (Test-Path $appcmd)) {
             }
         } catch {
             Write-FAIL "Error checking section '$section': $_"
-        }
-    }
-
-    # Peek at applicationHost.config for overrideMode
-    $appHostConfig = "$env:SystemRoot\System32\inetsrv\config\applicationHost.config"
-    if (Test-Path $appHostConfig) {
-        Write-INFO ""
-        Write-INFO "applicationHost.config authentication section entries:"
-        $matches = Select-String -Path $appHostConfig -Pattern 'windowsAuthentication|anonymousAuthentication' -SimpleMatch
-        foreach ($m in $matches) {
-            Write-INFO "  Line $($m.LineNumber): $($m.Line.Trim())"
         }
     }
 }
@@ -455,12 +646,28 @@ try {
     Write-WARN "WebAdministration module not available: $_"
 }
 
-# ============================================================================
-# 8. HMAILSERVER COM / RELAY  (simout: 'null-valued expression' + CIDR overflow)
-# ============================================================================
-Write-Section "8. hMailServer COM API & Relay Ranges"
+# Verify helpdesk & orders endpoints are actually responding
+Write-INFO ""
+Write-INFO "IIS Endpoint Smoke Tests:"
+foreach ($endpoint in @(
+    @{Name="Helpdesk Status"; Url="http://localhost/apps/helpdesk/api/status.aspx"},
+    @{Name="Orders List";     Url="http://localhost/apps/orders/api/orders.aspx"}
+)) {
+    try {
+        $resp = Invoke-WebRequest -Uri $endpoint.Url -UseDefaultCredentials -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        Write-OK "$($endpoint.Name): HTTP $($resp.StatusCode) ($($resp.Content.Length) bytes)"
+    } catch {
+        $errMsg = $_.Exception.Message
+        if ($errMsg.Length -gt 150) { $errMsg = $errMsg.Substring(0,150) + "..." }
+        Write-WARN "$($endpoint.Name): $errMsg"
+    }
+}
 
-# 8A. COM object and Settings.IPRanges
+# ============================================================================
+# 9. HMAILSERVER COM / RELAY  (AllowRelay property issue)
+# ============================================================================
+Write-Section "9. hMailServer COM API & Relay Ranges"
+
 $hms = $null
 try {
     $hms = New-Object -ComObject hMailServer.Application -ErrorAction Stop
@@ -481,32 +688,99 @@ if ($hms) {
         if ($authResult) {
             Write-OK "Authenticated to hMailServer COM API."
 
-            # The failing code: $hms.Settings.IPRanges
+            # hMailServer version info
             Write-INFO ""
-            Write-INFO "Diagnosing `$hms.Settings.IPRanges (line 325 of Deploy-MailServer.ps1):"
-            $settings = $hms.Settings
-            if ($null -eq $settings) {
-                Write-FAIL "`$hms.Settings is NULL."
-                Write-INFO "This causes 'You cannot call a method on a null-valued expression'"
-                Write-INFO "when Add-HmsRelayRange tries `$hms.Settings.IPRanges"
-                Write-FIX "The `$hms variable may have gone out of scope inside the function."
-                Write-FIX "Add-HmsRelayRange is defined at line 318 but `$hms is a script-scoped"
-                Write-FIX "variable. Inside the function, `$hms may not be accessible."
-                Write-FIX "Fix: either pass `$hms as a parameter, or reference `$script:hms."
-            } else {
-                Write-OK "`$hms.Settings is accessible."
-                Write-INFO "Settings type: $($settings.GetType().FullName)"
+            try {
+                $hmsVer = $hms.Version
+                Write-INFO "hMailServer version: $hmsVer"
+            } catch {
+                Write-INFO "Could not read hMailServer version."
+            }
 
-                $ipRanges = $settings.IPRanges
-                if ($null -eq $ipRanges) {
-                    Write-FAIL "`$hms.Settings.IPRanges is NULL."
+            # Check SecurityRanges vs IPRanges (the real issue)
+            Write-INFO ""
+            Write-INFO "--- IP/Security Ranges Diagnosis ---"
+            Write-INFO "Deploy-MailServer.ps1 tries SecurityRanges first, then IPRanges."
+
+            $hmsIPRanges = $null
+            try {
+                $hmsIPRanges = $hms.Settings.SecurityRanges
+                if ($null -ne $hmsIPRanges) {
+                    Write-OK "Settings.SecurityRanges is accessible. Count: $($hmsIPRanges.Count)"
                 } else {
-                    Write-OK "`$hms.Settings.IPRanges accessible. Count: $($ipRanges.Count)"
-                    for ($i = 0; $i -lt $ipRanges.Count; $i++) {
-                        $r = $ipRanges.Item($i)
-                        Write-INFO "  '$($r.Name)': $($r.LowerIP) - $($r.UpperIP) (Relay=$($r.AllowRelay))"
+                    Write-WARN "Settings.SecurityRanges returned NULL."
+                }
+            } catch {
+                Write-WARN "Settings.SecurityRanges threw: $_"
+            }
+
+            if ($null -eq $hmsIPRanges) {
+                try {
+                    $hmsIPRanges = $hms.Settings.IPRanges
+                    if ($null -ne $hmsIPRanges) {
+                        Write-OK "Settings.IPRanges is accessible. Count: $($hmsIPRanges.Count)"
+                    } else {
+                        Write-FAIL "Settings.IPRanges also returned NULL."
+                    }
+                } catch {
+                    Write-FAIL "Settings.IPRanges also threw: $_"
+                }
+            }
+
+            if ($null -ne $hmsIPRanges) {
+                Write-INFO "Existing ranges:"
+                for ($i = 0; $i -lt $hmsIPRanges.Count; $i++) {
+                    $r = $hmsIPRanges.Item($i)
+                    Write-INFO "  '$($r.Name)': $($r.LowerIP) - $($r.UpperIP)"
+                    # Probe which relay property exists
+                    $relayProp = "unknown"
+                    try { $relayProp = "AllowSMTPRelaying=$($r.AllowSMTPRelaying)" } catch {
+                        try { $relayProp = "AllowRelay=$($r.AllowRelay)" } catch {
+                            $relayProp = "NEITHER AllowSMTPRelaying nor AllowRelay exists!"
+                        }
+                    }
+                    Write-INFO "    Relay: $relayProp"
+                }
+
+                # Probe all properties on a range object to find the relay property
+                Write-INFO ""
+                Write-INFO "--- Probing range object for relay-related properties ---"
+                if ($hmsIPRanges.Count -gt 0) {
+                    $testRange = $hmsIPRanges.Item(0)
+                    $members = $testRange | Get-Member -MemberType Property -ErrorAction SilentlyContinue
+                    if ($members) {
+                        $relayMembers = $members | Where-Object { $_.Name -match "relay|smtp|allow" }
+                        if ($relayMembers) {
+                            Write-OK "Found relay-related properties:"
+                            foreach ($m in $relayMembers) {
+                                $val = try { $testRange."$($m.Name)" } catch { "(error reading)" }
+                                Write-INFO "  $($m.Name) = $val"
+                            }
+                        } else {
+                            Write-WARN "No relay-related properties found via Get-Member."
+                            Write-INFO "All properties on the range object:"
+                            foreach ($m in $members) {
+                                Write-INFO "  $($m.Name)"
+                            }
+                        }
+                    } else {
+                        Write-WARN "Get-Member returned no properties (COM object may not expose them)."
+                        Write-INFO "Trying known property names by brute force..."
+                        foreach ($propName in @('AllowRelay','AllowSMTPRelaying','Relay','RequireSMTPAuth',
+                                                'AllowSMTPAuthPlain','AllowDeliveryFromRemoteToLocal',
+                                                'AllowDeliveryFromLocalToRemote','RequireAuthForDeliveryToLocal')) {
+                            try {
+                                $val = $testRange.$propName
+                                Write-OK "  $propName = $val"
+                            } catch {
+                                # Property doesn't exist - skip silently
+                            }
+                        }
                     }
                 }
+            } else {
+                Write-FAIL "Cannot access any IP/Security ranges object."
+                Write-FIX "This may be a hMailServer version issue. Check if ranges are configurable via hMailServer Admin UI."
             }
 
             # Check domains
@@ -517,6 +791,17 @@ if ($hms) {
                 $d = $domains.Item($i)
                 Write-INFO "  $($d.Name) (Active=$($d.Active), Accounts=$($d.Accounts.Count))"
             }
+
+            # Verify BlackTeam_MailBot account
+            Write-INFO ""
+            try {
+                $domain = $domains.Item(0)
+                $mailbot = $domain.Accounts.ItemByAddress("blackteam_mailbot@$($domain.Name)")
+                Write-OK "BlackTeam_MailBot mailbox exists: blackteam_mailbot@$($domain.Name)"
+            } catch {
+                Write-WARN "BlackTeam_MailBot mailbox not found or error: $_"
+            }
+
         } else {
             Write-FAIL "Authentication returned false/null. Wrong -HMailAdminPassword?"
         }
@@ -527,11 +812,11 @@ if ($hms) {
 }
 
 # ============================================================================
-# 9. CIDR SUBNET PARSING  (simout: 'Cannot convert value "-256" to UInt32')
+# 10. CIDR SUBNET PARSING  (PowerShell 5.1 integer overflow)
 # ============================================================================
-Write-Section "9. CIDR Subnet Parsing (LabSubnet='$LabSubnet')"
+Write-Section "10. CIDR Subnet Parsing (LabSubnet='$LabSubnet')"
 
-Write-INFO "Reproducing Deploy-MailServer.ps1 line 361 CIDR math..."
+Write-INFO "Testing Deploy-MailServer.ps1 CIDR math (lines 370-394)..."
 
 try {
     $cidrParts = $LabSubnet -split "/"
@@ -544,32 +829,31 @@ try {
     $ipInt = [System.BitConverter]::ToUInt32($ipBytes, 0)
     Write-INFO "IP as UInt32: $ipInt (0x$($ipInt.ToString('X8')))"
 
-    # ---- The broken line ----
+    # Reproduce the CURRENT code from Deploy-MailServer.ps1 (the fixed version):
+    #   $hostBits = 32 - $prefixLen
+    #   $hostMask = [uint32]((1 -shl $hostBits) - 1)
+    #   $mask     = [uint32]::MaxValue -bxor $hostMask
     Write-INFO ""
-    Write-INFO "Original code: `$mask = [uint32](0xFFFFFFFF -shl (32 - $prefixLen))"
-    $shiftAmount = 32 - $prefixLen
-    $shiftResult = 0xFFFFFFFF -shl $shiftAmount
-    Write-INFO "  0xFFFFFFFF -shl $shiftAmount = $shiftResult"
-    Write-INFO "  Type: $($shiftResult.GetType().Name)  (PowerShell promotes to Int64!)"
+    Write-INFO "Current code approach (XOR-based, avoids 0xFFFFFFFF -shl):"
+    $hostBits = 32 - $prefixLen
+    Write-INFO "  hostBits = 32 - $prefixLen = $hostBits"
 
     try {
-        $mask = [uint32]$shiftResult
-        Write-OK "Cast to [uint32] succeeded: $mask"
+        $hostMask = [uint32]((1 -shl $hostBits) - 1)
+        Write-OK "  hostMask = [uint32]((1 -shl $hostBits) - 1) = $hostMask (0x$($hostMask.ToString('X8')))"
     } catch {
-        Write-FAIL "Cast to [uint32] FAILED: $_"
-        Write-INFO "This is the 'Cannot convert value to System.UInt32' error."
+        Write-FAIL "  hostMask calc failed: $_"
+        Write-FIX "  This means the fix in Deploy-MailServer.ps1 also has a bug for this prefix length."
     }
 
-    # ---- The fix ----
-    Write-INFO ""
-    Write-INFO "Fixed approach: use [uint64] intermediate and mask to 32 bits"
-    $mask64 = ([uint64]0xFFFFFFFF -shl $shiftAmount) -band [uint64]0xFFFFFFFF
-    $maskFixed = [uint32]$mask64
-    Write-OK "Fixed mask: $maskFixed (0x$($maskFixed.ToString('X8')))"
+    try {
+        $mask = [uint32]::MaxValue -bxor $hostMask
+        Write-OK "  mask = MaxValue -bxor hostMask = $mask (0x$($mask.ToString('X8')))"
+    } catch {
+        Write-FAIL "  mask calc failed: $_"
+    }
 
-    $networkInt = $ipInt -band $maskFixed
-    $hostBits   = 32 - $prefixLen
-    $hostMask   = [uint32]((1 -shl $hostBits) - 1)
+    $networkInt = $ipInt -band $mask
     $broadInt   = $networkInt -bor $hostMask
 
     $networkBytes = [System.BitConverter]::GetBytes([uint32]$networkInt)
@@ -581,51 +865,46 @@ try {
     $upperIP = [System.Net.IPAddress]::new($broadBytes).ToString()
     Write-OK "Computed range: $lowerIP - $upperIP"
 
-    # ---- Also show the -bnot problem ----
+    # Also verify the OLD broken approach to confirm the fix was needed
     Write-INFO ""
-    Write-INFO "Original broadcast calc: -bnot `$mask -band 0xFFFFFFFF"
-    Write-INFO "  -bnot [uint32] returns Int64, which can go negative."
-    $bnotResult = -bnot $maskFixed
-    Write-INFO "  -bnot $maskFixed = $bnotResult (type=$($bnotResult.GetType().Name))"
-    Write-INFO "  $bnotResult -band 0xFFFFFFFF = $($bnotResult -band 0xFFFFFFFF)"
-    Write-FIX "Replace broadcast calc with: `$hostMask = [uint32]((1 -shl (32 - `$prefixLen)) - 1); `$broadInt = `$networkInt -bor `$hostMask"
+    Write-INFO "Verifying the OLD broken code would fail:"
+    Write-INFO "  Original: `$mask = [uint32](0xFFFFFFFF -shl (32 - $prefixLen))"
+    $shiftResult = 0xFFFFFFFF -shl $hostBits
+    Write-INFO "  0xFFFFFFFF -shl $hostBits = $shiftResult (type=$($shiftResult.GetType().Name))"
+    try {
+        $oldMask = [uint32]$shiftResult
+        Write-WARN "  Cast to [uint32] SUCCEEDED: $oldMask (unexpected on PS 5.1 - this version may not have the bug)"
+    } catch {
+        Write-OK "  Cast to [uint32] FAILED as expected: $_"
+        Write-INFO "  This confirms the fix in Deploy-MailServer.ps1 is necessary."
+    }
 
 } catch {
     Write-FAIL "CIDR test failed: $_"
 }
 
 # ============================================================================
-# 10. SQL AGENT ERROR LOG (via T-SQL)
+# 11. SQL AGENT ERROR LOG (via T-SQL)
 # ============================================================================
-Write-Section "10. SQL Agent Error Log (via T-SQL)"
+Write-Section "11. SQL Agent Error Log (via T-SQL)"
 
-$agentLog = Test-SqlQuery -Query "EXEC msdb.dbo.sp_readerrorlog 0, 2, NULL, NULL, NULL, NULL, N'DESC'" -Label "Agent error log"
+# sp_readerrorlog signature: @p1=log_number, @p2=log_type (1=engine, 2=agent), @p3=search_string1, @p4=search_string2
+$agentLog = Test-SqlQuery -Query "EXEC msdb.dbo.sp_readerrorlog 0, 2" -Label "Agent error log"
 if ($agentLog -and $agentLog.Rows.Count -gt 0) {
-    $count = [Math]::Min(15, $agentLog.Rows.Count)
+    $count = [Math]::Min(20, $agentLog.Rows.Count)
     Write-INFO "Last $count Agent log entries:"
     for ($i = 0; $i -lt $count; $i++) {
         $row = $agentLog.Rows[$i]
         Write-INFO "  [$($row[0])] $($row[2])"
     }
 } else {
-    Write-WARN "No Agent log returned (Agent may never have started)."
-}
-
-# SQL Server log
-$sqlLog = Test-SqlQuery -Query "EXEC sp_readerrorlog 0, 1, N'Agent'" -Label "SQL Server log (Agent)"
-if ($sqlLog -and $sqlLog.Rows.Count -gt 0) {
-    $count = [Math]::Min(10, $sqlLog.Rows.Count)
-    Write-INFO ""
-    Write-INFO "SQL Server log entries mentioning 'Agent':"
-    for ($i = 0; $i -lt $count; $i++) {
-        Write-INFO "  [$($sqlLog.Rows[$i][0])] $($sqlLog.Rows[$i][2])"
-    }
+    Write-WARN "No Agent log returned (Agent may never have started successfully)."
 }
 
 # ============================================================================
-# 11. SQL BROWSER & PORT INFO
+# 12. SQL BROWSER & PORT INFO
 # ============================================================================
-Write-Section "11. SQL Browser & Port Info"
+Write-Section "12. SQL Browser & Port Info"
 
 $browser = Get-Service -Name "SQLBrowser" -ErrorAction SilentlyContinue
 if ($browser) {
@@ -653,35 +932,148 @@ try {
 }
 
 # ============================================================================
+# 13. SMTP CONNECTIVITY TEST
+# ============================================================================
+Write-Section "13. SMTP Connectivity"
+
+Write-INFO "Testing SMTP port 25 on localhost..."
+try {
+    $tcpTest = Test-NetConnection -ComputerName 127.0.0.1 -Port 25 -InformationLevel Quiet -ErrorAction SilentlyContinue
+    if ($tcpTest) {
+        Write-OK "SMTP port 25 is listening."
+
+        # Try an actual SMTP HELO
+        try {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcp.Connect("127.0.0.1", 25)
+            $stream = $tcp.GetStream()
+            $reader = New-Object System.IO.StreamReader $stream
+            $writer = New-Object System.IO.StreamWriter $stream
+            $writer.AutoFlush = $true
+
+            $banner = $reader.ReadLine()
+            Write-INFO "SMTP banner: $banner"
+
+            $writer.WriteLine("EHLO diag.local")
+            Start-Sleep -Milliseconds 500
+            while ($stream.DataAvailable) {
+                $line = $reader.ReadLine()
+                Write-INFO "  EHLO: $line"
+            }
+
+            $writer.WriteLine("QUIT")
+            $tcp.Close()
+        } catch {
+            Write-WARN "SMTP conversation failed: $_"
+        }
+    } else {
+        Write-WARN "SMTP port 25 is NOT listening."
+    }
+} catch {
+    Write-WARN "Port check failed: $_"
+}
+
+# ============================================================================
+# 14. DNS MX RECORD
+# ============================================================================
+Write-Section "14. DNS MX Record"
+
+try {
+    Import-Module ActiveDirectory -ErrorAction Stop
+    $domainDNS = (Get-ADDomain).DNSRoot
+    Write-INFO "Domain: $domainDNS"
+
+    try {
+        Import-Module DnsServer -ErrorAction Stop
+        $mx = Get-DnsServerResourceRecord -ZoneName $domainDNS -RRType MX -ErrorAction SilentlyContinue
+        if ($mx) {
+            foreach ($r in $mx) {
+                Write-OK "MX: $($r.RecordData.MailExchange) (Priority $($r.RecordData.Preference))"
+            }
+        } else {
+            Write-WARN "No MX records found for $domainDNS."
+        }
+    } catch {
+        Write-WARN "DnsServer module not available: $_"
+    }
+} catch {
+    Write-WARN "Could not resolve domain for MX check: $_"
+}
+
+# ============================================================================
+# 15. CREDENTIALS.JSON VALIDATION
+# ============================================================================
+Write-Section "15. credentials.json Validation"
+
+$credFile = "C:\Simulator\credentials.json"
+if (Test-Path $credFile) {
+    try {
+        $creds = Get-Content $credFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        Write-OK "credentials.json parsed successfully."
+
+        # Check expected sections
+        foreach ($section in @('smtp')) {
+            if ($creds.$section) {
+                Write-OK "  Section '$section' present."
+                $creds.$section.PSObject.Properties | ForEach-Object {
+                    $val = if ($_.Name -match 'password|secret|key') { '***' } else { $_.Value }
+                    Write-INFO "    $($_.Name) = $val"
+                }
+            } else {
+                Write-WARN "  Section '$section' missing."
+            }
+        }
+
+        # List all top-level keys
+        Write-INFO "  Top-level keys: $($creds.PSObject.Properties.Name -join ', ')"
+    } catch {
+        Write-FAIL "credentials.json parse error: $_"
+    }
+} else {
+    Write-WARN "credentials.json not found at $credFile."
+}
+
+# ============================================================================
 # SUMMARY & FIXES
 # ============================================================================
-Write-Section "SUMMARY OF ISSUES & FIXES"
+Write-Section "SUMMARY OF ISSUES & RECOMMENDED FIXES"
+
+$issueNum = 0
+
+# SQL Agent
+$agentSvc2 = Get-Service -Name $agentSvcName -ErrorAction SilentlyContinue
+if ($agentSvc2 -and $agentSvc2.Status -ne 'Running') {
+    $issueNum++
+    Write-Host ""
+    Write-Host "  ISSUE $issueNum`: SQL Agent won't start" -ForegroundColor White
+    Write-Host "    Root cause: EXECUTE permission denied on sp_sqlagent_update_agent_xps in msdb." -ForegroundColor Gray
+    Write-Host "    The machine account has sysadmin but the Agent process may not pick up the" -ForegroundColor Gray
+    Write-Host "    updated token. After granting sysadmin, restart the SQL engine THEN start Agent." -ForegroundColor Gray
+    Write-Host "    Deploy-SupplierDeliveryJob.ps1 already attempts this but may need a longer wait." -ForegroundColor Gray
+    Write-Host "    Manual fix:" -ForegroundColor Magenta
+    Write-Host "      Restart-Service MSSQL`$BADSQL -Force; Start-Sleep 5; Start-Service SQLAGENT`$BADSQL" -ForegroundColor Magenta
+}
+
+# hMailServer relay
+$issueNum++
+Write-Host ""
+Write-Host "  ISSUE $issueNum`: hMailServer relay range 'AllowRelay' property not found" -ForegroundColor White
+Write-Host "    The hMailServer COM API on this version may not expose AllowRelay or" -ForegroundColor Gray
+Write-Host "    AllowSMTPRelaying on IP range objects. Check the Get-Member output above" -ForegroundColor Gray
+Write-Host "    to see what properties ARE available." -ForegroundColor Gray
+Write-Host "    The relay ranges were created but relay is not enabled on them." -ForegroundColor Gray
+
+# CorpData
+$corpData2 = Join-Path $CorpSharePath "CorpData"
+if (-not (Test-Path $corpData2)) {
+    $issueNum++
+    Write-Host ""
+    Write-Host "  ISSUE $issueNum`: CorpData subfolder not found" -ForegroundColor White
+    Write-Host "    $CorpSharePath\CorpData doesn't exist. Run BadFS.ps1 or mkdir it." -ForegroundColor Gray
+}
 
 Write-Host ""
-Write-Host "  ISSUE 1: SQL Agent won't start (Phase 2, simout line 86)" -ForegroundColor White
-Write-Host "    See sections 2, 3, 10 above." -ForegroundColor Gray
-Write-Host "    Common causes: Agent service account lacks Log On As Service," -ForegroundColor Gray
-Write-Host "    engine not running, or SQLAGENT.OUT shows a specific error." -ForegroundColor Gray
-Write-Host ""
-Write-Host "  ISSUE 2: 'Incorrect syntax near account' (Phase 3, simout lines 156-158)" -ForegroundColor White
-Write-Host "    Seed issue strings have unescaped single quotes." -ForegroundColor Gray
-Write-Host "    Fix: escape `$iss with .Replace(`"'`",`"''`") before SQL interpolation." -ForegroundColor Gray
-Write-Host ""
-Write-Host "  ISSUE 3: CorpData path not found (Phase 1, simout line 45)" -ForegroundColor White
-Write-Host "    C:\CorpShares\CorpData doesn't exist. Run BadFS.ps1 first." -ForegroundColor Gray
-Write-Host ""
-Write-Host "  ISSUE 4: hMailServer relay 'null-valued expression' (Phase 6)" -ForegroundColor White
-Write-Host "    `$hms.Settings.IPRanges is null inside Add-HmsRelayRange function." -ForegroundColor Gray
-Write-Host "    The function can't see the script-scoped `$hms variable." -ForegroundColor Gray
-Write-Host "    Fix: use `$script:hms or pass `$hms as a parameter." -ForegroundColor Gray
-Write-Host ""
-Write-Host "  ISSUE 5: LabSubnet CIDR parse overflow (Phase 6)" -ForegroundColor White
-Write-Host "    PowerShell -shl promotes 0xFFFFFFFF to Int64, producing values" -ForegroundColor Gray
-Write-Host "    that can't cast to UInt32. Also -bnot on UInt32 returns Int64." -ForegroundColor Gray
-Write-Host "    Fix: use [uint64] intermediate: ([uint64]0xFFFFFFFF -shl N) -band 0xFFFFFFFF" -ForegroundColor Gray
-Write-Host "    Fix: compute host mask as [uint32]((1 -shl hostBits) - 1)" -ForegroundColor Gray
-Write-Host ""
 Write-Host $divider -ForegroundColor DarkGray
-Write-Host "  Copy this output and run the fixes in the relevant scripts." -ForegroundColor White
+Write-Host "  Diagnostic complete. Copy this output to analyze issues." -ForegroundColor White
 Write-Host $divider -ForegroundColor DarkGray
 Write-Host ""

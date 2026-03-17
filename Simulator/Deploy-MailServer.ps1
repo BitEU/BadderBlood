@@ -353,7 +353,9 @@ function Add-HmsRelayRange {
         $range.Name        = $RangeName
         $range.LowerIP     = $LowerIP
         $range.UpperIP     = $UpperIP
-        $range.AllowRelay  = $true
+        # hMailServer 5.6+ renamed AllowRelay to AllowSMTPRelaying
+        try   { $range.AllowSMTPRelaying = $true }
+        catch { $range.AllowRelay = $true }
         $range.Save()
         Write-Log "Added relay IP range '$RangeName': $LowerIP - $UpperIP" "SUCCESS"
     } catch {

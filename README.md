@@ -23,9 +23,9 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 7. ```powershell.exe -ExecutionPolicy Bypass -File C:\BadderBlood\Invoke-BadderBlood.ps1```
 8. Once BadderBlood is complete, run ```powershell.exe -ExecutionPolicy Bypass -File C:\content\BadderBloodAnswerKey.ps1``` to generate the answer key files for what is grossly misconfigured.
 9. Once the core AD/GPO stuff is run, you can move on to the three services. Run, in this order, these commands:
-    a. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadFS.ps1```
-    b. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadIIS.ps1```
-    c. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadSQL.ps1```
+    1. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadFS.ps1```
+    2. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadIIS.ps1```
+    3. ```powershell.exe -ExecutionPolicy Bypass -File C:\ADServices\BadSQL.ps1```
 10. Run ```Install-WindowsFeature Net-Framework-Core```
 11. Once that is set up, download the file from this link and install the software: https://www.hmailserver.com/download_getfile?performdownload=1&downloadid=271
 12. Once hmailserver is setup, run ```powershell.exe -ExecutionPolicy Bypass -File C:\Simulator\Invoke-ContinuousActivitySimulator.ps1 -HMailAdminPassword "MyP@ssw0rd123!" -LabSubnet "10.0.2.0/24"```
@@ -44,13 +44,6 @@ SecFrame/David Rowe for making [BadBlood](https://www.secframe.com/badblood/).
 7. Now you can rdp into it via localhost:3390
 
 
-## Math
-
-~35sec per dept folder (~6-7.5min with CORP folder)
-~20sec per 10 user folders ()
-~35min for the whole BadFS deployment
-
-
 ## Nuking your AD (Just use snapshots instead, really dont do this)
 
 If you want to nuke AD:
@@ -58,6 +51,20 @@ If you want to nuke AD:
 2. ```Restart-Computer -Force```
 3. ```Install-ADDSForest -DomainName "contoso.com" -Force```
 3. Start from Step 7
+
+
+## User Account Number Math
+
+| Percentile | Accounts Required |
+| :--- | :--- |
+| 50% (median) | 787 |
+| X% (mean) | 818 |
+| 75% | 912 |
+| 90% | 1,056 |
+| 95% | 1,163 |
+| 99% | 1,401 |
+| Y% (default) | 1,500 |
+| Maximum seen (50,000 trials) | 2,575 |
 
 
 ## License
@@ -70,17 +77,3 @@ Please note: all tools/ scripts in this repo are released for use "AS IS" withou
 Any use of these scripts and tools is at your own risk. There is no guarantee that they have been through thorough testing in a comparable environment and we are not responsible for any damage or data loss or time loss incurred with their use.
 
 You are responsible for reviewing and testing any scripts you run thoroughly before use in any non-testing environment.  This tool is not designed for a production environment.
-
-
-
-Prevent no missing managers (I suggest 1500):
-
-
-percentile	accounts required
-50 % (median)	787
-75 %	912
-90 %	1 056
-95 %	1 163
-99 %	1 401
-maximum seen (50 000 trials)	2 575
-(mean ≈ 818)

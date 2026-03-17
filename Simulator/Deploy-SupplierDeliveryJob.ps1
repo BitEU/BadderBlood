@@ -220,11 +220,41 @@ IF IS_SRVROLEMEMBER('sysadmin', '$agentSqlLogin') = 0
         }
 
         Set-Service -Name $agentSvcName -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service -Name $agentSvcName -ErrorAction Stop
-        # Wait for Agent to reach Running state (up to 30 seconds)
-        $agentSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-        $script:SqlAgentRunning = $true
-        Write-Log "SQL Agent started." "SUCCESS"
+
+        # After granting permissions, the SQL engine may cache the old security token.
+        # Restart the engine so the Agent's login picks up the new sysadmin grant,
+        # then start the Agent with retries.
+        $maxRetries = 3
+        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+            try {
+                # On first retry after a fresh permission grant, restart the SQL engine
+                # so it refreshes the cached security token for the machine account.
+                if ($attempt -eq 2) {
+                    Write-Log "Restarting SQL Server engine to refresh security token..." "INFO"
+                    Restart-Service -Name $sqlSvcName -Force -ErrorAction Stop
+                    $sqlSvcObj = Get-Service -Name $sqlSvcName
+                    $sqlSvcObj.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+                    Start-Sleep -Seconds 3
+                    Write-Log "SQL Server engine restarted." "SUCCESS"
+                }
+
+                Start-Service -Name $agentSvcName -ErrorAction Stop
+                $agentSvc.Refresh()
+                $agentSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+                $script:SqlAgentRunning = $true
+                Write-Log "SQL Agent started (attempt $attempt)." "SUCCESS"
+                break
+            } catch {
+                Write-Log "Start attempt $attempt/$maxRetries failed: $_" "WARNING"
+                if ($attempt -lt $maxRetries) {
+                    Start-Sleep -Seconds 3
+                }
+            }
+        }
+
+        if (-not $script:SqlAgentRunning) {
+            Write-Log "Could not start SQL Agent after $maxRetries attempts. Jobs will be created but cannot run until the Agent service is started manually." "WARNING"
+        }
     } catch {
         Write-Log "Could not start SQL Agent: $_ - SQL Agent jobs will be created but cannot run until the Agent service is started." "WARNING"
     }
