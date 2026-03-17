@@ -353,11 +353,35 @@ function Add-HmsRelayRange {
         $range.Name        = $RangeName
         $range.LowerIP     = $LowerIP
         $range.UpperIP     = $UpperIP
-        # hMailServer 5.6+ renamed AllowRelay to AllowSMTPRelaying
-        try   { $range.AllowSMTPRelaying = $true }
-        catch { $range.AllowRelay = $true }
+
+        # Enable relay/delivery on this range.
+        # hMailServer 5.6.8 SecurityRanges use these property names (confirmed via probe).
+        # AllowRelay and AllowSMTPRelaying do NOT exist on this version.
+        $relayConfigured = $true
+        $relayProps = @{
+            AllowDeliveryFromLocalToLocal    = $true
+            AllowDeliveryFromLocalToRemote   = $true
+            AllowDeliveryFromRemoteToLocal   = $true
+            AllowDeliveryFromRemoteToRemote  = $false
+            RequireSMTPAuthLocalToExternal   = $false
+            RequireSMTPAuthLocalToLocal      = $false
+            RequireSMTPAuthExternalToLocal   = $false
+            AllowSMTPConnections             = $true
+        }
+        foreach ($kv in $relayProps.GetEnumerator()) {
+            try   { $range."$($kv.Key)" = $kv.Value }
+            catch {
+                Write-Log "Could not set $($kv.Key) on range '$RangeName': $_" "WARNING"
+                $relayConfigured = $false
+            }
+        }
+
         $range.Save()
-        Write-Log "Added relay IP range '$RangeName': $LowerIP - $UpperIP" "SUCCESS"
+        if ($relayConfigured) {
+            Write-Log "Added relay IP range '$RangeName': $LowerIP - $UpperIP" "SUCCESS"
+        } else {
+            Write-Log "Added IP range '$RangeName': $LowerIP - $UpperIP (relay properties could not be set - configure manually in hMailServer Admin)" "WARNING"
+        }
     } catch {
         Write-Log "Failed to add relay range '$RangeName': $_" "WARNING"
     }

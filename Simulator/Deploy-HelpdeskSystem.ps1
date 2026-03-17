@@ -1044,16 +1044,38 @@ Write-Log "Configuring IIS application for /apps/helpdesk..." "STEP"
 try {
     Import-Module WebAdministration -ErrorAction Stop
 
-    # Create dedicated app pool for the helpdesk (runs as ApplicationPoolIdentity)
+    # Create dedicated app pool for the helpdesk.
+    # Must run as a Windows identity that has SQL access to ITDeskDB.
+    # BlackTeam_SQLBot already has db_datareader/db_datawriter on ITDeskDB
+    # (granted in section 7 above), so we use it as the pool identity.
+    # This matches the OrdersAppPool pattern (which runs as BlackTeam_WebBot).
     $poolName = "HelpdeskAppPool"
+    $helpdeskIdentity = "$DomainNB\BlackTeam_SQLBot"
+    # Use the standard BlackTeam shared password (same one Deploy-BlackTeamAccounts sets)
+    $helpdeskPassword = "B!ackT3am_Sc0reb0t_2025#"
+
     if (-not (Test-Path "IIS:\AppPools\$poolName")) {
         New-WebAppPool -Name $poolName | Out-Null
-        Set-ItemProperty "IIS:\AppPools\$poolName" -Name "managedRuntimeVersion" -Value "v4.0"
-        Set-ItemProperty "IIS:\AppPools\$poolName" -Name "startMode" -Value "AlwaysRunning"
         Write-Log "Created app pool: $poolName" "SUCCESS"
     } else {
-        Write-Log "App pool $poolName already exists." "INFO"
+        Write-Log "App pool $poolName already exists - updating identity settings." "INFO"
     }
+
+    # Stop the pool before reconfiguring identity (ensures settings take effect)
+    try { Stop-WebAppPool -Name $poolName -ErrorAction SilentlyContinue } catch { }
+
+    Set-ItemProperty "IIS:\AppPools\$poolName" -Name "managedRuntimeVersion" -Value "v4.0"
+    Set-ItemProperty "IIS:\AppPools\$poolName" -Name "startMode" -Value "AlwaysRunning"
+
+    # Use appcmd for identity — Set-ItemProperty is unreliable for processModel
+    # nested properties when the pool already exists (the values silently don't stick).
+    & "$env:SystemRoot\System32\inetsrv\appcmd.exe" set apppool "$poolName" `
+        /processModel.identityType:SpecificUser `
+        /processModel.userName:$helpdeskIdentity `
+        /processModel.password:$helpdeskPassword | Out-Null
+
+    try { Start-WebAppPool -Name $poolName -ErrorAction SilentlyContinue } catch { }
+    Write-Log "App pool '$poolName' configured (identity: $helpdeskIdentity)." "SUCCESS"
 
     # Create the IIS application
     $siteName = "SpringfieldBoxFactory"

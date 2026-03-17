@@ -188,71 +188,94 @@ if (-not $agentSvc) {
             Write-Log "SQL Server engine started." "SUCCESS"
         }
 
-        # Grant the Agent service account the required msdb roles.
         # SQL Agent running as NT AUTHORITY\NETWORKSERVICE maps to the machine account
-        # (DOMAIN\MACHINENAME$) which needs SQLAgentOperatorRole on msdb to start.
-        try {
-            $wmiAgent = Get-WmiObject Win32_Service -Filter "Name='$agentSvcName'" -ErrorAction SilentlyContinue
-            $agentLogon = if ($wmiAgent) { $wmiAgent.StartName } else { $null }
-            Write-Log "SQL Agent service logon account: $agentLogon" "INFO"
+        # (DOMAIN\MACHINENAME$) inside SQL Server. On SQL 2017 Express, this account
+        # lacks EXECUTE on msdb.dbo.sp_sqlagent_update_agent_xps and granting it does
+        # not survive an engine restart. The reliable fix is to run the Agent as
+        # LocalSystem, which has full OS-level access and maps to sysadmin in SQL.
+        $wmiAgent = Get-WmiObject Win32_Service -Filter "Name='$agentSvcName'" -ErrorAction SilentlyContinue
+        $agentLogon = if ($wmiAgent) { $wmiAgent.StartName } else { $null }
+        Write-Log "SQL Agent service logon account: $agentLogon" "INFO"
 
-            # Determine the SQL login name for the Agent service account
-            $agentSqlLogin = $agentLogon
-            if ($agentLogon -match 'NT AUTHORITY\\(NETWORK\s*SERVICE|LOCAL\s*SERVICE|SYSTEM)') {
-                # These map to DOMAIN\MACHINENAME$ inside SQL Server
-                $agentSqlLogin = "$DomainNB\$env:COMPUTERNAME`$"
+        $needsIdentityChange = $agentLogon -match 'NT AUTHORITY\\(NETWORK\s*SERVICE|LOCAL\s*SERVICE)'
+        if ($needsIdentityChange) {
+            Write-Log "Changing SQL Agent to run as LocalSystem (NETWORKSERVICE lacks required msdb permissions that do not survive engine restarts)..." "INFO"
+            $scResult = & sc.exe config $agentSvcName obj= "LocalSystem" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "SQL Agent service account changed to LocalSystem." "SUCCESS"
+            } else {
+                Write-Log "sc.exe config failed: $scResult" "WARNING"
             }
-
-            $grantAgentPerms = @"
--- Ensure the Agent service account has a SQL login
-IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$agentSqlLogin')
-    CREATE LOGIN [$agentSqlLogin] FROM WINDOWS;
-
--- Grant sysadmin role (required for SQL Agent to fully start and manage jobs)
-IF IS_SRVROLEMEMBER('sysadmin', '$agentSqlLogin') = 0
-    ALTER SERVER ROLE sysadmin ADD MEMBER [$agentSqlLogin];
-"@
-            if (Invoke-Sql -Query $grantAgentPerms) {
-                Write-Log "Granted sysadmin to '$agentSqlLogin' (SQL Agent service account)." "SUCCESS"
-            }
-        } catch {
-            Write-Log "Could not grant Agent service account permissions: $_ (non-fatal, will attempt start anyway)" "WARNING"
         }
 
         Set-Service -Name $agentSvcName -StartupType Automatic -ErrorAction SilentlyContinue
 
-        # After granting permissions, the SQL engine may cache the old security token.
-        # Restart the engine so the Agent's login picks up the new sysadmin grant,
-        # then start the Agent with retries.
+        # Restart the SQL engine to ensure the Agent's identity token is freshly recognized.
+        # Without this, the Agent may fail to start even as LocalSystem if the engine's
+        # security cache is stale from a prior service account configuration.
+        Write-Log "Restarting SQL Server engine to ensure clean Agent startup..." "INFO"
+        Restart-Service -Name $sqlSvcName -Force -ErrorAction Stop
+        $sqlSvcObj = Get-Service -Name $sqlSvcName
+        $sqlSvcObj.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+        Write-Log "SQL Server engine restarted." "SUCCESS"
+
+        # Poll until msdb is actually queryable (not just service Running)
+        Write-Log "Waiting for msdb to become responsive..." "INFO"
+        $msdbReady = $false
+        for ($i = 1; $i -le 30; $i++) {
+            try {
+                $poll = Invoke-Sql -Query "SELECT 1 AS ping" -Database "msdb" -ReturnReader
+                if ($poll) { $msdbReady = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 1
+        }
+        if ($msdbReady) {
+            Write-Log "msdb responsive after $i seconds." "SUCCESS"
+        } else {
+            Write-Log "msdb not responsive after 30 seconds - attempting Agent start anyway." "WARNING"
+        }
+
+        # Resolve SQLAGENT.OUT path for diagnostics
+        $instName = if ($SqlInstance -like '*\*') { $SqlInstance.Split('\')[1] } else { "MSSQLSERVER" }
+        $agentLogPath = "C:\Program Files\Microsoft SQL Server\MSSQL17.$instName\MSSQL\Log\SQLAGENT.OUT"
+
         $maxRetries = 3
         for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
             try {
-                # On first retry after a fresh permission grant, restart the SQL engine
-                # so it refreshes the cached security token for the machine account.
-                if ($attempt -eq 2) {
-                    Write-Log "Restarting SQL Server engine to refresh security token..." "INFO"
-                    Restart-Service -Name $sqlSvcName -Force -ErrorAction Stop
-                    $sqlSvcObj = Get-Service -Name $sqlSvcName
-                    $sqlSvcObj.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
-                    Start-Sleep -Seconds 3
-                    Write-Log "SQL Server engine restarted." "SUCCESS"
-                }
-
                 Start-Service -Name $agentSvcName -ErrorAction Stop
                 $agentSvc.Refresh()
                 $agentSvc.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-                $script:SqlAgentRunning = $true
-                Write-Log "SQL Agent started (attempt $attempt)." "SUCCESS"
-                break
+
+                # The service reports Running immediately, but the Agent may crash
+                # during internal init (e.g. sp_sqlagent_update_agent_xps failures).
+                # Wait and verify it stays running.
+                Write-Log "SQL Agent service started, verifying it stays running..." "INFO"
+                Start-Sleep -Seconds 8
+                $agentSvc.Refresh()
+                if ($agentSvc.Status -eq 'Running') {
+                    $script:SqlAgentRunning = $true
+                    Write-Log "SQL Agent started and stable (attempt $attempt)." "SUCCESS"
+                    break
+                } else {
+                    Write-Log "SQL Agent started but stopped during initialization (attempt $attempt/$maxRetries)." "WARNING"
+                    if (Test-Path $agentLogPath) {
+                        Write-Log "SQLAGENT.OUT (last 8 lines):" "WARNING"
+                        Get-Content $agentLogPath -Tail 8 | ForEach-Object { Write-Log "  $_" "WARNING" }
+                    }
+                }
             } catch {
                 Write-Log "Start attempt $attempt/$maxRetries failed: $_" "WARNING"
-                if ($attempt -lt $maxRetries) {
-                    Start-Sleep -Seconds 3
-                }
+            }
+            if ($attempt -lt $maxRetries) {
+                Start-Sleep -Seconds 5
             }
         }
 
         if (-not $script:SqlAgentRunning) {
+            if (Test-Path $agentLogPath) {
+                Write-Log "SQLAGENT.OUT (last 10 lines):" "WARNING"
+                Get-Content $agentLogPath -Tail 10 | ForEach-Object { Write-Log "  $_" "WARNING" }
+            }
             Write-Log "Could not start SQL Agent after $maxRetries attempts. Jobs will be created but cannot run until the Agent service is started manually." "WARNING"
         }
     } catch {
@@ -548,7 +571,9 @@ if ($result) {
 
 Write-Log "Starting jobs for initial execution..." "STEP"
 
-if (-not $script:SqlAgentRunning) {
+# Re-check Agent status — it may have stopped between startup and now
+$agentSvcNow = Get-Service -Name $agentSvcName -ErrorAction SilentlyContinue
+if (-not $script:SqlAgentRunning -or $agentSvcNow.Status -ne 'Running') {
     Write-Log "SQL Agent is not running - skipping initial job start. Jobs will execute on schedule once SQL Agent is started." "WARNING"
 } else {
     $startDelivery = @"
@@ -561,13 +586,26 @@ USE [msdb];
 EXEC sp_start_job @job_name = N'$reorderJobName'
 "@
 
-    Start-Sleep -Seconds 2  # Brief pause to ensure job registration completes
-
-    if (Invoke-Sql -Database "msdb" -Query $startDelivery) {
-        Write-Log "Supplier delivery job started (initial run)." "SUCCESS"
+    # Wait for Agent to be fully ready for sp_start_job (it may still be initializing)
+    $jobStartReady = $false
+    for ($wait = 1; $wait -le 15; $wait++) {
+        $result = Invoke-Sql -Database "msdb" -Query $startDelivery
+        if ($result) {
+            Write-Log "Supplier delivery job started (initial run)." "SUCCESS"
+            $jobStartReady = $true
+            break
+        }
+        Write-Log "Agent not ready for sp_start_job yet, retrying ($wait/15)..." "INFO"
+        Start-Sleep -Seconds 2
     }
+    if (-not $jobStartReady) {
+        Write-Log "Could not start delivery job immediately - it will run on its next scheduled interval." "WARNING"
+    }
+
     if (Invoke-Sql -Database "msdb" -Query $startReorder) {
         Write-Log "Reorder check job started (initial run)." "SUCCESS"
+    } else {
+        Write-Log "Could not start reorder job immediately - it will run on its next scheduled interval." "WARNING"
     }
 }
 
